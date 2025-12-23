@@ -1,0 +1,472 @@
+mod config;
+mod executor;
+mod whitelist;
+
+use crate::config::Config;
+use crate::executor::execute_request;
+use crate::whitelist::Whitelist;
+use anyhow::Context;
+use bytes::Bytes;
+use clap::Parser;
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::ExecutableCommand;
+use futures_util::{SinkExt, StreamExt};
+use protocol::{CommandRequest, CommandResponse, CommandStage, CommandStatus};
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::Terminal;
+use std::io;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tracing_subscriber::prelude::*;
+
+#[derive(Parser, Debug)]
+#[command(name = "remote-broker", version, about = "Remote command broker with approval TUI")]
+struct Args {
+    #[arg(long, default_value = "127.0.0.1:9000")]
+    listen_addr: String,
+    #[arg(long, default_value = "config.toml")]
+    config: PathBuf,
+    #[arg(long, default_value = "logs")]
+    audit_dir: PathBuf,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    let _file_guard = init_tracing(&args.audit_dir)?;
+
+    let config = Config::load(&args.config)
+        .with_context(|| format!("failed to load config {}", args.config.display()))?;
+    let whitelist = Arc::new(Whitelist::from_config(&config.whitelist)?);
+    let limits = Arc::new(config.limits);
+
+    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
+
+    let listener = TcpListener::bind(&args.listen_addr)
+        .await
+        .with_context(|| format!("failed to bind {}", args.listen_addr))?;
+
+    let accept_tx = ui_tx.clone();
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    let accept_tx = accept_tx.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = handle_connection(stream, addr, accept_tx).await {
+                            tracing::error!(error = %err, "connection handler failed");
+                        }
+                    });
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "listener accept failed");
+                }
+            }
+        }
+    });
+
+    let mut terminal = setup_terminal()?;
+    let mut app = AppState::default();
+
+    let tick_rate = Duration::from_millis(100);
+    loop {
+        while let Ok(event) = ui_rx.try_recv() {
+            app.handle_event(event);
+        }
+
+        terminal.draw(|frame| draw_ui(frame, &mut app))?;
+
+        if event::poll(tick_rate)? {
+            if let Event::Key(key) = event::read()? {
+                if handle_key_event(
+                    key,
+                    &mut app,
+                    ui_tx.clone(),
+                    Arc::clone(&whitelist),
+                    Arc::clone(&limits),
+                ) {
+                    break;
+                }
+            }
+        }
+    }
+
+    restore_terminal(&mut terminal)?;
+    Ok(())
+}
+
+async fn handle_connection(
+    stream: TcpStream,
+    addr: SocketAddr,
+    ui_tx: mpsc::Sender<UiEvent>,
+) -> anyhow::Result<()> {
+    let _ = ui_tx.send(UiEvent::ConnectionOpened).await;
+    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    while let Some(frame) = framed.next().await {
+        let bytes = frame.context("frame read")?;
+        let request: CommandRequest = match serde_json::from_slice(&bytes) {
+            Ok(request) => request,
+            Err(err) => {
+                tracing::warn!(error = %err, "invalid request payload");
+                let response = CommandResponse::error("invalid", "invalid request");
+                let payload = serde_json::to_vec(&response)?;
+                let _ = framed.send(Bytes::from(payload)).await;
+                continue;
+            }
+        };
+
+        tracing::info!(
+            event = "request_received",
+            id = %request.id,
+            client = %request.client,
+            peer = %addr,
+            command = %format_pipeline(&request.pipeline),
+        );
+
+        let (respond_to, response_rx) = oneshot::channel();
+        let pending = PendingRequest {
+            request,
+            peer: addr.to_string(),
+            received_at: Instant::now(),
+            respond_to,
+        };
+        if ui_tx.send(UiEvent::Request(pending)).await.is_err() {
+            break;
+        }
+
+        match response_rx.await {
+            Ok(response) => {
+                let payload = serde_json::to_vec(&response)?;
+                framed.send(Bytes::from(payload)).await?;
+            }
+            Err(_) => break,
+        }
+    }
+    let _ = ui_tx.send(UiEvent::ConnectionClosed).await;
+    Ok(())
+}
+
+fn handle_key_event(
+    key: KeyEvent,
+    app: &mut AppState,
+    ui_tx: mpsc::Sender<UiEvent>,
+    whitelist: Arc<Whitelist>,
+    limits: Arc<crate::config::LimitsConfig>,
+) -> bool {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+        KeyCode::Down | KeyCode::Char('j') => app.select_next(),
+        KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
+        KeyCode::Char('a') | KeyCode::Char('A') => {
+            if let Some(pending) = app.pop_selected() {
+                tracing::info!(
+                    event = "request_approved",
+                    id = %pending.request.id,
+                    command = %format_pipeline(&pending.request.pipeline),
+                );
+                let ui_tx = ui_tx.clone();
+                let whitelist = Arc::clone(&whitelist);
+                let limits = Arc::clone(&limits);
+                tokio::spawn(async move {
+                    let response = execute_request(&pending.request, &whitelist, &limits).await;
+                    let record = ExecutionRecord::from_response(&pending, &response);
+                    let _ = pending.respond_to.send(response);
+                    let _ = ui_tx.send(UiEvent::Execution(record)).await;
+                });
+            }
+        }
+        KeyCode::Char('d') | KeyCode::Char('D') => {
+            if let Some(pending) = app.pop_selected() {
+                tracing::info!(
+                    event = "request_denied",
+                    id = %pending.request.id,
+                    command = %format_pipeline(&pending.request.pipeline),
+                );
+                let response =
+                    CommandResponse::denied(pending.request.id.clone(), "denied by operator");
+                let record = ExecutionRecord::from_response(&pending, &response);
+                let _ = pending.respond_to.send(response);
+                let _ = ui_tx.try_send(UiEvent::Execution(record));
+            }
+        }
+        _ => {}
+    }
+    false
+}
+
+#[derive(Default)]
+struct AppState {
+    queue: Vec<PendingRequest>,
+    selected: usize,
+    list_state: ListState,
+    connections: usize,
+    last_result: Option<ExecutionRecord>,
+}
+
+impl AppState {
+    fn handle_event(&mut self, event: UiEvent) {
+        match event {
+            UiEvent::ConnectionOpened => self.connections += 1,
+            UiEvent::ConnectionClosed => {
+                self.connections = self.connections.saturating_sub(1);
+            }
+            UiEvent::Request(pending) => {
+                self.queue.push(pending);
+                if self.queue.len() == 1 {
+                    self.selected = 0;
+                }
+            }
+            UiEvent::Execution(record) => {
+                self.last_result = Some(record);
+            }
+        }
+        self.sync_selection();
+    }
+
+    fn select_next(&mut self) {
+        if self.queue.is_empty() {
+            return;
+        }
+        self.selected = (self.selected + 1) % self.queue.len();
+        self.sync_selection();
+    }
+
+    fn select_prev(&mut self) {
+        if self.queue.is_empty() {
+            return;
+        }
+        if self.selected == 0 {
+            self.selected = self.queue.len() - 1;
+        } else {
+            self.selected -= 1;
+        }
+        self.sync_selection();
+    }
+
+    fn pop_selected(&mut self) -> Option<PendingRequest> {
+        if self.queue.is_empty() {
+            return None;
+        }
+        let index = self.selected.min(self.queue.len() - 1);
+        let item = self.queue.remove(index);
+        if self.selected >= self.queue.len() && !self.queue.is_empty() {
+            self.selected = self.queue.len() - 1;
+        }
+        self.sync_selection();
+        Some(item)
+    }
+
+    fn sync_selection(&mut self) {
+        if self.queue.is_empty() {
+            self.list_state.select(None);
+        } else {
+            self.list_state.select(Some(self.selected));
+        }
+    }
+}
+
+struct PendingRequest {
+    request: CommandRequest,
+    peer: String,
+    received_at: Instant,
+    respond_to: oneshot::Sender<CommandResponse>,
+}
+
+struct ExecutionRecord {
+    id: String,
+    status: CommandStatus,
+    exit_code: Option<i32>,
+    summary: String,
+    stdout: Option<String>,
+    stderr: Option<String>,
+}
+
+impl ExecutionRecord {
+    fn from_response(pending: &PendingRequest, response: &CommandResponse) -> Self {
+        let summary = match response.status {
+            CommandStatus::Completed => format!("completed (exit={:?})", response.exit_code),
+            CommandStatus::Denied => "denied".to_string(),
+            CommandStatus::Error => "error".to_string(),
+            CommandStatus::Approved => "approved".to_string(),
+        };
+        Self {
+            id: pending.request.id.clone(),
+            status: response.status.clone(),
+            exit_code: response.exit_code,
+            summary,
+            stdout: response.stdout.clone(),
+            stderr: response.stderr.clone(),
+        }
+    }
+}
+
+enum UiEvent {
+    ConnectionOpened,
+    ConnectionClosed,
+    Request(PendingRequest),
+    Execution(ExecutionRecord),
+}
+
+fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(5),
+            Constraint::Length(7),
+            Constraint::Length(3),
+        ])
+        .split(frame.area());
+
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(chunks[0]);
+
+    let queue_items: Vec<ListItem> = app
+        .queue
+        .iter()
+        .map(|pending| {
+            let title = format!(
+                "{}  {}",
+                pending.request.id,
+                format_pipeline(&pending.request.pipeline)
+            );
+            ListItem::new(Line::from(title))
+        })
+        .collect();
+    let queue = List::new(queue_items)
+        .block(Block::default().title("Pending").borders(Borders::ALL))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">> ");
+    frame.render_stateful_widget(queue, body[0], &mut app.list_state);
+
+    let details = if let Some(selected) = app.queue.get(app.selected) {
+        format_request_details(selected)
+    } else {
+        "no pending request".to_string()
+    };
+    let detail_block = Paragraph::new(details)
+        .block(Block::default().title("Details").borders(Borders::ALL))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(detail_block, body[1]);
+
+    let result_text = if let Some(result) = &app.last_result {
+        format_result_details(result)
+    } else {
+        "no execution yet".to_string()
+    };
+    let result_block = Paragraph::new(result_text)
+        .block(Block::default().title("Last Result").borders(Borders::ALL))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(result_block, chunks[1]);
+
+    let footer = Paragraph::new(Line::from(vec![
+        Span::raw("A=approve  D=deny  ↑/↓=select  Q=quit  "),
+        Span::styled(
+            format!("connections={}", app.connections),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(footer, chunks[2]);
+}
+
+fn format_request_details(pending: &PendingRequest) -> String {
+    let request = &pending.request;
+    let mut lines = vec![
+        format!("id: {}", request.id),
+        format!("client: {}", request.client),
+        format!("peer: {}", pending.peer),
+        format!("command: {}", format_pipeline(&request.pipeline)),
+    ];
+    if let Some(cwd) = &request.cwd {
+        lines.push(format!("cwd: {cwd}"));
+    }
+    if let Some(timeout) = request.timeout_ms {
+        lines.push(format!("timeout_ms: {timeout}"));
+    }
+    if let Some(max) = request.max_output_bytes {
+        lines.push(format!("max_output_bytes: {max}"));
+    }
+    lines.push(format!(
+        "queued_for: {}s",
+        pending.received_at.elapsed().as_secs()
+    ));
+    lines.join("\n")
+}
+
+fn format_result_details(result: &ExecutionRecord) -> String {
+    let mut lines = vec![
+        format!("id: {}", result.id),
+        format!("status: {:?}", result.status),
+        format!("summary: {}", result.summary),
+    ];
+    if let Some(code) = result.exit_code {
+        lines.push(format!("exit_code: {code}"));
+    }
+    if let Some(stdout) = &result.stdout {
+        lines.push(format!("stdout: {stdout}"));
+    }
+    if let Some(stderr) = &result.stderr {
+        lines.push(format!("stderr: {stderr}"));
+    }
+    lines.join("\n")
+}
+
+fn format_pipeline(pipeline: &[CommandStage]) -> String {
+    pipeline
+        .iter()
+        .map(|stage| stage.argv.join(" "))
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<io::Stdout>>> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    stdout.execute(EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let terminal = Terminal::new(backend)?;
+    Ok(terminal)
+}
+
+fn restore_terminal(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) -> anyhow::Result<()> {
+    disable_raw_mode()?;
+    terminal.backend_mut().execute(LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+    Ok(())
+}
+
+fn init_tracing(audit_dir: &PathBuf) -> anyhow::Result<tracing_appender::non_blocking::WorkerGuard> {
+    std::fs::create_dir_all(audit_dir)?;
+    let file_appender = tracing_appender::rolling::daily(audit_dir, "audit.log");
+    let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
+
+    let stdout_layer = tracing_subscriber::fmt::layer()
+        .with_writer(io::stdout)
+        .with_target(false);
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(file_writer)
+        .with_target(false)
+        .json();
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(file_layer)
+        .init();
+
+    Ok(file_guard)
+}
