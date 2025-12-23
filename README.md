@@ -28,7 +28,7 @@ max_output_bytes = 1048576
 
 ```bash
 cargo run -p remote-broker -- \
-  --listen-addr 127.0.0.1:9000 \
+  --listen-addr 127.0.0.1:19307 \
   --config config.toml \
   --audit-dir logs
 ```
@@ -36,25 +36,25 @@ cargo run -p remote-broker -- \
 3) 在本地建立 SSH 隧道：
 
 ```bash
-ssh -L 9000:127.0.0.1:9000 user@remote-host
+ssh -L 19306:127.0.0.1:19307 user@remote-host
 ```
 
 4) 启动本地代理：
 
 ```bash
-cargo run -p local-proxy -- --remote-addr 127.0.0.1:9000
+cargo run -p local-proxy -- --remote-addr 127.0.0.1:19306
 ```
 
 5) 将 MCP 客户端配置指向 `local-proxy`（stdio 模式）。
 
 ## CLI 选项
 remote-broker：
-- `--listen-addr`（默认：`127.0.0.1:9000`）
+- `--listen-addr`（默认：`127.0.0.1:19307`）
 - `--config`（默认：`config.toml`）
 - `--audit-dir`（默认：`logs`）
 
 local-proxy：
-- `--remote-addr`（默认：`127.0.0.1:9000`）
+- `--remote-addr`（默认：`127.0.0.1:19306`）
 - `--client-id`（默认：`local-proxy`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）

@@ -24,7 +24,7 @@ use uuid::Uuid;
 #[derive(Parser, Debug)]
 #[command(name = "local-proxy", version, about = "MCP stdio proxy to remote command broker")]
 struct Args {
-    #[arg(long, default_value = "127.0.0.1:9000")]
+    #[arg(long, default_value = "127.0.0.1:19306")]
     remote_addr: String,
     #[arg(long, default_value = "local-proxy")]
     client_id: String,
