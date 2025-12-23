@@ -32,7 +32,7 @@ use tracing_subscriber::prelude::*;
 #[derive(Parser, Debug)]
 #[command(name = "remote-broker", version, about = "Remote command broker with approval TUI")]
 struct Args {
-    #[arg(long, default_value = "127.0.0.1:9000")]
+    #[arg(long, default_value = "127.0.0.1:19307")]
     listen_addr: String,
     #[arg(long, default_value = "config.toml")]
     config: PathBuf,
