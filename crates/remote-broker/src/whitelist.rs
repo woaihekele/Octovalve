@@ -6,8 +6,10 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct Whitelist {
+    #[allow(dead_code)]
     allowed: HashSet<String>,
     denied: HashSet<String>,
+    #[allow(dead_code)]
     arg_rules: HashMap<String, Regex>,
 }
 
@@ -26,6 +28,7 @@ impl Whitelist {
         })
     }
 
+    #[allow(dead_code)]
     pub fn validate_allow(&self, stage: &CommandStage) -> Result<(), String> {
         let command = stage.command().ok_or_else(|| "empty command".to_string())?;
         if !self.is_allowed(command) {
@@ -56,6 +59,7 @@ impl Whitelist {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn is_allowed(&self, command: &str) -> bool {
         if self.allowed.contains(command) {
             return true;
