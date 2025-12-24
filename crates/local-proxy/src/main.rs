@@ -16,6 +16,7 @@ use rust_mcp_sdk::{McpServer, StdioTransport, TransportOptions};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap};
+use std::io;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing_subscriber::prelude::*;
@@ -69,7 +70,9 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn init_tracing() {
-    let layer = tracing_subscriber::fmt::layer().with_target(false);
+    let layer = tracing_subscriber::fmt::layer()
+        .with_writer(io::stderr)
+        .with_target(false);
     tracing_subscriber::registry().with(layer).init();
 }
 

@@ -4,6 +4,7 @@ use anyhow::Context;
 use protocol::{CommandRequest, CommandResponse, CommandStage};
 use std::collections::BTreeMap;
 use std::io;
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -67,7 +68,8 @@ async fn execute_pipeline(
         let command = stage
             .command()
             .ok_or_else(|| anyhow::anyhow!("empty command"))?;
-        let mut cmd = Command::new(command);
+        let resolved = resolve_command_path(command);
+        let mut cmd = Command::new(&resolved);
         cmd.args(stage.argv.iter().skip(1));
         if let Some(cwd) = cwd {
             cmd.current_dir(cwd);
@@ -83,7 +85,9 @@ async fn execute_pipeline(
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.kill_on_drop(true);
-        let child = cmd.spawn().with_context(|| format!("spawn {command}"))?;
+        let child = cmd
+            .spawn()
+            .with_context(|| format!("spawn {command} ({resolved})"))?;
         children.push(child);
     }
 
@@ -169,6 +173,22 @@ async fn execute_pipeline(
     })
 }
 
+fn resolve_command_path(command: &str) -> String {
+    if command.contains('/') {
+        return command.to_string();
+    }
+
+    let candidates = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+    for dir in candidates {
+        let path = Path::new(dir).join(command);
+        if path.is_file() {
+            return path.to_string_lossy().to_string();
+        }
+    }
+
+    command.to_string()
+}
+
 async fn read_stream_limited<R: AsyncRead + Unpin>(
     mut reader: R,
     max_bytes: usize,
@@ -193,4 +213,15 @@ async fn read_stream_limited<R: AsyncRead + Unpin>(
         }
     }
     Ok((buffer, truncated))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_command_path;
+
+    #[test]
+    fn resolve_keeps_explicit_path() {
+        let path = "/usr/bin/ls";
+        assert_eq!(resolve_command_path(path), path.to_string());
+    }
 }
