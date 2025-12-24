@@ -39,6 +39,20 @@ pub(crate) fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>, shutdown: C
                 return;
             }
         };
+        let mut sighup = match signal(SignalKind::hangup()) {
+            Ok(signal) => signal,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to register SIGHUP handler");
+                return;
+            }
+        };
+        let mut sigquit = match signal(SignalKind::quit()) {
+            Ok(signal) => signal,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to register SIGQUIT handler");
+                return;
+            }
+        };
 
         tokio::select! {
             _ = sigint.recv() => {
@@ -46,6 +60,12 @@ pub(crate) fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>, shutdown: C
             }
             _ = sigterm.recv() => {
                 tracing::info!("received SIGTERM, shutting down tunnels");
+            }
+            _ = sighup.recv() => {
+                tracing::info!("received SIGHUP, shutting down tunnels");
+            }
+            _ = sigquit.recv() => {
+                tracing::info!("received SIGQUIT, shutting down tunnels");
             }
         }
 
