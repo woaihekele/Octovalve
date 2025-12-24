@@ -65,6 +65,7 @@ struct ProxyDefaults {
     local_bind: Option<String>,
     remote_addr: Option<String>,
     ssh_args: Option<Vec<String>>,
+    ssh_password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +77,7 @@ struct TargetConfig {
     local_port: u16,
     local_bind: Option<String>,
     ssh_args: Option<Vec<String>>,
+    ssh_password: Option<String>,
 }
 
 impl Default for ProxyDefaults {
@@ -86,6 +88,7 @@ impl Default for ProxyDefaults {
             local_bind: None,
             remote_addr: None,
             ssh_args: None,
+            ssh_password: None,
         }
     }
 }
@@ -157,6 +160,7 @@ struct TargetRuntime {
     desc: String,
     ssh: Option<String>,
     ssh_args: Vec<String>,
+    ssh_password: Option<String>,
     remote_addr: String,
     local_bind: Option<String>,
     local_port: Option<u16>,
@@ -286,6 +290,7 @@ fn build_state_from_args(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntim
         desc: "default remote".to_string(),
         ssh: None,
         ssh_args: Vec::new(),
+        ssh_password: None,
         remote_addr: args.remote_addr.clone(),
         local_bind: None,
         local_port: None,
@@ -332,6 +337,7 @@ fn build_state_from_config(
         .local_bind
         .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
     let default_ssh_args = defaults.ssh_args.unwrap_or_default();
+    let default_ssh_password = defaults.ssh_password.clone();
 
     let timeout_ms = defaults.timeout_ms.unwrap_or(args.timeout_ms);
     let max_output_bytes = defaults.max_output_bytes.unwrap_or(args.max_output_bytes);
@@ -367,12 +373,16 @@ fn build_state_from_config(
         if let Some(extra) = target.ssh_args {
             ssh_args.extend(extra);
         }
+        let ssh_password = target
+            .ssh_password
+            .or_else(|| default_ssh_password.clone());
 
         let mut runtime = TargetRuntime {
             name: target.name.clone(),
             desc: target.desc,
             ssh: Some(target.ssh),
             ssh_args,
+            ssh_password,
             remote_addr,
             local_bind: Some(local_bind),
             local_port: Some(target.local_port),
@@ -433,7 +443,15 @@ fn spawn_tunnel(target: &mut TargetRuntime) -> anyhow::Result<()> {
     let port = target.local_port.context("missing local_port")?;
     let (remote_host, remote_port) = parse_host_port(&target.remote_addr)?;
 
-    let mut cmd = Command::new("ssh");
+    let mut cmd = if let Some(password) = target.ssh_password.as_ref() {
+        let mut cmd = Command::new("sshpass");
+        cmd.arg("-e");
+        cmd.env("SSHPASS", password);
+        cmd.arg("ssh");
+        cmd
+    } else {
+        Command::new("ssh")
+    };
     cmd.arg("-N")
         .arg("-T")
         .arg("-o")
@@ -457,9 +475,20 @@ fn spawn_tunnel(target: &mut TargetRuntime) -> anyhow::Result<()> {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?,
     );
-    cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
-    let child = cmd.spawn().context("failed to spawn ssh tunnel")?;
+    let child = cmd
+        .spawn()
+        .map_err(|err| {
+            if target.ssh_password.is_some() && err.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!("sshpass not found; install sshpass or remove ssh_password")
+            } else {
+                anyhow::anyhow!(err)
+            }
+        })
+        .context("failed to spawn ssh tunnel")?;
     target.tunnel = Some(child);
     target.status = TargetStatus::Ready;
     Ok(())

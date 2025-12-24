@@ -49,6 +49,7 @@ remote_addr = "127.0.0.1:19307"
 name = "example-target"
 desc = "主开发机"
 ssh = "devops@192.168.2.162"
+# ssh_password = "你的密码"
 local_port = 19311
 
 [[targets]]
@@ -75,6 +76,12 @@ cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml
 
 ## list_targets
 返回本地配置的目标列表及状态，包含 `name/desc/status/last_seen/ssh/remote_addr/local_addr`。
+
+## 密码登录说明
+如果必须使用密码登录，请在目标中配置 `ssh_password`，并确保本机安装 `sshpass`：
+- macOS：`brew install sshpass`
+- Debian/Ubuntu：`apt install sshpass`
+- RHEL/CentOS：`yum install sshpass`
 
 ## CLI 选项
 remote-broker：
