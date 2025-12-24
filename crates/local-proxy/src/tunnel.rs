@@ -6,21 +6,24 @@ use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 
-pub(crate) fn spawn_tunnel_manager(state: Arc<RwLock<ProxyState>>) {
+pub(crate) fn spawn_tunnel_manager(state: Arc<RwLock<ProxyState>>, shutdown: CancellationToken) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(10));
         loop {
-            {
-                let mut state = state.write().await;
-                state.ensure_all_tunnels();
+            tokio::select! {
+                _ = shutdown.cancelled() => break,
+                _ = interval.tick() => {
+                    let mut state = state.write().await;
+                    state.ensure_all_tunnels();
+                }
             }
-            interval.tick().await;
         }
     });
 }
 
-pub(crate) fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>) {
+pub(crate) fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>, shutdown: CancellationToken) {
     tokio::spawn(async move {
         let mut sigint = match signal(SignalKind::interrupt()) {
             Ok(signal) => signal,
@@ -46,6 +49,7 @@ pub(crate) fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>) {
             }
         }
 
+        shutdown.cancel();
         shutdown_tunnels(state).await;
         std::process::exit(0);
     });

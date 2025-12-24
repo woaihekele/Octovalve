@@ -17,6 +17,7 @@ use state::build_proxy_state;
 use std::io;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use tunnel::{shutdown_tunnels, spawn_shutdown_handler, spawn_tunnel_manager};
 
@@ -26,8 +27,9 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let (state, defaults) = build_proxy_state(&args)?;
     let state = Arc::new(RwLock::new(state));
-    spawn_tunnel_manager(Arc::clone(&state));
-    spawn_shutdown_handler(Arc::clone(&state));
+    let shutdown = CancellationToken::new();
+    spawn_tunnel_manager(Arc::clone(&state), shutdown.clone());
+    spawn_shutdown_handler(Arc::clone(&state), shutdown.clone());
 
     let server_details = InitializeResult {
         server_info: Implementation {
@@ -52,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let handler = ProxyHandler::new(Arc::clone(&state), args.client_id, defaults);
     let server = server_runtime::create_server(server_details, transport, handler);
     let result = server.start().await;
+    shutdown.cancel();
     shutdown_tunnels(Arc::clone(&state)).await;
     result.map_err(|err| anyhow::anyhow!(err.to_string()))?;
     Ok(())
