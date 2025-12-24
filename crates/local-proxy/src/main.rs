@@ -3,14 +3,14 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
-use protocol::{CommandRequest, CommandResponse, CommandStage, CommandStatus};
+use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage, CommandStatus};
 use rust_mcp_sdk::mcp_server::server_runtime;
 use rust_mcp_sdk::mcp_server::ServerHandler;
 use rust_mcp_sdk::schema::schema_utils::CallToolError;
 use rust_mcp_sdk::schema::{
-    CallToolRequest, CallToolResult, ContentBlock, Implementation, InitializeResult, ListToolsRequest,
-    ListToolsResult, ServerCapabilities, ServerCapabilitiesTools, Tool, ToolAnnotations,
-    ToolInputSchema, LATEST_PROTOCOL_VERSION, TextContent,
+    CallToolRequest, CallToolResult, ContentBlock, Implementation, InitializeResult,
+    ListToolsRequest, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools, TextContent,
+    Tool, ToolAnnotations, ToolInputSchema, LATEST_PROTOCOL_VERSION,
 };
 use rust_mcp_sdk::{McpServer, StdioTransport, TransportOptions};
 use serde::Deserialize;
@@ -23,7 +23,11 @@ use tracing_subscriber::prelude::*;
 use uuid::Uuid;
 
 #[derive(Parser, Debug)]
-#[command(name = "local-proxy", version, about = "MCP stdio proxy to remote command broker")]
+#[command(
+    name = "local-proxy",
+    version,
+    about = "MCP stdio proxy to remote command broker"
+)]
 struct Args {
     #[arg(long, default_value = "127.0.0.1:19306")]
     remote_addr: String,
@@ -99,7 +103,29 @@ impl ProxyHandler {
             "command".to_string(),
             json!({
                 "type": "string",
-                "description": "Shell-like command line. Use | for pipelines."
+                "description": "Shell-like command line. Default mode executes via /bin/bash -lc."
+            })
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        );
+        properties.insert(
+            "intent".to_string(),
+            json!({
+                "type": "string",
+                "description": "Why this command is needed (required for audit)."
+            })
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+        );
+        properties.insert(
+            "mode".to_string(),
+            json!({
+                "type": "string",
+                "enum": ["shell", "argv"],
+                "default": "shell",
+                "description": "Execution mode: shell uses /bin/bash -lc, argv uses parsed pipeline."
             })
             .as_object()
             .cloned()
@@ -149,7 +175,10 @@ impl ProxyHandler {
             .unwrap_or_default(),
         );
 
-        let input_schema = ToolInputSchema::new(vec!["command".to_string()], Some(properties));
+        let input_schema = ToolInputSchema::new(
+            vec!["command".to_string(), "intent".to_string()],
+            Some(properties),
+        );
 
         Tool {
             name: "run_command".to_string(),
@@ -199,13 +228,20 @@ impl ServerHandler for ProxyHandler {
         let pipeline = parse_pipeline(&args.command)
             .map_err(|err| CallToolError::invalid_arguments("run_command", Some(err)))?;
 
+        let mode = args.mode.unwrap_or(CommandMode::Shell);
         let request = CommandRequest {
             id: Uuid::new_v4().to_string(),
             client: self.client_id.clone(),
+            intent: args.intent,
+            mode,
+            raw_command: args.command.clone(),
             cwd: args.cwd,
             env: args.env,
             timeout_ms: Some(args.timeout_ms.unwrap_or(self.default_timeout_ms)),
-            max_output_bytes: Some(args.max_output_bytes.unwrap_or(self.default_max_output_bytes)),
+            max_output_bytes: Some(
+                args.max_output_bytes
+                    .unwrap_or(self.default_max_output_bytes),
+            ),
             pipeline,
         };
 
@@ -221,6 +257,8 @@ impl ServerHandler for ProxyHandler {
 #[derive(Debug, Deserialize)]
 struct RunCommandArgs {
     command: String,
+    intent: String,
+    mode: Option<CommandMode>,
     cwd: Option<String>,
     timeout_ms: Option<u64>,
     max_output_bytes: Option<u64>,
@@ -295,7 +333,10 @@ fn response_to_tool_result(response: CommandResponse) -> CallToolResult {
         .ok()
         .and_then(|value| value.as_object().cloned());
 
-    if matches!(response.status, CommandStatus::Error | CommandStatus::Denied) {
+    if matches!(
+        response.status,
+        CommandStatus::Error | CommandStatus::Denied
+    ) {
         structured
             .get_or_insert_with(Map::new)
             .insert("is_error".to_string(), Value::Bool(true));
@@ -328,7 +369,10 @@ mod tests {
         let pipeline = parse_pipeline("ls | grep foo").expect("parse");
         assert_eq!(pipeline.len(), 2);
         assert_eq!(pipeline[0].argv, vec!["ls".to_string()]);
-        assert_eq!(pipeline[1].argv, vec!["grep".to_string(), "foo".to_string()]);
+        assert_eq!(
+            pipeline[1].argv,
+            vec!["grep".to_string(), "foo".to_string()]
+        );
     }
 
     #[test]

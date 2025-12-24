@@ -9,21 +9,25 @@ use anyhow::Context;
 use bytes::Bytes;
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use crossterm::ExecutableCommand;
 use futures_util::{SinkExt, StreamExt};
-use protocol::{CommandRequest, CommandResponse, CommandStage, CommandStatus};
+use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage, CommandStatus};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Terminal;
+use serde::Serialize;
 use std::io;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -31,7 +35,11 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "remote-broker", version, about = "Remote command broker with approval TUI")]
+#[command(
+    name = "remote-broker",
+    version,
+    about = "Remote command broker with approval TUI"
+)]
 struct Args {
     #[arg(long, default_value = "127.0.0.1:19307")]
     listen_addr: String,
@@ -68,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
-    spawn_accept_loop(listener, ui_tx.clone());
+    spawn_accept_loop(listener, ui_tx.clone(), Arc::clone(&output_dir));
 
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
@@ -101,14 +109,21 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn spawn_accept_loop(listener: TcpListener, ui_tx: mpsc::Sender<UiEvent>) {
+fn spawn_accept_loop(
+    listener: TcpListener,
+    ui_tx: mpsc::Sender<UiEvent>,
+    output_dir: Arc<PathBuf>,
+) {
     tokio::spawn(async move {
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
                     let accept_tx = ui_tx.clone();
+                    let output_dir = Arc::clone(&output_dir);
                     tokio::spawn(async move {
-                        if let Err(err) = handle_connection_tui(stream, addr, accept_tx).await {
+                        if let Err(err) =
+                            handle_connection_tui(stream, addr, accept_tx, output_dir).await
+                        {
                             tracing::error!(error = %err, "connection handler failed");
                         }
                     });
@@ -136,7 +151,8 @@ async fn run_headless(
                     let output_dir = Arc::clone(&output_dir);
                     tokio::spawn(async move {
                         if let Err(err) =
-                            handle_connection_auto(stream, addr, whitelist, limits, output_dir).await
+                            handle_connection_auto(stream, addr, whitelist, limits, output_dir)
+                                .await
                         {
                             tracing::error!(error = %err, "connection handler failed");
                         }
@@ -157,6 +173,7 @@ async fn handle_connection_tui(
     stream: TcpStream,
     addr: SocketAddr,
     ui_tx: mpsc::Sender<UiEvent>,
+    output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
     let _ = ui_tx.send(UiEvent::ConnectionOpened).await;
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
@@ -178,16 +195,19 @@ async fn handle_connection_tui(
             id = %request.id,
             client = %request.client,
             peer = %addr,
-            command = %format_pipeline(&request.pipeline),
+            command = %request_summary(&request),
         );
 
         let (respond_to, response_rx) = oneshot::channel();
+        let received_at = SystemTime::now();
         let pending = PendingRequest {
             request,
             peer: addr.to_string(),
-            received_at: Instant::now(),
+            received_at,
+            queued_at: Instant::now(),
             respond_to,
         };
+        spawn_write_request_record(Arc::clone(&output_dir), &pending);
         if ui_tx.send(UiEvent::Request(pending)).await.is_err() {
             break;
         }
@@ -230,8 +250,12 @@ async fn handle_connection_auto(
             id = %request.id,
             client = %request.client,
             peer = %addr,
-            command = %format_pipeline(&request.pipeline),
+            command = %request_summary(&request),
         );
+
+        let received_at = SystemTime::now();
+        let record = RequestRecord::from_request(&request, &addr.to_string(), received_at);
+        spawn_write_request_record_value(Arc::clone(&output_dir), record);
 
         let response = execute_request(&request, &whitelist, &limits, &output_dir).await;
         let payload = serde_json::to_vec(&response)?;
@@ -257,7 +281,7 @@ fn handle_key_event(
                 tracing::info!(
                     event = "request_approved",
                     id = %pending.request.id,
-                    command = %format_pipeline(&pending.request.pipeline),
+                    command = %request_summary(&pending.request),
                 );
                 let ui_tx = ui_tx.clone();
                 let whitelist = Arc::clone(&whitelist);
@@ -277,13 +301,22 @@ fn handle_key_event(
                 tracing::info!(
                     event = "request_denied",
                     id = %pending.request.id,
-                    command = %format_pipeline(&pending.request.pipeline),
+                    command = %request_summary(&pending.request),
                 );
                 let response =
                     CommandResponse::denied(pending.request.id.clone(), "denied by operator");
                 let record = ExecutionRecord::from_response(&pending, &response);
-                let _ = pending.respond_to.send(response);
+                let _ = pending.respond_to.send(response.clone());
                 let _ = ui_tx.try_send(UiEvent::Execution(record));
+                let output_dir = Arc::clone(&output_dir);
+                tokio::spawn(async move {
+                    crate::executor::write_result_record(
+                        &output_dir,
+                        &response,
+                        Duration::from_secs(0),
+                    )
+                    .await;
+                });
             }
         }
         _ => {}
@@ -365,7 +398,8 @@ impl AppState {
 struct PendingRequest {
     request: CommandRequest,
     peer: String,
-    received_at: Instant,
+    received_at: SystemTime,
+    queued_at: Instant,
     respond_to: oneshot::Sender<CommandResponse>,
 }
 
@@ -404,6 +438,56 @@ enum UiEvent {
     Execution(ExecutionRecord),
 }
 
+#[derive(Serialize)]
+struct RequestRecord {
+    id: String,
+    client: String,
+    peer: String,
+    received_at_ms: u64,
+    intent: String,
+    mode: protocol::CommandMode,
+    command: String,
+    raw_command: String,
+    cwd: Option<String>,
+    env: Option<std::collections::BTreeMap<String, String>>,
+    timeout_ms: Option<u64>,
+    max_output_bytes: Option<u64>,
+    pipeline: Vec<CommandStage>,
+}
+
+impl RequestRecord {
+    fn from_request(request: &CommandRequest, peer: &str, received_at: SystemTime) -> Self {
+        Self {
+            id: request.id.clone(),
+            client: request.client.clone(),
+            peer: peer.to_string(),
+            received_at_ms: system_time_ms(received_at),
+            intent: request.intent.clone(),
+            mode: request.mode.clone(),
+            command: request.raw_command.clone(),
+            raw_command: request.raw_command.clone(),
+            cwd: request.cwd.clone(),
+            env: request.env.clone(),
+            timeout_ms: request.timeout_ms,
+            max_output_bytes: request.max_output_bytes,
+            pipeline: request.pipeline.clone(),
+        }
+    }
+}
+
+fn spawn_write_request_record(output_dir: Arc<PathBuf>, pending: &PendingRequest) {
+    let record = RequestRecord::from_request(&pending.request, &pending.peer, pending.received_at);
+    spawn_write_request_record_value(output_dir, record);
+}
+
+fn spawn_write_request_record_value(output_dir: Arc<PathBuf>, record: RequestRecord) {
+    tokio::spawn(async move {
+        if let Err(err) = write_request_record(&output_dir, &record).await {
+            tracing::warn!(error = %err, "failed to write request record");
+        }
+    });
+}
+
 fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -426,7 +510,7 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
             let title = format!(
                 "{}  {}",
                 pending.request.id,
-                format_pipeline(&pending.request.pipeline)
+                request_summary(&pending.request)
             );
             ListItem::new(Line::from(title))
         })
@@ -474,8 +558,13 @@ fn format_request_details(pending: &PendingRequest) -> String {
         format!("id: {}", request.id),
         format!("client: {}", request.client),
         format!("peer: {}", pending.peer),
-        format!("command: {}", format_pipeline(&request.pipeline)),
+        format!("intent: {}", request.intent),
+        format!("mode: {}", format_mode(&request.mode)),
+        format!("command: {}", request.raw_command),
     ];
+    if !request.pipeline.is_empty() {
+        lines.push(format!("pipeline: {}", format_pipeline(&request.pipeline)));
+    }
     if let Some(cwd) = &request.cwd {
         lines.push(format!("cwd: {cwd}"));
     }
@@ -487,7 +576,7 @@ fn format_request_details(pending: &PendingRequest) -> String {
     }
     lines.push(format!(
         "queued_for: {}s",
-        pending.received_at.elapsed().as_secs()
+        pending.queued_at.elapsed().as_secs()
     ));
     lines.join("\n")
 }
@@ -510,6 +599,27 @@ fn format_result_details(result: &ExecutionRecord) -> String {
     lines.join("\n")
 }
 
+fn request_summary(request: &CommandRequest) -> String {
+    match &request.mode {
+        CommandMode::Shell => request.raw_command.clone(),
+        CommandMode::Argv => {
+            let pipeline = format_pipeline(&request.pipeline);
+            if pipeline.is_empty() {
+                request.raw_command.clone()
+            } else {
+                pipeline
+            }
+        }
+    }
+}
+
+fn format_mode(mode: &CommandMode) -> &'static str {
+    match mode {
+        CommandMode::Shell => "shell",
+        CommandMode::Argv => "argv",
+    }
+}
+
 fn format_pipeline(pipeline: &[CommandStage]) -> String {
     pipeline
         .iter()
@@ -527,9 +637,7 @@ fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<io::Stdout>>> {
     Ok(terminal)
 }
 
-fn restore_terminal(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-) -> anyhow::Result<()> {
+fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<()> {
     disable_raw_mode()?;
     terminal.backend_mut().execute(LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -549,8 +657,7 @@ fn init_tracing(
         .with_target(false)
         .json();
 
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let registry = tracing_subscriber::registry().with(filter).with(file_layer);
 
@@ -564,4 +671,17 @@ fn init_tracing(
     }
 
     Ok(file_guard)
+}
+
+async fn write_request_record(output_dir: &Path, record: &RequestRecord) -> anyhow::Result<()> {
+    let path = output_dir.join(format!("{}.request.json", record.id));
+    let payload = serde_json::to_vec_pretty(record)?;
+    tokio::fs::write(path, payload).await?;
+    Ok(())
+}
+
+fn system_time_ms(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }

@@ -25,17 +25,15 @@ impl Whitelist {
     }
 
     pub fn validate(&self, stage: &CommandStage) -> Result<(), String> {
-        let command = stage
-            .command()
-            .ok_or_else(|| "empty command".to_string())?;
+        let command = stage.command().ok_or_else(|| "empty command".to_string())?;
         if !self.is_allowed(command) {
             return Err(format!("command not allowed: {command}"));
         }
 
-        let rule = self
-            .arg_rules
-            .get(command)
-            .or_else(|| self.basename(command).and_then(|name| self.arg_rules.get(name)));
+        let rule = self.arg_rules.get(command).or_else(|| {
+            self.basename(command)
+                .and_then(|name| self.arg_rules.get(name))
+        });
 
         if let Some(rule) = rule {
             for arg in stage.argv.iter().skip(1) {
@@ -59,7 +57,9 @@ impl Whitelist {
     }
 
     fn basename<'a>(&self, command: &'a str) -> Option<&'a str> {
-        Path::new(command).file_name().and_then(|name| name.to_str())
+        Path::new(command)
+            .file_name()
+            .and_then(|name| name.to_str())
     }
 }
 

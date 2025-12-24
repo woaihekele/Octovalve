@@ -1,13 +1,14 @@
 use crate::config::LimitsConfig;
 use crate::whitelist::Whitelist;
 use anyhow::Context;
-use protocol::{CommandRequest, CommandResponse, CommandStage};
+use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage, CommandStatus};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
@@ -19,13 +20,34 @@ pub async fn execute_request(
     limits: &LimitsConfig,
     output_dir: &Path,
 ) -> CommandResponse {
-    if request.pipeline.is_empty() {
-        return CommandResponse::error(request.id.clone(), "empty pipeline");
+    let started_at = Instant::now();
+
+    if matches!(&request.mode, CommandMode::Shell) && request.raw_command.trim().is_empty() {
+        let response = CommandResponse::error(request.id.clone(), "raw_command is empty");
+        write_result_record(output_dir, &response, started_at.elapsed()).await;
+        return response;
     }
 
-    for stage in &request.pipeline {
-        if let Err(message) = whitelist.validate(stage) {
-            return CommandResponse::error(request.id.clone(), message);
+    if matches!(&request.mode, CommandMode::Argv) && request.pipeline.is_empty() {
+        let response = CommandResponse::error(request.id.clone(), "pipeline is empty");
+        write_result_record(output_dir, &response, started_at.elapsed()).await;
+        return response;
+    }
+
+    if request.pipeline.is_empty() {
+        let mode = &request.mode;
+        tracing::warn!(
+            id = %request.id,
+            mode = ?mode,
+            "empty pipeline, skipping whitelist validation"
+        );
+    } else {
+        for stage in &request.pipeline {
+            if let Err(message) = whitelist.validate(stage) {
+                let response = CommandResponse::error(request.id.clone(), message);
+                write_result_record(output_dir, &response, started_at.elapsed()).await;
+                return response;
+            }
         }
     }
 
@@ -34,16 +56,9 @@ pub async fn execute_request(
     let stdout_path = output_dir.join(format!("{}.stdout", request.id));
     let stderr_path = output_dir.join(format!("{}.stderr", request.id));
 
-    match tokio::time::timeout(
+    let response = match tokio::time::timeout(
         timeout,
-        execute_pipeline(
-            &request.pipeline,
-            request.cwd.as_deref(),
-            request.env.as_ref(),
-            max_bytes,
-            &stdout_path,
-            &stderr_path,
-        ),
+        execute_command(request, max_bytes, &stdout_path, &stderr_path),
     )
     .await
     {
@@ -55,13 +70,57 @@ pub async fn execute_request(
         ),
         Ok(Err(err)) => CommandResponse::error(request.id.clone(), err.to_string()),
         Err(_) => CommandResponse::error(request.id.clone(), "command timed out"),
-    }
+    };
+
+    write_result_record(output_dir, &response, started_at.elapsed()).await;
+    response
 }
 
 struct ExecutionResult {
     exit_code: i32,
     stdout: Option<String>,
     stderr: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ResultRecord {
+    id: String,
+    status: CommandStatus,
+    exit_code: Option<i32>,
+    error: Option<String>,
+    duration_ms: u128,
+}
+
+async fn execute_command(
+    request: &CommandRequest,
+    max_bytes: usize,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> anyhow::Result<ExecutionResult> {
+    match request.mode {
+        CommandMode::Shell => {
+            execute_shell(
+                &request.raw_command,
+                request.cwd.as_deref(),
+                request.env.as_ref(),
+                max_bytes,
+                stdout_path,
+                stderr_path,
+            )
+            .await
+        }
+        CommandMode::Argv => {
+            execute_pipeline(
+                &request.pipeline,
+                request.cwd.as_deref(),
+                request.env.as_ref(),
+                max_bytes,
+                stdout_path,
+                stderr_path,
+            )
+            .await
+        }
+    }
 }
 
 async fn execute_pipeline(
@@ -107,14 +166,8 @@ async fn execute_pipeline(
 
     let mut pipe_tasks = Vec::new();
     for index in 0..children.len().saturating_sub(1) {
-        let mut stdout = children[index]
-            .stdout
-            .take()
-            .context("missing stdout")?;
-        let mut stdin = children[index + 1]
-            .stdin
-            .take()
-            .context("missing stdin")?;
+        let mut stdout = children[index].stdout.take().context("missing stdout")?;
+        let mut stdin = children[index + 1].stdin.take().context("missing stdin")?;
         pipe_tasks.push(tokio::spawn(async move {
             let _ = tokio::io::copy(&mut stdout, &mut stdin).await;
         }));
@@ -184,7 +237,83 @@ async fn execute_pipeline(
         Some(out)
     };
 
-    let stderr = if stderr.is_empty() { None } else { Some(stderr) };
+    let stderr = if stderr.is_empty() {
+        None
+    } else {
+        Some(stderr)
+    };
+
+    Ok(ExecutionResult {
+        exit_code,
+        stdout,
+        stderr,
+    })
+}
+
+async fn execute_shell(
+    raw_command: &str,
+    cwd: Option<&str>,
+    env: Option<&BTreeMap<String, String>>,
+    max_bytes: usize,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> anyhow::Result<ExecutionResult> {
+    let stdout_file = File::create(stdout_path).await?;
+    let stderr_file = File::create(stderr_path).await?;
+    let stdout_writer = Arc::new(Mutex::new(stdout_file));
+    let stderr_writer = Arc::new(Mutex::new(stderr_file));
+
+    let mut cmd = Command::new("/bin/bash");
+    cmd.arg("-lc").arg(raw_command);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    if let Some(env) = env {
+        cmd.envs(env);
+    }
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    cmd.kill_on_drop(true);
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("spawn /bin/bash -lc {raw_command}"))?;
+
+    let stdout = child.stdout.take().context("missing stdout")?;
+    let stderr = child.stderr.take().context("missing stderr")?;
+    let stdout_task = tokio::spawn(read_stream_capture(stdout, max_bytes, Some(stdout_writer)));
+    let stderr_task = tokio::spawn(read_stream_capture(stderr, max_bytes, Some(stderr_writer)));
+
+    let status = child.wait().await.context("wait on child")?;
+    let exit_code = status.code().unwrap_or(1);
+
+    let (stdout_bytes, stdout_truncated) = stdout_task
+        .await
+        .context("stdout task join")?
+        .context("stdout read")?;
+    let (stderr_bytes, stderr_truncated) = stderr_task
+        .await
+        .context("stderr task join")?
+        .context("stderr read")?;
+
+    let stdout = if stdout_bytes.is_empty() {
+        None
+    } else {
+        let mut out = String::from_utf8_lossy(&stdout_bytes).to_string();
+        if stdout_truncated {
+            out.push_str("\n[output truncated]");
+        }
+        Some(out)
+    };
+    let stderr = if stderr_bytes.is_empty() {
+        None
+    } else {
+        let mut out = String::from_utf8_lossy(&stderr_bytes).to_string();
+        if stderr_truncated {
+            out.push_str("\n[output truncated]");
+        }
+        Some(out)
+    };
 
     Ok(ExecutionResult {
         exit_code,
@@ -237,6 +366,26 @@ async fn read_stream_capture<R: AsyncRead + Unpin>(
         }
     }
     Ok((buffer, truncated))
+}
+
+pub async fn write_result_record(
+    output_dir: &Path,
+    response: &CommandResponse,
+    duration: Duration,
+) {
+    let record = ResultRecord {
+        id: response.id.clone(),
+        status: response.status.clone(),
+        exit_code: response.exit_code,
+        error: response.error.clone(),
+        duration_ms: duration.as_millis(),
+    };
+    let path = output_dir.join(format!("{}.result.json", response.id));
+    if let Ok(payload) = serde_json::to_vec_pretty(&record) {
+        if let Err(err) = tokio::fs::write(path, payload).await {
+            tracing::warn!(error = %err, "failed to write result record");
+        }
+    }
 }
 
 async fn write_chunk(writer: &Arc<Mutex<File>>, data: &[u8]) -> io::Result<()> {

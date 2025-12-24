@@ -13,9 +13,19 @@ impl CommandStage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandMode {
+    Shell,
+    Argv,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommandRequest {
     pub id: String,
     pub client: String,
+    pub intent: String,
+    pub mode: CommandMode,
+    pub raw_command: String,
     #[serde(default)]
     pub cwd: Option<String>,
     #[serde(default)]
@@ -99,11 +109,11 @@ mod tests {
         let request = CommandRequest {
             id: "req-1".to_string(),
             client: "local-proxy".to_string(),
+            intent: "list files".to_string(),
+            mode: CommandMode::Shell,
+            raw_command: "echo hello".to_string(),
             cwd: Some("/tmp".to_string()),
-            env: Some(BTreeMap::from([(
-                "LANG".to_string(),
-                "C".to_string(),
-            )])),
+            env: Some(BTreeMap::from([("LANG".to_string(), "C".to_string())])),
             timeout_ms: Some(5000),
             max_output_bytes: Some(1024),
             pipeline: vec![CommandStage {
@@ -118,12 +128,8 @@ mod tests {
 
     #[test]
     fn command_response_roundtrip() {
-        let response = CommandResponse::completed(
-            "req-2",
-            0,
-            Some("ok".to_string()),
-            Some(String::new()),
-        );
+        let response =
+            CommandResponse::completed("req-2", 0, Some("ok".to_string()), Some(String::new()));
         let json = serde_json::to_string(&response).expect("serialize");
         let decoded: CommandResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(response, decoded);

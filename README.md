@@ -47,6 +47,12 @@ cargo run -p local-proxy -- --remote-addr 127.0.0.1:19306
 
 5) 将 MCP 客户端配置指向 `local-proxy`（stdio 模式）。
 
+## run_command 参数
+- `command`：命令字符串。
+- `intent`：必填，说明为什么要执行该命令（用于审计）。
+- `mode`：`shell` 或 `argv`，默认 `shell`（`shell` 使用 `/bin/bash -lc` 执行）。
+- 其他可选参数：`cwd`、`timeout_ms`、`max_output_bytes`、`env`。
+
 ## CLI 选项
 remote-broker：
 - `--listen-addr`（默认：`127.0.0.1:19307`）
@@ -64,14 +70,17 @@ local-proxy：
 ## 安全说明
 - 无内置认证，请使用 SSH 隧道并确保服务仅监听 `127.0.0.1`。
 - 命令执行前进行白名单与参数规则校验。
-- 远端执行不使用 `sh -c`，避免注入。
+- `argv` 模式直接执行可执行文件，不经过 shell；`shell` 模式使用 `/bin/bash -lc`。
 - 建议使用非 root 用户运行并关注审计日志。
 
 ## 输出保存
-每次请求都会在远端保存完整输出：
+每次请求都会在远端保存完整输出与请求/结果信息：
+- `logs/requests/<id>.request.json`
+- `logs/requests/<id>.result.json`
 - `logs/requests/<id>.stdout`
 - `logs/requests/<id>.stderr`
 
+`request.json` 会包含 `intent`、`mode`、`raw_command`、`pipeline` 等完整请求字段。
 审计信息仍写入 `logs/audit.log`，包含请求元信息与命令。
 
 ## 测试
