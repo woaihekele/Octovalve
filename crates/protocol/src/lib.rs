@@ -23,6 +23,7 @@ pub enum CommandMode {
 pub struct CommandRequest {
     pub id: String,
     pub client: String,
+    pub target: String,
     pub intent: String,
     pub mode: CommandMode,
     pub raw_command: String,
@@ -109,6 +110,7 @@ mod tests {
         let request = CommandRequest {
             id: "req-1".to_string(),
             client: "local-proxy".to_string(),
+            target: "default".to_string(),
             intent: "list files".to_string(),
             mode: CommandMode::Shell,
             raw_command: "echo hello".to_string(),

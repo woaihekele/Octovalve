@@ -203,6 +203,7 @@ async fn handle_connection_tui(
             event = "request_received",
             id = %request.id,
             client = %request.client,
+            target = %request.target,
             peer = %addr,
             command = %request_summary(&request),
         );
@@ -278,6 +279,7 @@ async fn handle_connection_auto(
             event = "request_received",
             id = %request.id,
             client = %request.client,
+            target = %request.target,
             peer = %addr,
             command = %request_summary(&request),
         );
@@ -557,6 +559,7 @@ enum UiEvent {
 struct RequestRecord {
     id: String,
     client: String,
+    target: String,
     peer: String,
     received_at_ms: u64,
     intent: String,
@@ -575,6 +578,7 @@ impl RequestRecord {
         Self {
             id: request.id.clone(),
             client: request.client.clone(),
+            target: request.target.clone(),
             peer: peer.to_string(),
             received_at_ms: system_time_ms(received_at),
             intent: request.intent.clone(),
@@ -856,6 +860,7 @@ fn format_request_details(pending: &PendingRequest) -> String {
     let mut lines = vec![
         format!("id: {}", request.id),
         format!("client: {}", request.client),
+        format!("target: {}", request.target),
         format!("peer: {}", pending.peer),
         format!("intent: {}", request.intent),
         format!("mode: {}", format_mode(&request.mode)),
