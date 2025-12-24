@@ -8,7 +8,7 @@ use crate::whitelist::Whitelist;
 use anyhow::Context;
 use bytes::Bytes;
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -301,10 +301,15 @@ fn handle_key_event(
     limits: Arc<crate::config::LimitsConfig>,
     output_dir: Arc<PathBuf>,
 ) -> bool {
+    if app.view_mode == ViewMode::ResultFullscreen {
+        return handle_result_fullscreen_key(key, app);
+    }
+
     match key.code {
         KeyCode::Char('q') | KeyCode::Char('Q') => return true,
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
+        KeyCode::Char('r') | KeyCode::Char('R') => app.enter_result_fullscreen(),
         KeyCode::Char('a') | KeyCode::Char('A') => {
             if let Some(pending) = app.pop_selected() {
                 tracing::info!(
@@ -353,6 +358,13 @@ fn handle_key_event(
     false
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum ViewMode {
+    #[default]
+    Normal,
+    ResultFullscreen,
+}
+
 #[derive(Default)]
 struct AppState {
     queue: Vec<PendingRequest>,
@@ -360,6 +372,12 @@ struct AppState {
     list_state: ListState,
     connections: usize,
     last_result: Option<ExecutionRecord>,
+    view_mode: ViewMode,
+    result_scroll: usize,
+    result_max_scroll: usize,
+    result_total_lines: usize,
+    result_view_height: u16,
+    pending_g: bool,
 }
 
 impl AppState {
@@ -377,9 +395,62 @@ impl AppState {
             }
             UiEvent::Execution(record) => {
                 self.last_result = Some(record);
+                self.result_scroll = 0;
+                self.pending_g = false;
             }
         }
         self.sync_selection();
+    }
+
+    fn enter_result_fullscreen(&mut self) {
+        self.view_mode = ViewMode::ResultFullscreen;
+        self.result_scroll = 0;
+        self.pending_g = false;
+    }
+
+    fn exit_result_fullscreen(&mut self) {
+        self.view_mode = ViewMode::Normal;
+        self.pending_g = false;
+    }
+
+    fn set_result_metrics(&mut self, total_lines: usize, view_height: u16) {
+        let total_lines = total_lines.max(1);
+        self.result_total_lines = total_lines;
+        self.result_view_height = view_height;
+        self.result_max_scroll = total_lines.saturating_sub(view_height as usize);
+        if self.result_scroll > self.result_max_scroll {
+            self.result_scroll = self.result_max_scroll;
+        }
+    }
+
+    fn scroll_down(&mut self, lines: usize) {
+        self.result_scroll = (self.result_scroll + lines).min(self.result_max_scroll);
+        self.pending_g = false;
+    }
+
+    fn scroll_up(&mut self, lines: usize) {
+        self.result_scroll = self.result_scroll.saturating_sub(lines);
+        self.pending_g = false;
+    }
+
+    fn scroll_to_top(&mut self) {
+        self.result_scroll = 0;
+        self.pending_g = false;
+    }
+
+    fn scroll_to_bottom(&mut self) {
+        self.result_scroll = self.result_max_scroll;
+        self.pending_g = false;
+    }
+
+    fn page_size(&self) -> usize {
+        let height = self.result_view_height.max(1) as usize;
+        height.saturating_sub(1).max(1)
+    }
+
+    fn half_page_size(&self) -> usize {
+        let height = self.result_view_height.max(1) as usize;
+        (height / 2).max(1)
     }
 
     fn select_next(&mut self) {
@@ -518,6 +589,11 @@ fn spawn_write_request_record_value(output_dir: Arc<PathBuf>, record: RequestRec
 }
 
 fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
+    if app.view_mode == ViewMode::ResultFullscreen {
+        draw_result_fullscreen(frame, app);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(6), Constraint::Length(3)])
@@ -572,7 +648,7 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     frame.render_widget(result_block, right[1]);
 
     let footer = Paragraph::new(Line::from(vec![
-        Span::raw("A=approve  D=deny  ↑/↓=select  Q=quit  "),
+        Span::raw("A=approve  D=deny  ↑/↓=select  R=full  Q=quit  "),
         Span::styled(
             format!("connections={}", app.connections),
             Style::default().add_modifier(Modifier::BOLD),
@@ -580,6 +656,107 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     ]))
     .block(Block::default().borders(Borders::ALL));
     frame.render_widget(footer, chunks[1]);
+}
+
+fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .split(frame.area());
+
+    let result_text = if let Some(result) = &app.last_result {
+        format_result_details(result)
+    } else {
+        "no execution yet".to_string()
+    };
+
+    let result_block = Block::default()
+        .title("Result (fullscreen)")
+        .borders(Borders::ALL);
+    let inner = result_block.inner(chunks[0]);
+    let wrapped = wrap_text_lines(&result_text, inner.width.max(1) as usize);
+    app.set_result_metrics(wrapped.len(), inner.height);
+    let rendered = wrapped.join("\n");
+
+    let result_panel = Paragraph::new(rendered)
+        .block(result_block)
+        .scroll((app.result_scroll as u16, 0));
+    frame.render_widget(result_panel, chunks[0]);
+
+    let footer = Paragraph::new(Line::from(vec![
+        Span::raw("j/k=scroll  gg/G=top/bottom  Ctrl+f/b=page  R/Esc=back  Q=quit  "),
+        Span::styled(
+            format!(
+                "line {}/{}",
+                app.result_scroll.saturating_add(1),
+                app.result_total_lines
+            ),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(footer, chunks[1]);
+}
+
+fn wrap_text_lines(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut lines = Vec::new();
+    for raw in text.split('\n') {
+        if raw.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let mut buffer = String::new();
+        let mut count = 0usize;
+        for ch in raw.chars() {
+            buffer.push(ch);
+            count += 1;
+            if count >= width {
+                lines.push(std::mem::take(&mut buffer));
+                count = 0;
+            }
+        }
+        if !buffer.is_empty() {
+            lines.push(buffer);
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+        KeyCode::Esc | KeyCode::Char('r') | KeyCode::Char('R') => app.exit_result_fullscreen(),
+        KeyCode::Down | KeyCode::Char('j') => app.scroll_down(1),
+        KeyCode::Up | KeyCode::Char('k') => app.scroll_up(1),
+        KeyCode::PageDown => app.scroll_down(app.page_size()),
+        KeyCode::PageUp => app.scroll_up(app.page_size()),
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.scroll_down(app.page_size());
+        }
+        KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.scroll_up(app.page_size());
+        }
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.scroll_down(app.half_page_size());
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.scroll_up(app.half_page_size());
+        }
+        KeyCode::Char('g') => {
+            if app.pending_g {
+                app.scroll_to_top();
+            } else {
+                app.pending_g = true;
+            }
+        }
+        KeyCode::Char('G') => app.scroll_to_bottom(),
+        _ => app.pending_g = false,
+    }
+    false
 }
 
 fn format_request_details(pending: &PendingRequest) -> String {
