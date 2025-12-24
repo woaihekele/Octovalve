@@ -579,7 +579,7 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         ),
     ]))
     .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(footer, chunks[2]);
+    frame.render_widget(footer, chunks[1]);
 }
 
 fn format_request_details(pending: &PendingRequest) -> String {
