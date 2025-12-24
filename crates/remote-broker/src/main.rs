@@ -520,17 +520,18 @@ fn spawn_write_request_record_value(output_dir: Arc<PathBuf>, record: RequestRec
 fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(5),
-            Constraint::Length(7),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(6), Constraint::Length(3)])
         .split(frame.area());
 
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(chunks[0]);
+
+    let right = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
+        .split(body[1]);
 
     let queue_items: Vec<ListItem> = app
         .queue
@@ -558,7 +559,7 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     let detail_block = Paragraph::new(details)
         .block(Block::default().title("Details").borders(Borders::ALL))
         .wrap(Wrap { trim: true });
-    frame.render_widget(detail_block, body[1]);
+    frame.render_widget(detail_block, right[0]);
 
     let result_text = if let Some(result) = &app.last_result {
         format_result_details(result)
@@ -568,7 +569,7 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     let result_block = Paragraph::new(result_text)
         .block(Block::default().title("Last Result").borders(Borders::ALL))
         .wrap(Wrap { trim: true });
-    frame.render_widget(result_block, chunks[1]);
+    frame.render_widget(result_block, right[1]);
 
     let footer = Paragraph::new(Line::from(vec![
         Span::raw("A=approve  D=deny  ↑/↓=select  Q=quit  "),
