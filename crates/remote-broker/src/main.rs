@@ -55,13 +55,15 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
     let whitelist = Arc::new(Whitelist::from_config(&config.whitelist)?);
     let limits = Arc::new(config.limits);
+    let output_dir = Arc::new(args.audit_dir.join("requests"));
+    std::fs::create_dir_all(&*output_dir)?;
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
         .with_context(|| format!("failed to bind {}", args.listen_addr))?;
 
     if args.auto_approve {
-        run_headless(listener, whitelist, limits).await?;
+        run_headless(listener, whitelist, limits, output_dir).await?;
         return Ok(());
     }
 
@@ -87,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
                     ui_tx.clone(),
                     Arc::clone(&whitelist),
                     Arc::clone(&limits),
+                    Arc::clone(&output_dir),
                 ) {
                     break;
                 }
@@ -122,6 +125,7 @@ async fn run_headless(
     listener: TcpListener,
     whitelist: Arc<Whitelist>,
     limits: Arc<crate::config::LimitsConfig>,
+    output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
     tokio::spawn(async move {
         loop {
@@ -129,9 +133,10 @@ async fn run_headless(
                 Ok((stream, addr)) => {
                     let whitelist = Arc::clone(&whitelist);
                     let limits = Arc::clone(&limits);
+                    let output_dir = Arc::clone(&output_dir);
                     tokio::spawn(async move {
                         if let Err(err) =
-                            handle_connection_auto(stream, addr, whitelist, limits).await
+                            handle_connection_auto(stream, addr, whitelist, limits, output_dir).await
                         {
                             tracing::error!(error = %err, "connection handler failed");
                         }
@@ -204,6 +209,7 @@ async fn handle_connection_auto(
     addr: SocketAddr,
     whitelist: Arc<Whitelist>,
     limits: Arc<crate::config::LimitsConfig>,
+    output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
     while let Some(frame) = framed.next().await {
@@ -227,7 +233,7 @@ async fn handle_connection_auto(
             command = %format_pipeline(&request.pipeline),
         );
 
-        let response = execute_request(&request, &whitelist, &limits).await;
+        let response = execute_request(&request, &whitelist, &limits, &output_dir).await;
         let payload = serde_json::to_vec(&response)?;
         framed.send(Bytes::from(payload)).await?;
     }
@@ -240,6 +246,7 @@ fn handle_key_event(
     ui_tx: mpsc::Sender<UiEvent>,
     whitelist: Arc<Whitelist>,
     limits: Arc<crate::config::LimitsConfig>,
+    output_dir: Arc<PathBuf>,
 ) -> bool {
     match key.code {
         KeyCode::Char('q') | KeyCode::Char('Q') => return true,
@@ -255,8 +262,10 @@ fn handle_key_event(
                 let ui_tx = ui_tx.clone();
                 let whitelist = Arc::clone(&whitelist);
                 let limits = Arc::clone(&limits);
+                let output_dir = Arc::clone(&output_dir);
                 tokio::spawn(async move {
-                    let response = execute_request(&pending.request, &whitelist, &limits).await;
+                    let response =
+                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
                     let record = ExecutionRecord::from_response(&pending, &response);
                     let _ = pending.respond_to.send(response);
                     let _ = ui_tx.send(UiEvent::Execution(record)).await;

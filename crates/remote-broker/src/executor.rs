@@ -6,14 +6,18 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::fs::File;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
+use tokio::sync::Mutex;
 
 pub async fn execute_request(
     request: &CommandRequest,
     whitelist: &Whitelist,
     limits: &LimitsConfig,
+    output_dir: &Path,
 ) -> CommandResponse {
     if request.pipeline.is_empty() {
         return CommandResponse::error(request.id.clone(), "empty pipeline");
@@ -27,6 +31,8 @@ pub async fn execute_request(
 
     let timeout = Duration::from_secs(limits.timeout_secs);
     let max_bytes = usize::try_from(limits.max_output_bytes).unwrap_or(usize::MAX);
+    let stdout_path = output_dir.join(format!("{}.stdout", request.id));
+    let stderr_path = output_dir.join(format!("{}.stderr", request.id));
 
     match tokio::time::timeout(
         timeout,
@@ -35,6 +41,8 @@ pub async fn execute_request(
             request.cwd.as_deref(),
             request.env.as_ref(),
             max_bytes,
+            &stdout_path,
+            &stderr_path,
         ),
     )
     .await
@@ -61,8 +69,14 @@ async fn execute_pipeline(
     cwd: Option<&str>,
     env: Option<&BTreeMap<String, String>>,
     max_bytes: usize,
+    stdout_path: &Path,
+    stderr_path: &Path,
 ) -> anyhow::Result<ExecutionResult> {
     let mut children = Vec::with_capacity(pipeline.len());
+    let stdout_file = File::create(stdout_path).await?;
+    let stderr_file = File::create(stderr_path).await?;
+    let stdout_writer = Arc::new(Mutex::new(stdout_file));
+    let stderr_writer = Arc::new(Mutex::new(stderr_file));
 
     for (index, stage) in pipeline.iter().enumerate() {
         let command = stage
@@ -109,7 +123,12 @@ async fn execute_pipeline(
     let mut stderr_tasks = Vec::new();
     for child in &mut children {
         if let Some(stderr) = child.stderr.take() {
-            stderr_tasks.push(tokio::spawn(read_stream_limited(stderr, max_bytes)));
+            let writer = Arc::clone(&stderr_writer);
+            stderr_tasks.push(tokio::spawn(read_stream_capture(
+                stderr,
+                max_bytes,
+                Some(writer),
+            )));
         }
     }
 
@@ -120,7 +139,8 @@ async fn execute_pipeline(
             .stdout
             .take()
             .context("missing stdout")?;
-        tokio::spawn(read_stream_limited(last, max_bytes))
+        let writer = Arc::clone(&stdout_writer);
+        tokio::spawn(read_stream_capture(last, max_bytes, Some(writer)))
     };
 
     for task in pipe_tasks {
@@ -189,9 +209,10 @@ fn resolve_command_path(command: &str) -> String {
     command.to_string()
 }
 
-async fn read_stream_limited<R: AsyncRead + Unpin>(
+async fn read_stream_capture<R: AsyncRead + Unpin>(
     mut reader: R,
     max_bytes: usize,
+    writer: Option<Arc<Mutex<File>>>,
 ) -> io::Result<(Vec<u8>, bool)> {
     let mut buffer = Vec::new();
     let mut truncated = false;
@@ -200,6 +221,9 @@ async fn read_stream_limited<R: AsyncRead + Unpin>(
         let n = reader.read(&mut chunk).await?;
         if n == 0 {
             break;
+        }
+        if let Some(writer) = &writer {
+            write_chunk(writer, &chunk[..n]).await?;
         }
         if buffer.len() < max_bytes {
             let remaining = max_bytes - buffer.len();
@@ -213,6 +237,11 @@ async fn read_stream_limited<R: AsyncRead + Unpin>(
         }
     }
     Ok((buffer, truncated))
+}
+
+async fn write_chunk(writer: &Arc<Mutex<File>>, data: &[u8]) -> io::Result<()> {
+    let mut file = writer.lock().await;
+    file.write_all(data).await
 }
 
 #[cfg(test)]

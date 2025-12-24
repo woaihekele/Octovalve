@@ -67,6 +67,13 @@ local-proxy：
 - 远端执行不使用 `sh -c`，避免注入。
 - 建议使用非 root 用户运行并关注审计日志。
 
+## 输出保存
+每次请求都会在远端保存完整输出：
+- `logs/requests/<id>.stdout`
+- `logs/requests/<id>.stderr`
+
+审计信息仍写入 `logs/audit.log`，包含请求元信息与命令。
+
 ## 测试
 
 ```bash
