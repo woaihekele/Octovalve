@@ -17,7 +17,7 @@ use futures_util::{SinkExt, StreamExt};
 use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage, CommandStatus};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Terminal;
@@ -301,12 +301,25 @@ fn handle_key_event(
     limits: Arc<crate::config::LimitsConfig>,
     output_dir: Arc<PathBuf>,
 ) -> bool {
+    if app.confirm_quit {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+            KeyCode::Esc => {
+                app.confirm_quit = false;
+                return false;
+            }
+            _ => {
+                app.confirm_quit = false;
+            }
+        }
+    }
+
     if app.view_mode == ViewMode::ResultFullscreen {
         return handle_result_fullscreen_key(key, app);
     }
 
     match key.code {
-        KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+        KeyCode::Char('q') | KeyCode::Char('Q') => app.confirm_quit = true,
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
         KeyCode::Char('r') | KeyCode::Char('R') => app.enter_result_fullscreen(),
@@ -378,6 +391,7 @@ struct AppState {
     result_total_lines: usize,
     result_view_height: u16,
     pending_g: bool,
+    confirm_quit: bool,
 }
 
 impl AppState {
@@ -406,6 +420,7 @@ impl AppState {
         self.view_mode = ViewMode::ResultFullscreen;
         self.result_scroll = 0;
         self.pending_g = false;
+        self.confirm_quit = false;
     }
 
     fn exit_result_fullscreen(&mut self) {
@@ -594,6 +609,7 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         return;
     }
 
+    let theme = Theme::dark();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(6), Constraint::Length(3)])
@@ -622,8 +638,9 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         })
         .collect();
     let queue = List::new(queue_items)
-        .block(Block::default().title("Pending").borders(Borders::ALL))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .block(theme.block("Pending"))
+        .style(Style::default().fg(theme.text))
+        .highlight_style(theme.highlight_style())
         .highlight_symbol(">> ");
     frame.render_stateful_widget(queue, body[0], &mut app.list_state);
 
@@ -633,7 +650,8 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         "no pending request".to_string()
     };
     let detail_block = Paragraph::new(details)
-        .block(Block::default().title("Details").borders(Borders::ALL))
+        .block(theme.block("Details"))
+        .style(Style::default().fg(theme.text))
         .wrap(Wrap { trim: true });
     frame.render_widget(detail_block, right[0]);
 
@@ -643,22 +661,32 @@ fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         "no execution yet".to_string()
     };
     let result_block = Paragraph::new(result_text)
-        .block(Block::default().title("Last Result").borders(Borders::ALL))
+        .block(theme.block("Last Result"))
+        .style(Style::default().fg(theme.text))
         .wrap(Wrap { trim: true });
     frame.render_widget(result_block, right[1]);
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::raw("A=approve  D=deny  ↑/↓=select  R=full  Q=quit  "),
-        Span::styled(
-            format!("connections={}", app.connections),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .block(Block::default().borders(Borders::ALL));
+    let mut footer_spans = vec![Span::styled(
+        "A=approve  D=deny  ↑/↓=select  R=full  Q=quit  ",
+        theme.help_style(),
+    )];
+    if app.confirm_quit {
+        footer_spans.push(Span::styled(
+            "再次按 Q 退出 / Esc 取消  ",
+            theme.warn_style(),
+        ));
+    }
+    footer_spans.push(Span::styled(
+        format!("connections={}", app.connections),
+        theme.accent_style(),
+    ));
+    let footer = Paragraph::new(Line::from(footer_spans))
+        .block(theme.block("Controls"));
     frame.render_widget(footer, chunks[1]);
 }
 
 fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
+    let theme = Theme::dark();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(3)])
@@ -670,9 +698,7 @@ fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
         "no execution yet".to_string()
     };
 
-    let result_block = Block::default()
-        .title("Result (fullscreen)")
-        .borders(Borders::ALL);
+    let result_block = theme.block("Result (fullscreen)");
     let inner = result_block.inner(chunks[0]);
     let wrapped = wrap_text_lines(&result_text, inner.width.max(1) as usize);
     app.set_result_metrics(wrapped.len(), inner.height);
@@ -680,21 +706,30 @@ fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
 
     let result_panel = Paragraph::new(rendered)
         .block(result_block)
+        .style(Style::default().fg(theme.text))
         .scroll((app.result_scroll as u16, 0));
     frame.render_widget(result_panel, chunks[0]);
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::raw("j/k=scroll  gg/G=top/bottom  Ctrl+f/b=page  R/Esc=back  Q=quit  "),
-        Span::styled(
-            format!(
-                "line {}/{}",
-                app.result_scroll.saturating_add(1),
-                app.result_total_lines
-            ),
-            Style::default().add_modifier(Modifier::BOLD),
+    let mut footer_spans = vec![Span::styled(
+        "j/k=scroll  gg/G=top/bottom  Ctrl+f/b=page  R/Esc=back  Q=quit  ",
+        theme.help_style(),
+    )];
+    if app.confirm_quit {
+        footer_spans.push(Span::styled(
+            "再次按 Q 退出 / Esc 取消  ",
+            theme.warn_style(),
+        ));
+    }
+    footer_spans.push(Span::styled(
+        format!(
+            "line {}/{}",
+            app.result_scroll.saturating_add(1),
+            app.result_total_lines
         ),
-    ]))
-    .block(Block::default().borders(Borders::ALL));
+        theme.accent_style(),
+    ));
+    let footer = Paragraph::new(Line::from(footer_spans))
+        .block(theme.block("Controls"));
     frame.render_widget(footer, chunks[1]);
 }
 
@@ -728,7 +763,7 @@ fn wrap_text_lines(text: &str, width: usize) -> Vec<String> {
 
 fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
     match key.code {
-        KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+        KeyCode::Char('q') | KeyCode::Char('Q') => app.confirm_quit = true,
         KeyCode::Esc | KeyCode::Char('r') | KeyCode::Char('R') => app.exit_result_fullscreen(),
         KeyCode::Down | KeyCode::Char('j') => app.scroll_down(1),
         KeyCode::Up | KeyCode::Char('k') => app.scroll_up(1),
@@ -757,6 +792,63 @@ fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
         _ => app.pending_g = false,
     }
     false
+}
+
+struct Theme {
+    border: Color,
+    title: Color,
+    text: Color,
+    dim: Color,
+    accent: Color,
+    highlight_fg: Color,
+    highlight_bg: Color,
+    warn: Color,
+}
+
+impl Theme {
+    fn dark() -> Self {
+        Self {
+            border: Color::DarkGray,
+            title: Color::Blue,
+            text: Color::White,
+            dim: Color::Gray,
+            accent: Color::Cyan,
+            highlight_fg: Color::White,
+            highlight_bg: Color::DarkGray,
+            warn: Color::Yellow,
+        }
+    }
+
+    fn block<'a>(&self, title: &'a str) -> Block<'a> {
+        Block::default()
+            .title(Span::styled(
+                title,
+                Style::default()
+                    .fg(self.title)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.border))
+    }
+
+    fn highlight_style(&self) -> Style {
+        Style::default()
+            .fg(self.highlight_fg)
+            .bg(self.highlight_bg)
+            .add_modifier(Modifier::BOLD)
+    }
+
+    fn help_style(&self) -> Style {
+        Style::default().fg(self.dim)
+    }
+
+    fn accent_style(&self) -> Style {
+        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+    }
+
+    fn warn_style(&self) -> Style {
+        Style::default().fg(self.warn).add_modifier(Modifier::BOLD)
+    }
 }
 
 fn format_request_details(pending: &PendingRequest) -> String {
