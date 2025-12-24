@@ -15,6 +15,8 @@
 1) 在远端准备 `config.toml`：
 
 ```toml
+auto_approve_allowed = true
+
 [whitelist]
 allowed = ["ls", "tail", "/usr/bin/grep"]
 denied = ["rm", "shutdown"]

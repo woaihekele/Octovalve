@@ -8,6 +8,8 @@ pub struct Config {
     pub whitelist: WhitelistConfig,
     #[serde(default)]
     pub limits: LimitsConfig,
+    #[serde(default = "default_auto_approve_allowed")]
+    pub auto_approve_allowed: bool,
 }
 
 impl Config {
@@ -41,4 +43,8 @@ impl Default for LimitsConfig {
             max_output_bytes: 1024 * 1024,
         }
     }
+}
+
+fn default_auto_approve_allowed() -> bool {
+    true
 }

@@ -59,6 +59,19 @@ impl Whitelist {
         Ok(())
     }
 
+    pub fn allows_request(&self, request: &protocol::CommandRequest) -> bool {
+        if self.allowed.is_empty() {
+            return false;
+        }
+        if request.pipeline.is_empty() {
+            return false;
+        }
+        request
+            .pipeline
+            .iter()
+            .all(|stage| self.validate_allow(stage).is_ok())
+    }
+
     #[allow(dead_code)]
     fn is_allowed(&self, command: &str) -> bool {
         if self.allowed.contains(command) {

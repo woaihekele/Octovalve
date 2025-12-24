@@ -1,3 +1,5 @@
+auto_approve_allowed = true
+
 [whitelist]
 allowed = ["ls", "tail", "grep"]
 denied = [

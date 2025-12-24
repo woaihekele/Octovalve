@@ -29,6 +29,7 @@ pub(crate) fn run_tui_service(
     whitelist: Arc<Whitelist>,
     limits: Arc<LimitsConfig>,
     output_dir: Arc<PathBuf>,
+    auto_approve_allowed: bool,
     ui_tx: mpsc::Sender<ServiceEvent>,
     ui_cmd_rx: mpsc::Receiver<ServiceCommand>,
 ) {
@@ -40,7 +41,16 @@ pub(crate) fn run_tui_service(
         Arc::clone(&whitelist),
     );
     tokio::spawn(async move {
-        service_loop(server_rx, ui_cmd_rx, ui_tx, whitelist, limits, output_dir).await;
+        service_loop(
+            server_rx,
+            ui_cmd_rx,
+            ui_tx,
+            whitelist,
+            limits,
+            output_dir,
+            auto_approve_allowed,
+        )
+        .await;
     });
 }
 
@@ -51,12 +61,22 @@ async fn service_loop(
     whitelist: Arc<Whitelist>,
     limits: Arc<LimitsConfig>,
     output_dir: Arc<PathBuf>,
+    auto_approve_allowed: bool,
 ) {
     let mut state = ServiceState::default();
     loop {
         tokio::select! {
             Some(event) = server_rx.recv() => {
-                handle_server_event(event, &mut state, &ui_tx).await;
+                handle_server_event(
+                    event,
+                    &mut state,
+                    &ui_tx,
+                    &whitelist,
+                    &limits,
+                    &output_dir,
+                    auto_approve_allowed,
+                )
+                .await;
             }
             Some(command) = ui_cmd_rx.recv() => {
                 handle_command(command, &mut state, &ui_tx, &whitelist, &limits, &output_dir).await;
@@ -70,6 +90,10 @@ async fn handle_server_event(
     event: ServerEvent,
     state: &mut ServiceState,
     ui_tx: &mpsc::Sender<ServiceEvent>,
+    whitelist: &Arc<Whitelist>,
+    limits: &Arc<LimitsConfig>,
+    output_dir: &Arc<PathBuf>,
+    auto_approve_allowed: bool,
 ) {
     match event {
         ServerEvent::ConnectionOpened => {
@@ -85,9 +109,28 @@ async fn handle_server_event(
                 .await;
         }
         ServerEvent::Request(pending) => {
-            state.pending.push(pending);
-            let queue = build_queue_views(&state.pending);
-            let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
+            if auto_approve_allowed && whitelist.allows_request(&pending.request) {
+                let ui_tx = ui_tx.clone();
+                let whitelist = Arc::clone(whitelist);
+                let limits = Arc::clone(limits);
+                let output_dir = Arc::clone(output_dir);
+                tokio::spawn(async move {
+                    tracing::info!(
+                        event = "request_auto_approved",
+                        id = %pending.request.id,
+                        command = %request_summary(&pending.request),
+                    );
+                    let response =
+                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
+                    let result_view = result_view_from_response(&pending, &response);
+                    let _ = pending.respond_to.send(response);
+                    let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
+                });
+            } else {
+                state.pending.push(pending);
+                let queue = build_queue_views(&state.pending);
+                let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
+            }
         }
     }
 }
