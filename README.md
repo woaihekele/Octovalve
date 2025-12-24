@@ -59,7 +59,7 @@ ssh = "devops@192.168.2.163"
 local_port = 19312
 ```
 
-4) 启动本地代理（自动建立隧道）：
+4) 启动本地代理（自动建立并维持隧道）：
 
 ```bash
 cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml

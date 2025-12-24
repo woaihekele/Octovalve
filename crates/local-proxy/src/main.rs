@@ -98,6 +98,8 @@ async fn main() -> anyhow::Result<()> {
     init_tracing();
     let args = Args::parse();
     let (state, defaults) = build_proxy_state(&args)?;
+    let state = Arc::new(RwLock::new(state));
+    spawn_tunnel_manager(Arc::clone(&state));
 
     let server_details = InitializeResult {
         server_info: Implementation {
@@ -218,6 +220,25 @@ impl ProxyState {
         self.target_order.clone()
     }
 
+    fn ensure_all_tunnels(&mut self) {
+        for name in &self.target_order {
+            if let Some(target) = self.targets.get_mut(name) {
+                if target.ssh.is_none() {
+                    target.status = TargetStatus::Ready;
+                    continue;
+                }
+                target.refresh_status();
+                if target.status != TargetStatus::Ready {
+                    if let Err(err) = spawn_tunnel(target) {
+                        target.status = TargetStatus::Down;
+                        target.last_error = Some(err.to_string());
+                        tracing::warn!(target = %target.name, error = %err, "failed to establish ssh tunnel");
+                    }
+                }
+            }
+        }
+    }
+
     fn refresh_statuses(&mut self) {
         for name in &self.target_order {
             if let Some(target) = self.targets.get_mut(name) {
@@ -273,6 +294,19 @@ impl ProxyState {
 
 fn format_time(time: SystemTime) -> String {
     humantime::format_rfc3339(time).to_string()
+}
+
+fn spawn_tunnel_manager(state: Arc<RwLock<ProxyState>>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
+        loop {
+            {
+                let mut state = state.write().await;
+                state.ensure_all_tunnels();
+            }
+            interval.tick().await;
+        }
+    });
 }
 
 fn build_proxy_state(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntimeDefaults)> {
@@ -503,9 +537,9 @@ struct ProxyHandler {
 }
 
 impl ProxyHandler {
-    fn new(state: ProxyState, client_id: String, defaults: ProxyRuntimeDefaults) -> Self {
+    fn new(state: Arc<RwLock<ProxyState>>, client_id: String, defaults: ProxyRuntimeDefaults) -> Self {
         Self {
-            state: Arc::new(RwLock::new(state)),
+            state,
             client_id,
             default_timeout_ms: defaults.timeout_ms,
             default_max_output_bytes: defaults.max_output_bytes,
