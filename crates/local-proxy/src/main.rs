@@ -354,10 +354,32 @@ async fn shutdown_tunnels(state: Arc<RwLock<ProxyState>>) {
 }
 
 async fn stop_tunnel(target: &mut TargetRuntime) {
-    if let Some(pgid) = target.tunnel_pgid.take() {
-        let _ = kill_process_group(pgid, libc::SIGTERM);
+    let pgid = target.tunnel_pgid.take();
+    let mut child = target.tunnel.take();
+
+    if let Some(pgid) = pgid {
+        if let Err(err) = kill_process_group(pgid, libc::SIGTERM) {
+            tracing::warn!(error = %err, "failed to send SIGTERM to tunnel process group");
+        }
     }
-    if let Some(mut child) = target.tunnel.take() {
+
+    if let Some(child_ref) = child.as_mut() {
+        for _ in 0..10 {
+            if let Ok(Some(_)) = child_ref.try_wait() {
+                target.status = TargetStatus::Down;
+                return;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    if let Some(pgid) = pgid {
+        if let Err(err) = kill_process_group(pgid, libc::SIGKILL) {
+            tracing::warn!(error = %err, "failed to send SIGKILL to tunnel process group");
+        }
+    }
+
+    if let Some(mut child) = child {
         let _ = child.kill().await;
         let _ = child.wait().await;
     }
