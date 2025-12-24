@@ -5,7 +5,7 @@
 
 ## 组件
 - local-proxy：MCP stdio server，提供 `run_command` 工具并转发请求。
-- remote-broker：TUI 审批服务，执行白名单命令并返回结果。
+- remote-broker：TUI 审批服务，人工确认后执行命令并返回结果。
 - protocol：本地与远端共享的请求/响应结构体。
 
 ## 环境要求
@@ -70,8 +70,7 @@ local-proxy：
 
 ## 安全说明
 - 无内置认证，请使用 SSH 隧道并确保服务仅监听 `127.0.0.1`。
-- `--auto-approve` 模式仅允许白名单命令与参数规则，超出范围直接拒绝。
-- TUI 手动审批模式允许执行任意命令，但 `denied` 列表中的命令会被硬拒绝。
+- `--auto-approve` 与 TUI 手动审批均只会硬拒绝 `denied` 列表中的命令。
 - `argv` 模式直接执行可执行文件，不经过 shell；`shell` 模式使用 `/bin/bash -lc`。
 - 建议使用非 root 用户运行并关注审计日志。
 

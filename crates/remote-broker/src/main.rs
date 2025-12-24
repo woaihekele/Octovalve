@@ -286,7 +286,7 @@ async fn handle_connection_auto(
         let record = RequestRecord::from_request(&request, &addr.to_string(), received_at);
         spawn_write_request_record_value(Arc::clone(&output_dir), record);
 
-        let response = execute_request(&request, &whitelist, &limits, &output_dir, true).await;
+        let response = execute_request(&request, &whitelist, &limits, &output_dir).await;
         let payload = serde_json::to_vec(&response)?;
         framed.send(Bytes::from(payload)).await?;
     }
@@ -318,8 +318,7 @@ fn handle_key_event(
                 let output_dir = Arc::clone(&output_dir);
                 tokio::spawn(async move {
                     let response =
-                        execute_request(&pending.request, &whitelist, &limits, &output_dir, false)
-                            .await;
+                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
                     let record = ExecutionRecord::from_response(&pending, &response);
                     let _ = pending.respond_to.send(response);
                     let _ = ui_tx.send(UiEvent::Execution(record)).await;
