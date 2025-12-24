@@ -159,7 +159,8 @@ async fn handle_command(
                         id = %pending.request.id,
                         command = %request_summary(&pending.request),
                     );
-                    let response = execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
+                    let response =
+                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
                     let result_view = result_view_from_response(&pending, &response);
                     let _ = pending.respond_to.send(response);
                     let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
@@ -242,6 +243,8 @@ fn result_view_from_response(pending: &PendingRequest, response: &CommandRespons
         id: pending.request.id.clone(),
         status: format!("{:?}", response.status),
         summary,
+        command: request_summary(&pending.request),
+        target: pending.request.target.clone(),
         exit_code: response.exit_code,
         stdout: response.stdout.clone(),
         stderr: response.stderr.clone(),

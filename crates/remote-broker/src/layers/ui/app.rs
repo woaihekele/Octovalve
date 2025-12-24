@@ -2,6 +2,8 @@ use crate::layers::service::events::ServiceEvent;
 use crate::shared::dto::{RequestView, ResultView};
 use ratatui::widgets::ListState;
 
+const HISTORY_LIMIT: usize = 50;
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum ViewMode {
     #[default]
@@ -9,11 +11,22 @@ pub(crate) enum ViewMode {
     ResultFullscreen,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ListView {
+    #[default]
+    Pending,
+    History,
+}
+
 #[derive(Default)]
 pub(crate) struct AppState {
     pub(crate) queue: Vec<RequestView>,
-    pub(crate) selected: usize,
-    pub(crate) list_state: ListState,
+    pub(crate) pending_selected: usize,
+    pub(crate) pending_list_state: ListState,
+    pub(crate) history: Vec<ResultView>,
+    pub(crate) history_selected: usize,
+    pub(crate) history_list_state: ListState,
+    pub(crate) list_view: ListView,
     pub(crate) connections: usize,
     pub(crate) last_result: Option<ResultView>,
     pub(crate) view_mode: ViewMode,
@@ -34,29 +47,46 @@ impl AppState {
             ServiceEvent::QueueUpdated(queue) => {
                 let selected_id = self
                     .queue
-                    .get(self.selected)
+                    .get(self.pending_selected)
                     .map(|item| item.id.clone());
                 self.queue = queue;
                 if let Some(id) = selected_id {
                     if let Some(pos) = self.queue.iter().position(|item| item.id == id) {
-                        self.selected = pos;
+                        self.pending_selected = pos;
                     } else if !self.queue.is_empty() {
-                        self.selected = self.selected.min(self.queue.len() - 1);
+                        self.pending_selected = self.pending_selected.min(self.queue.len() - 1);
                     } else {
-                        self.selected = 0;
+                        self.pending_selected = 0;
                     }
                 } else if !self.queue.is_empty() {
-                    self.selected = self.selected.min(self.queue.len() - 1);
+                    self.pending_selected = self.pending_selected.min(self.queue.len() - 1);
                 } else {
-                    self.selected = 0;
+                    self.pending_selected = 0;
                 }
+                self.sync_pending_selection();
             }
             ServiceEvent::ResultUpdated(result) => {
-                self.last_result = Some(result);
+                self.last_result = Some(result.clone());
+                self.history.insert(0, result);
+                if self.history.len() > HISTORY_LIMIT {
+                    self.history.truncate(HISTORY_LIMIT);
+                }
+                if self.list_view == ListView::History {
+                    self.history_selected = 0;
+                } else if !self.history.is_empty() {
+                    self.history_selected = self.history_selected.min(self.history.len() - 1);
+                } else {
+                    self.history_selected = 0;
+                }
+                self.sync_history_selection();
                 self.result_scroll = 0;
                 self.pending_g = false;
             }
         }
+    }
+
+    pub(crate) fn set_list_view(&mut self, view: ListView) {
+        self.list_view = view;
         self.sync_selection();
     }
 
@@ -113,34 +143,85 @@ impl AppState {
     }
 
     pub(crate) fn select_next(&mut self) {
-        if self.queue.is_empty() {
-            return;
+        match self.list_view {
+            ListView::Pending => {
+                if self.queue.is_empty() {
+                    return;
+                }
+                self.pending_selected = (self.pending_selected + 1) % self.queue.len();
+                self.sync_pending_selection();
+            }
+            ListView::History => {
+                if self.history.is_empty() {
+                    return;
+                }
+                self.history_selected = (self.history_selected + 1) % self.history.len();
+                self.sync_history_selection();
+            }
         }
-        self.selected = (self.selected + 1) % self.queue.len();
-        self.sync_selection();
     }
 
     pub(crate) fn select_prev(&mut self) {
-        if self.queue.is_empty() {
-            return;
+        match self.list_view {
+            ListView::Pending => {
+                if self.queue.is_empty() {
+                    return;
+                }
+                if self.pending_selected == 0 {
+                    self.pending_selected = self.queue.len() - 1;
+                } else {
+                    self.pending_selected -= 1;
+                }
+                self.sync_pending_selection();
+            }
+            ListView::History => {
+                if self.history.is_empty() {
+                    return;
+                }
+                if self.history_selected == 0 {
+                    self.history_selected = self.history.len() - 1;
+                } else {
+                    self.history_selected -= 1;
+                }
+                self.sync_history_selection();
+            }
         }
-        if self.selected == 0 {
-            self.selected = self.queue.len() - 1;
-        } else {
-            self.selected -= 1;
-        }
-        self.sync_selection();
     }
 
     pub(crate) fn selected_request_id(&self) -> Option<String> {
-        self.queue.get(self.selected).map(|item| item.id.clone())
+        if self.list_view != ListView::Pending {
+            return None;
+        }
+        self.queue
+            .get(self.pending_selected)
+            .map(|item| item.id.clone())
+    }
+
+    pub(crate) fn selected_history(&self) -> Option<&ResultView> {
+        if self.list_view != ListView::History {
+            return None;
+        }
+        self.history.get(self.history_selected)
     }
 
     fn sync_selection(&mut self) {
+        self.sync_pending_selection();
+        self.sync_history_selection();
+    }
+
+    fn sync_pending_selection(&mut self) {
         if self.queue.is_empty() {
-            self.list_state.select(None);
+            self.pending_list_state.select(None);
         } else {
-            self.list_state.select(Some(self.selected));
+            self.pending_list_state.select(Some(self.pending_selected));
+        }
+    }
+
+    fn sync_history_selection(&mut self) {
+        if self.history.is_empty() {
+            self.history_list_state.select(None);
+        } else {
+            self.history_list_state.select(Some(self.history_selected));
         }
     }
 }

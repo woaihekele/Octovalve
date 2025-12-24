@@ -22,6 +22,8 @@ pub(crate) struct ResultView {
     pub(crate) id: String,
     pub(crate) status: String,
     pub(crate) summary: String,
+    pub(crate) command: String,
+    pub(crate) target: String,
     pub(crate) exit_code: Option<i32>,
     pub(crate) stdout: Option<String>,
     pub(crate) stderr: Option<String>,

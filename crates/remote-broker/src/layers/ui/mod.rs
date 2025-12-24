@@ -3,7 +3,7 @@ pub(crate) mod terminal;
 
 use crate::layers::service::events::ServiceCommand;
 use crate::shared::dto::{RequestView, ResultView};
-use app::ViewMode;
+use app::{ListView, ViewMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -41,14 +41,28 @@ pub(crate) fn handle_key_event(
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
         KeyCode::Char('r') | KeyCode::Char('R') => app.enter_result_fullscreen(),
+        KeyCode::Tab => {
+            let next = if app.list_view == ListView::Pending {
+                ListView::History
+            } else {
+                ListView::Pending
+            };
+            app.set_list_view(next);
+        }
+        KeyCode::Char('h') | KeyCode::Char('H') => app.set_list_view(ListView::History),
+        KeyCode::Char('p') | KeyCode::Char('P') => app.set_list_view(ListView::Pending),
         KeyCode::Char('a') | KeyCode::Char('A') => {
-            if let Some(id) = app.selected_request_id() {
-                let _ = cmd_tx.try_send(ServiceCommand::Approve(id));
+            if app.list_view == ListView::Pending {
+                if let Some(id) = app.selected_request_id() {
+                    let _ = cmd_tx.try_send(ServiceCommand::Approve(id));
+                }
             }
         }
         KeyCode::Char('d') | KeyCode::Char('D') => {
-            if let Some(id) = app.selected_request_id() {
-                let _ = cmd_tx.try_send(ServiceCommand::Deny(id));
+            if app.list_view == ListView::Pending {
+                if let Some(id) = app.selected_request_id() {
+                    let _ = cmd_tx.try_send(ServiceCommand::Deny(id));
+                }
             }
         }
         _ => {}
@@ -78,45 +92,83 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(body[1]);
 
-    let queue_items: Vec<ListItem> = app
-        .queue
-        .iter()
-        .map(|pending| {
-            let title = format!("{}  {}", pending.id, pending.summary);
-            ListItem::new(Line::from(title))
-        })
-        .collect();
-    let queue = List::new(queue_items)
-        .block(theme.block("Pending"))
+    let (list_title, list_items) = match app.list_view {
+        ListView::Pending => (
+            "Pending",
+            app.queue
+                .iter()
+                .map(|pending| {
+                    let title = format!("{}  {}", pending.id, pending.summary);
+                    ListItem::new(Line::from(title))
+                })
+                .collect::<Vec<_>>(),
+        ),
+        ListView::History => (
+            "History (last 50)",
+            app.history
+                .iter()
+                .map(|result| {
+                    let title = format!("{}  {}", result.id, result.command);
+                    ListItem::new(Line::from(title))
+                })
+                .collect::<Vec<_>>(),
+        ),
+    };
+    let queue = List::new(list_items)
+        .block(theme.block(list_title))
         .style(Style::default().fg(theme.text))
         .highlight_style(theme.highlight_style())
         .highlight_symbol(">> ");
-    frame.render_stateful_widget(queue, body[0], &mut app.list_state);
-
-    let details = if let Some(selected) = app.queue.get(app.selected) {
-        format_request_details(selected)
+    if app.list_view == ListView::Pending {
+        frame.render_stateful_widget(queue, body[0], &mut app.pending_list_state);
     } else {
-        "no pending request".to_string()
+        frame.render_stateful_widget(queue, body[0], &mut app.history_list_state);
+    }
+
+    let details = match app.list_view {
+        ListView::Pending => app
+            .queue
+            .get(app.pending_selected)
+            .map(format_request_details)
+            .unwrap_or_else(|| "no pending request".to_string()),
+        ListView::History => app
+            .selected_history()
+            .map(format_result_details)
+            .unwrap_or_else(|| "no history result".to_string()),
+    };
+    let detail_title = match app.list_view {
+        ListView::Pending => "Details",
+        ListView::History => "Result Details",
     };
     let detail_block = Paragraph::new(details)
-        .block(theme.block("Details"))
+        .block(theme.block(detail_title))
         .style(Style::default().fg(theme.text))
         .wrap(Wrap { trim: true });
     frame.render_widget(detail_block, right[0]);
 
-    let result_text = if let Some(result) = &app.last_result {
-        format_result_details(result)
-    } else {
-        "no execution yet".to_string()
+    let (result_title, result_text) = match app.list_view {
+        ListView::Pending => (
+            "Last Result",
+            app.last_result
+                .as_ref()
+                .map(format_result_details)
+                .unwrap_or_else(|| "no execution yet".to_string()),
+        ),
+        ListView::History => (
+            "Selected Output",
+            app.selected_history()
+                .map(format_result_output)
+                .unwrap_or_else(|| "no output".to_string()),
+        ),
     };
     let result_block = Paragraph::new(result_text)
-        .block(theme.block("Last Result"))
+        .block(theme.block(result_title))
         .style(Style::default().fg(theme.text))
         .wrap(Wrap { trim: true });
     frame.render_widget(result_block, right[1]);
 
     let mut footer_spans = vec![Span::styled(
-        "A=approve  D=deny  ↑/↓=select  R=full  Q=quit  ",
+        "A=approve  D=deny  ↑/↓=select  Tab=toggle  H=history  P=pending  R=full  Q=quit  ",
         theme.help_style(),
     )];
     if app.confirm_quit {
@@ -140,10 +192,16 @@ fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
         .constraints([Constraint::Min(3), Constraint::Length(3)])
         .split(frame.area());
 
-    let result_text = if let Some(result) = &app.last_result {
-        format_result_details(result)
-    } else {
-        "no execution yet".to_string()
+    let result_text = match app.list_view {
+        ListView::History => app
+            .selected_history()
+            .map(format_result_details)
+            .unwrap_or_else(|| "no execution yet".to_string()),
+        ListView::Pending => app
+            .last_result
+            .as_ref()
+            .map(format_result_details)
+            .unwrap_or_else(|| "no execution yet".to_string()),
     };
 
     let result_block = theme.block("Result (fullscreen)");
@@ -332,6 +390,8 @@ fn format_result_details(result: &ResultView) -> String {
         format!("id: {}", result.id),
         format!("status: {}", result.status),
         format!("summary: {}", result.summary),
+        format!("command: {}", result.command),
+        format!("target: {}", result.target),
     ];
     if let Some(code) = result.exit_code {
         lines.push(format!("exit_code: {code}"));
@@ -343,4 +403,19 @@ fn format_result_details(result: &ResultView) -> String {
         lines.push(format!("stderr: {stderr}"));
     }
     lines.join("\n")
+}
+
+fn format_result_output(result: &ResultView) -> String {
+    let mut lines = Vec::new();
+    if let Some(stdout) = &result.stdout {
+        lines.push(format!("stdout: {stdout}"));
+    }
+    if let Some(stderr) = &result.stderr {
+        lines.push(format!("stderr: {stderr}"));
+    }
+    if lines.is_empty() {
+        "no output".to_string()
+    } else {
+        lines.join("\n")
+    }
 }

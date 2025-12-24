@@ -100,6 +100,20 @@ local-proxy：
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
 
+## TUI 操作
+- 左侧列表支持切换 `Pending/History`（历史默认保留最近 50 条）。
+- 快捷键（非全屏）：
+  - `A` 批准执行（仅 Pending）
+  - `D` 拒绝（仅 Pending）
+  - `Tab` 切换 Pending/History
+  - `H` 进入 History，`P` 返回 Pending
+  - `R` 进入结果全屏
+  - `Q` 退出（二次确认）
+- 全屏结果滚动：
+  - `j/k` 上下滚动，`gg/G` 顶/底
+  - `Ctrl+f/b` 翻页
+  - `R` 或 `Esc` 退出全屏
+
 ## 安全说明
 - 无内置认证，请确保远端服务仅监听 `127.0.0.1`，由本地代理通过 SSH 隧道访问。
 - `local-proxy` 使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
