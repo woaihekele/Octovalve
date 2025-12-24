@@ -1,8 +1,8 @@
-use crate::app::{PendingRequest, UiEvent};
-use crate::audit::{spawn_write_request_record, spawn_write_request_record_value, RequestRecord};
-use crate::executor::execute_request;
-use crate::format::{deny_message, request_summary};
-use crate::whitelist::Whitelist;
+use crate::layers::execution::executor::execute_request;
+use crate::layers::policy::summary::{deny_message, request_summary};
+use crate::layers::policy::whitelist::Whitelist;
+use crate::layers::service::audit::{spawn_write_request_record, spawn_write_request_record_value, RequestRecord};
+use crate::layers::service::events::{PendingRequest, ServerEvent};
 use anyhow::Context;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
@@ -16,7 +16,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 pub(crate) fn spawn_accept_loop(
     listener: TcpListener,
-    ui_tx: mpsc::Sender<UiEvent>,
+    server_tx: mpsc::Sender<ServerEvent>,
     output_dir: Arc<PathBuf>,
     whitelist: Arc<Whitelist>,
 ) {
@@ -24,7 +24,7 @@ pub(crate) fn spawn_accept_loop(
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
-                    let accept_tx = ui_tx.clone();
+                    let accept_tx = server_tx.clone();
                     let output_dir = Arc::clone(&output_dir);
                     let whitelist = Arc::clone(&whitelist);
                     tokio::spawn(async move {
@@ -47,7 +47,7 @@ pub(crate) fn spawn_accept_loop(
 pub(crate) async fn run_headless(
     listener: TcpListener,
     whitelist: Arc<Whitelist>,
-    limits: Arc<crate::config::LimitsConfig>,
+    limits: Arc<crate::layers::policy::config::LimitsConfig>,
     output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
     tokio::spawn(async move {
@@ -80,11 +80,11 @@ pub(crate) async fn run_headless(
 async fn handle_connection_tui(
     stream: TcpStream,
     addr: std::net::SocketAddr,
-    ui_tx: mpsc::Sender<UiEvent>,
+    server_tx: mpsc::Sender<ServerEvent>,
     output_dir: Arc<PathBuf>,
     whitelist: Arc<Whitelist>,
 ) -> anyhow::Result<()> {
-    let _ = ui_tx.send(UiEvent::ConnectionOpened).await;
+    let _ = server_tx.send(ServerEvent::ConnectionOpened).await;
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
     while let Some(frame) = framed.next().await {
         let bytes = frame.context("frame read")?;
@@ -121,8 +121,12 @@ async fn handle_connection_tui(
             spawn_write_request_record_value(Arc::clone(&output_dir), record);
             let response =
                 CommandResponse::denied(request.id.clone(), format!("denied by policy: {message}"));
-            crate::executor::write_result_record(&output_dir, &response, Duration::from_secs(0))
-                .await;
+            crate::layers::execution::output::write_result_record(
+                &output_dir,
+                &response,
+                Duration::from_secs(0),
+            )
+            .await;
             let payload = serde_json::to_vec(&response)?;
             let _ = framed.send(Bytes::from(payload)).await;
             continue;
@@ -138,7 +142,7 @@ async fn handle_connection_tui(
             respond_to,
         };
         spawn_write_request_record(Arc::clone(&output_dir), &pending);
-        if ui_tx.send(UiEvent::Request(pending)).await.is_err() {
+        if server_tx.send(ServerEvent::Request(pending)).await.is_err() {
             break;
         }
 
@@ -150,7 +154,7 @@ async fn handle_connection_tui(
             Err(_) => break,
         }
     }
-    let _ = ui_tx.send(UiEvent::ConnectionClosed).await;
+    let _ = server_tx.send(ServerEvent::ConnectionClosed).await;
     Ok(())
 }
 
@@ -158,7 +162,7 @@ async fn handle_connection_auto(
     stream: TcpStream,
     addr: std::net::SocketAddr,
     whitelist: Arc<Whitelist>,
-    limits: Arc<crate::config::LimitsConfig>,
+    limits: Arc<crate::layers::policy::config::LimitsConfig>,
     output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());

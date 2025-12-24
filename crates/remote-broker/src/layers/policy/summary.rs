@@ -1,4 +1,4 @@
-use crate::whitelist::Whitelist;
+use super::whitelist::Whitelist;
 use protocol::{CommandMode, CommandRequest, CommandStage};
 
 pub(crate) fn deny_message(whitelist: &Whitelist, request: &CommandRequest) -> Option<String> {

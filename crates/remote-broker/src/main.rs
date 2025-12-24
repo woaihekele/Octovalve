@@ -1,21 +1,14 @@
-mod app;
-mod audit;
 mod cli;
-mod config;
-mod executor;
-mod format;
-mod server;
-mod terminal;
-mod ui;
-mod whitelist;
+mod layers;
+mod shared;
 
-use crate::app::{AppState, UiEvent};
 use crate::cli::Args;
-use crate::config::Config;
-use crate::server::{run_headless, spawn_accept_loop};
-use crate::terminal::{init_tracing, restore_terminal, setup_terminal};
-use crate::ui::{draw_ui, handle_key_event};
-use crate::whitelist::Whitelist;
+use crate::layers::policy::config::Config;
+use crate::layers::policy::whitelist::Whitelist;
+use crate::layers::service::events::{ServiceCommand, ServiceEvent};
+use crate::layers::service::{run_headless, run_tui_service};
+use crate::layers::service::logging::init_tracing;
+use crate::layers::ui::{draw_ui, handle_key_event, AppState, restore_terminal, setup_terminal};
 use anyhow::Context;
 use clap::Parser;
 use crossterm::event::{self, Event};
@@ -46,20 +39,17 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
-    spawn_accept_loop(
-        listener,
-        ui_tx.clone(),
-        Arc::clone(&output_dir),
-        Arc::clone(&whitelist),
-    );
+    let (ui_event_tx, mut ui_event_rx) = mpsc::channel::<ServiceEvent>(128);
+    let (ui_cmd_tx, ui_cmd_rx) = mpsc::channel::<ServiceCommand>(128);
+
+    run_tui_service(listener, whitelist, limits, output_dir, ui_event_tx, ui_cmd_rx);
 
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
 
     let tick_rate = Duration::from_millis(100);
     loop {
-        while let Ok(event) = ui_rx.try_recv() {
+        while let Ok(event) = ui_event_rx.try_recv() {
             app.handle_event(event);
         }
 
@@ -67,14 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
         if event::poll(tick_rate)? {
             if let Event::Key(key) = event::read()? {
-                if handle_key_event(
-                    key,
-                    &mut app,
-                    ui_tx.clone(),
-                    Arc::clone(&whitelist),
-                    Arc::clone(&limits),
-                    Arc::clone(&output_dir),
-                ) {
+                if handle_key_event(key, &mut app, ui_cmd_tx.clone()) {
                     break;
                 }
             }

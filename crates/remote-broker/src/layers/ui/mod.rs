@@ -1,25 +1,23 @@
-use crate::app::{AppState, ExecutionRecord, PendingRequest, UiEvent, ViewMode};
-use crate::executor::execute_request;
-use crate::format::{format_mode, format_pipeline, request_summary};
-use crate::whitelist::Whitelist;
+pub(crate) mod app;
+pub(crate) mod terminal;
+
+use crate::layers::service::events::ServiceCommand;
+use crate::shared::dto::{RequestView, ResultView};
+use app::ViewMode;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use protocol::CommandResponse;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc;
+
+pub(crate) use app::AppState;
+pub(crate) use terminal::{restore_terminal, setup_terminal};
 
 pub(crate) fn handle_key_event(
     key: KeyEvent,
     app: &mut AppState,
-    ui_tx: mpsc::Sender<UiEvent>,
-    whitelist: Arc<Whitelist>,
-    limits: Arc<crate::config::LimitsConfig>,
-    output_dir: Arc<PathBuf>,
+    cmd_tx: mpsc::Sender<ServiceCommand>,
 ) -> bool {
     if app.confirm_quit {
         match key.code {
@@ -44,46 +42,13 @@ pub(crate) fn handle_key_event(
         KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
         KeyCode::Char('r') | KeyCode::Char('R') => app.enter_result_fullscreen(),
         KeyCode::Char('a') | KeyCode::Char('A') => {
-            if let Some(pending) = app.pop_selected() {
-                tracing::info!(
-                    event = "request_approved",
-                    id = %pending.request.id,
-                    command = %request_summary(&pending.request),
-                );
-                let ui_tx = ui_tx.clone();
-                let whitelist = Arc::clone(&whitelist);
-                let limits = Arc::clone(&limits);
-                let output_dir = Arc::clone(&output_dir);
-                tokio::spawn(async move {
-                    let response =
-                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
-                    let record = ExecutionRecord::from_response(&pending, &response);
-                    let _ = pending.respond_to.send(response);
-                    let _ = ui_tx.send(UiEvent::Execution(record)).await;
-                });
+            if let Some(id) = app.selected_request_id() {
+                let _ = cmd_tx.try_send(ServiceCommand::Approve(id));
             }
         }
         KeyCode::Char('d') | KeyCode::Char('D') => {
-            if let Some(pending) = app.pop_selected() {
-                tracing::info!(
-                    event = "request_denied",
-                    id = %pending.request.id,
-                    command = %request_summary(&pending.request),
-                );
-                let response =
-                    CommandResponse::denied(pending.request.id.clone(), "denied by operator");
-                let record = ExecutionRecord::from_response(&pending, &response);
-                let _ = pending.respond_to.send(response.clone());
-                let _ = ui_tx.try_send(UiEvent::Execution(record));
-                let output_dir = Arc::clone(&output_dir);
-                tokio::spawn(async move {
-                    crate::executor::write_result_record(
-                        &output_dir,
-                        &response,
-                        Duration::from_secs(0),
-                    )
-                    .await;
-                });
+            if let Some(id) = app.selected_request_id() {
+                let _ = cmd_tx.try_send(ServiceCommand::Deny(id));
             }
         }
         _ => {}
@@ -117,11 +82,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         .queue
         .iter()
         .map(|pending| {
-            let title = format!(
-                "{}  {}",
-                pending.request.id,
-                request_summary(&pending.request)
-            );
+            let title = format!("{}  {}", pending.id, pending.summary);
             ListItem::new(Line::from(title))
         })
         .collect();
@@ -337,27 +298,26 @@ impl Theme {
     }
 }
 
-fn format_request_details(pending: &PendingRequest) -> String {
-    let request = &pending.request;
+fn format_request_details(pending: &RequestView) -> String {
     let mut lines = vec![
-        format!("id: {}", request.id),
-        format!("client: {}", request.client),
-        format!("target: {}", request.target),
+        format!("id: {}", pending.id),
+        format!("client: {}", pending.client),
+        format!("target: {}", pending.target),
         format!("peer: {}", pending.peer),
-        format!("intent: {}", request.intent),
-        format!("mode: {}", format_mode(&request.mode)),
-        format!("command: {}", request.raw_command),
+        format!("intent: {}", pending.intent),
+        format!("mode: {}", pending.mode),
+        format!("command: {}", pending.command),
     ];
-    if !request.pipeline.is_empty() {
-        lines.push(format!("pipeline: {}", format_pipeline(&request.pipeline)));
+    if let Some(pipeline) = &pending.pipeline {
+        lines.push(format!("pipeline: {pipeline}"));
     }
-    if let Some(cwd) = &request.cwd {
+    if let Some(cwd) = &pending.cwd {
         lines.push(format!("cwd: {cwd}"));
     }
-    if let Some(timeout) = request.timeout_ms {
+    if let Some(timeout) = pending.timeout_ms {
         lines.push(format!("timeout_ms: {timeout}"));
     }
-    if let Some(max) = request.max_output_bytes {
+    if let Some(max) = pending.max_output_bytes {
         lines.push(format!("max_output_bytes: {max}"));
     }
     lines.push(format!(
@@ -367,10 +327,10 @@ fn format_request_details(pending: &PendingRequest) -> String {
     lines.join("\n")
 }
 
-fn format_result_details(result: &ExecutionRecord) -> String {
+fn format_result_details(result: &ResultView) -> String {
     let mut lines = vec![
         format!("id: {}", result.id),
-        format!("status: {:?}", result.status),
+        format!("status: {}", result.status),
         format!("summary: {}", result.summary),
     ];
     if let Some(code) = result.exit_code {

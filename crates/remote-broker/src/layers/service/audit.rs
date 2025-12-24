@@ -1,4 +1,4 @@
-use crate::app::PendingRequest;
+use crate::layers::service::events::PendingRequest;
 use protocol::{CommandRequest, CommandStage};
 use serde::Serialize;
 use std::path::{Path, PathBuf};

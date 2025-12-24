@@ -1,8 +1,8 @@
-use crate::config::LimitsConfig;
-use crate::whitelist::Whitelist;
+use crate::layers::execution::output::write_result_record;
+use crate::layers::policy::config::LimitsConfig;
+use crate::layers::policy::whitelist::Whitelist;
 use anyhow::Context;
-use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage, CommandStatus};
-use serde::Serialize;
+use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage};
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
@@ -80,15 +80,6 @@ struct ExecutionResult {
     exit_code: i32,
     stdout: Option<String>,
     stderr: Option<String>,
-}
-
-#[derive(Serialize)]
-struct ResultRecord {
-    id: String,
-    status: CommandStatus,
-    exit_code: Option<i32>,
-    error: Option<String>,
-    duration_ms: u128,
 }
 
 async fn execute_command(
@@ -368,25 +359,6 @@ async fn read_stream_capture<R: AsyncRead + Unpin>(
     Ok((buffer, truncated))
 }
 
-pub async fn write_result_record(
-    output_dir: &Path,
-    response: &CommandResponse,
-    duration: Duration,
-) {
-    let record = ResultRecord {
-        id: response.id.clone(),
-        status: response.status.clone(),
-        exit_code: response.exit_code,
-        error: response.error.clone(),
-        duration_ms: duration.as_millis(),
-    };
-    let path = output_dir.join(format!("{}.result.json", response.id));
-    if let Ok(payload) = serde_json::to_vec_pretty(&record) {
-        if let Err(err) = tokio::fs::write(path, payload).await {
-            tracing::warn!(error = %err, "failed to write result record");
-        }
-    }
-}
 
 async fn write_chunk(writer: &Arc<Mutex<File>>, data: &[u8]) -> io::Result<()> {
     let mut file = writer.lock().await;

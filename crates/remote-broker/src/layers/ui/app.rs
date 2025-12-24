@@ -1,7 +1,6 @@
-use protocol::{CommandRequest, CommandResponse, CommandStatus};
+use crate::layers::service::events::ServiceEvent;
+use crate::shared::dto::{RequestView, ResultView};
 use ratatui::widgets::ListState;
-use std::time::{Instant, SystemTime};
-use tokio::sync::oneshot;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum ViewMode {
@@ -12,11 +11,11 @@ pub(crate) enum ViewMode {
 
 #[derive(Default)]
 pub(crate) struct AppState {
-    pub(crate) queue: Vec<PendingRequest>,
+    pub(crate) queue: Vec<RequestView>,
     pub(crate) selected: usize,
     pub(crate) list_state: ListState,
     pub(crate) connections: usize,
-    pub(crate) last_result: Option<ExecutionRecord>,
+    pub(crate) last_result: Option<ResultView>,
     pub(crate) view_mode: ViewMode,
     pub(crate) result_scroll: usize,
     pub(crate) result_max_scroll: usize,
@@ -27,20 +26,33 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
-    pub(crate) fn handle_event(&mut self, event: UiEvent) {
+    pub(crate) fn handle_event(&mut self, event: ServiceEvent) {
         match event {
-            UiEvent::ConnectionOpened => self.connections += 1,
-            UiEvent::ConnectionClosed => {
-                self.connections = self.connections.saturating_sub(1);
+            ServiceEvent::ConnectionsChanged(count) => {
+                self.connections = count;
             }
-            UiEvent::Request(pending) => {
-                self.queue.push(pending);
-                if self.queue.len() == 1 {
+            ServiceEvent::QueueUpdated(queue) => {
+                let selected_id = self
+                    .queue
+                    .get(self.selected)
+                    .map(|item| item.id.clone());
+                self.queue = queue;
+                if let Some(id) = selected_id {
+                    if let Some(pos) = self.queue.iter().position(|item| item.id == id) {
+                        self.selected = pos;
+                    } else if !self.queue.is_empty() {
+                        self.selected = self.selected.min(self.queue.len() - 1);
+                    } else {
+                        self.selected = 0;
+                    }
+                } else if !self.queue.is_empty() {
+                    self.selected = self.selected.min(self.queue.len() - 1);
+                } else {
                     self.selected = 0;
                 }
             }
-            UiEvent::Execution(record) => {
-                self.last_result = Some(record);
+            ServiceEvent::ResultUpdated(result) => {
+                self.last_result = Some(result);
                 self.result_scroll = 0;
                 self.pending_g = false;
             }
@@ -120,17 +132,8 @@ impl AppState {
         self.sync_selection();
     }
 
-    pub(crate) fn pop_selected(&mut self) -> Option<PendingRequest> {
-        if self.queue.is_empty() {
-            return None;
-        }
-        let index = self.selected.min(self.queue.len() - 1);
-        let item = self.queue.remove(index);
-        if self.selected >= self.queue.len() && !self.queue.is_empty() {
-            self.selected = self.queue.len() - 1;
-        }
-        self.sync_selection();
-        Some(item)
+    pub(crate) fn selected_request_id(&self) -> Option<String> {
+        self.queue.get(self.selected).map(|item| item.id.clone())
     }
 
     fn sync_selection(&mut self) {
@@ -140,47 +143,4 @@ impl AppState {
             self.list_state.select(Some(self.selected));
         }
     }
-}
-
-pub(crate) struct PendingRequest {
-    pub(crate) request: CommandRequest,
-    pub(crate) peer: String,
-    pub(crate) received_at: SystemTime,
-    pub(crate) queued_at: Instant,
-    pub(crate) respond_to: oneshot::Sender<CommandResponse>,
-}
-
-pub(crate) struct ExecutionRecord {
-    pub(crate) id: String,
-    pub(crate) status: CommandStatus,
-    pub(crate) exit_code: Option<i32>,
-    pub(crate) summary: String,
-    pub(crate) stdout: Option<String>,
-    pub(crate) stderr: Option<String>,
-}
-
-impl ExecutionRecord {
-    pub(crate) fn from_response(pending: &PendingRequest, response: &CommandResponse) -> Self {
-        let summary = match response.status {
-            CommandStatus::Completed => format!("completed (exit={:?})", response.exit_code),
-            CommandStatus::Denied => "denied".to_string(),
-            CommandStatus::Error => "error".to_string(),
-            CommandStatus::Approved => "approved".to_string(),
-        };
-        Self {
-            id: pending.request.id.clone(),
-            status: response.status.clone(),
-            exit_code: response.exit_code,
-            summary,
-            stdout: response.stdout.clone(),
-            stderr: response.stderr.clone(),
-        }
-    }
-}
-
-pub(crate) enum UiEvent {
-    ConnectionOpened,
-    ConnectionClosed,
-    Request(PendingRequest),
-    Execution(ExecutionRecord),
 }

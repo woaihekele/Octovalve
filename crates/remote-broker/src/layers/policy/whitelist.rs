@@ -1,4 +1,4 @@
-use crate::config::WhitelistConfig;
+use super::config::WhitelistConfig;
 use protocol::CommandStage;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -90,7 +90,7 @@ impl Whitelist {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::WhitelistConfig;
+    use super::super::config::WhitelistConfig;
     use std::collections::BTreeMap;
 
     #[test]
