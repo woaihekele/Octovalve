@@ -38,6 +38,8 @@ struct Args {
     config: PathBuf,
     #[arg(long, default_value = "logs")]
     audit_dir: PathBuf,
+    #[arg(long)]
+    auto_approve: bool,
 }
 
 #[tokio::main]
@@ -51,30 +53,17 @@ async fn main() -> anyhow::Result<()> {
     let whitelist = Arc::new(Whitelist::from_config(&config.whitelist)?);
     let limits = Arc::new(config.limits);
 
-    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
-
     let listener = TcpListener::bind(&args.listen_addr)
         .await
         .with_context(|| format!("failed to bind {}", args.listen_addr))?;
 
-    let accept_tx = ui_tx.clone();
-    tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, addr)) => {
-                    let accept_tx = accept_tx.clone();
-                    tokio::spawn(async move {
-                        if let Err(err) = handle_connection(stream, addr, accept_tx).await {
-                            tracing::error!(error = %err, "connection handler failed");
-                        }
-                    });
-                }
-                Err(err) => {
-                    tracing::error!(error = %err, "listener accept failed");
-                }
-            }
-        }
-    });
+    if args.auto_approve {
+        run_headless(listener, whitelist, limits).await?;
+        return Ok(());
+    }
+
+    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
+    spawn_accept_loop(listener, ui_tx.clone());
 
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
@@ -106,7 +95,57 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_connection(
+fn spawn_accept_loop(listener: TcpListener, ui_tx: mpsc::Sender<UiEvent>) {
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    let accept_tx = ui_tx.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = handle_connection_tui(stream, addr, accept_tx).await {
+                            tracing::error!(error = %err, "connection handler failed");
+                        }
+                    });
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "listener accept failed");
+                }
+            }
+        }
+    });
+}
+
+async fn run_headless(
+    listener: TcpListener,
+    whitelist: Arc<Whitelist>,
+    limits: Arc<crate::config::LimitsConfig>,
+) -> anyhow::Result<()> {
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    let whitelist = Arc::clone(&whitelist);
+                    let limits = Arc::clone(&limits);
+                    tokio::spawn(async move {
+                        if let Err(err) =
+                            handle_connection_auto(stream, addr, whitelist, limits).await
+                        {
+                            tracing::error!(error = %err, "connection handler failed");
+                        }
+                    });
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "listener accept failed");
+                }
+            }
+        }
+    });
+
+    tokio::signal::ctrl_c().await?;
+    Ok(())
+}
+
+async fn handle_connection_tui(
     stream: TcpStream,
     addr: SocketAddr,
     ui_tx: mpsc::Sender<UiEvent>,
@@ -154,6 +193,41 @@ async fn handle_connection(
         }
     }
     let _ = ui_tx.send(UiEvent::ConnectionClosed).await;
+    Ok(())
+}
+
+async fn handle_connection_auto(
+    stream: TcpStream,
+    addr: SocketAddr,
+    whitelist: Arc<Whitelist>,
+    limits: Arc<crate::config::LimitsConfig>,
+) -> anyhow::Result<()> {
+    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    while let Some(frame) = framed.next().await {
+        let bytes = frame.context("frame read")?;
+        let request: CommandRequest = match serde_json::from_slice(&bytes) {
+            Ok(request) => request,
+            Err(err) => {
+                tracing::warn!(error = %err, "invalid request payload");
+                let response = CommandResponse::error("invalid", "invalid request");
+                let payload = serde_json::to_vec(&response)?;
+                let _ = framed.send(Bytes::from(payload)).await;
+                continue;
+            }
+        };
+
+        tracing::info!(
+            event = "request_received",
+            id = %request.id,
+            client = %request.client,
+            peer = %addr,
+            command = %format_pipeline(&request.pipeline),
+        );
+
+        let response = execute_request(&request, &whitelist, &limits).await;
+        let payload = serde_json::to_vec(&response)?;
+        framed.send(Bytes::from(payload)).await?;
+    }
     Ok(())
 }
 

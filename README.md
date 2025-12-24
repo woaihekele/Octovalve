@@ -52,6 +52,7 @@ remote-broker：
 - `--listen-addr`（默认：`127.0.0.1:19307`）
 - `--config`（默认：`config.toml`）
 - `--audit-dir`（默认：`logs`）
+- `--auto-approve`（默认：关闭，自动批准并跳过 TUI）
 
 local-proxy：
 - `--remote-addr`（默认：`127.0.0.1:19306`）
