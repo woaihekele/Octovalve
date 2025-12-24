@@ -1,5 +1,5 @@
 [whitelist]
-allowed = ["ls", "tail", "/usr/bin/grep"]
+allowed = ["ls", "tail", "grep"]
 denied = [
   "rm",
   "rmdir",
