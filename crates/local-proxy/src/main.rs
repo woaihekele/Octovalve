@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::net::TcpStream;
 use tokio::process::Command;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -100,6 +101,7 @@ async fn main() -> anyhow::Result<()> {
     let (state, defaults) = build_proxy_state(&args)?;
     let state = Arc::new(RwLock::new(state));
     spawn_tunnel_manager(Arc::clone(&state));
+    spawn_shutdown_handler(Arc::clone(&state));
 
     let server_details = InitializeResult {
         server_info: Implementation {
@@ -121,12 +123,11 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = StdioTransport::new(TransportOptions::default())
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-    let handler = ProxyHandler::new(state, args.client_id, defaults);
+    let handler = ProxyHandler::new(Arc::clone(&state), args.client_id, defaults);
     let server = server_runtime::create_server(server_details, transport, handler);
-    server
-        .start()
-        .await
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let result = server.start().await;
+    shutdown_tunnels(Arc::clone(&state)).await;
+    result.map_err(|err| anyhow::anyhow!(err.to_string()))?;
     Ok(())
 }
 
@@ -171,6 +172,7 @@ struct TargetRuntime {
     last_seen: Option<SystemTime>,
     last_error: Option<String>,
     tunnel: Option<tokio::process::Child>,
+    tunnel_pgid: Option<libc::pid_t>,
 }
 
 struct ProxyState {
@@ -200,10 +202,12 @@ impl TargetRuntime {
                 Ok(Some(status)) => {
                     self.status = TargetStatus::Down;
                     self.tunnel = None;
+                    self.tunnel_pgid = None;
                     self.last_error = Some(format!("ssh exited: {status}"));
                 }
                 Err(err) => {
                     self.status = TargetStatus::Down;
+                    self.tunnel_pgid = None;
                     self.last_error = Some(format!("ssh status check failed: {err}"));
                 }
             }
@@ -309,6 +313,66 @@ fn spawn_tunnel_manager(state: Arc<RwLock<ProxyState>>) {
     });
 }
 
+fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>) {
+    tokio::spawn(async move {
+        let mut sigint = match signal(SignalKind::interrupt()) {
+            Ok(signal) => signal,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to register SIGINT handler");
+                return;
+            }
+        };
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(signal) => signal,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to register SIGTERM handler");
+                return;
+            }
+        };
+
+        tokio::select! {
+            _ = sigint.recv() => {
+                tracing::info!("received SIGINT, shutting down tunnels");
+            }
+            _ = sigterm.recv() => {
+                tracing::info!("received SIGTERM, shutting down tunnels");
+            }
+        }
+
+        shutdown_tunnels(state).await;
+        std::process::exit(0);
+    });
+}
+
+async fn shutdown_tunnels(state: Arc<RwLock<ProxyState>>) {
+    let mut state = state.write().await;
+    for name in state.target_order.clone() {
+        if let Some(target) = state.targets.get_mut(&name) {
+            stop_tunnel(target).await;
+        }
+    }
+}
+
+async fn stop_tunnel(target: &mut TargetRuntime) {
+    if let Some(pgid) = target.tunnel_pgid.take() {
+        let _ = kill_process_group(pgid, libc::SIGTERM);
+    }
+    if let Some(mut child) = target.tunnel.take() {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+    target.status = TargetStatus::Down;
+}
+
+fn kill_process_group(pgid: libc::pid_t, signal: i32) -> std::io::Result<()> {
+    let rc = unsafe { libc::killpg(pgid, signal) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 fn build_proxy_state(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntimeDefaults)> {
     if let Some(path) = &args.config {
         let config = load_proxy_config(path)?;
@@ -333,6 +397,7 @@ fn build_state_from_args(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntim
         last_seen: None,
         last_error: None,
         tunnel: None,
+        tunnel_pgid: None,
     };
     let mut targets = HashMap::new();
     targets.insert(target.name.clone(), target);
@@ -425,6 +490,7 @@ fn build_state_from_config(
             last_seen: None,
             last_error: None,
             tunnel: None,
+            tunnel_pgid: None,
         };
 
         if let Err(err) = spawn_tunnel(&mut runtime) {
@@ -486,6 +552,15 @@ fn spawn_tunnel(target: &mut TargetRuntime) -> anyhow::Result<()> {
     } else {
         Command::new("ssh")
     };
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setpgid(0, 0) == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        });
+    }
     cmd.arg("-N")
         .arg("-T")
         .arg("-o")
@@ -524,6 +599,7 @@ fn spawn_tunnel(target: &mut TargetRuntime) -> anyhow::Result<()> {
             }
         })
         .context("failed to spawn ssh tunnel")?;
+    target.tunnel_pgid = child.id().map(|pid| pid as libc::pid_t);
     target.tunnel = Some(child);
     target.status = TargetStatus::Ready;
     Ok(())

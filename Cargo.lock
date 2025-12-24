@@ -534,6 +534,7 @@ dependencies = [
  "clap",
  "futures-util",
  "humantime",
+ "libc",
  "protocol",
  "rust-mcp-sdk",
  "serde",

@@ -11,6 +11,7 @@ bytes.workspace = true
 clap.workspace = true
 futures-util.workspace = true
 humantime.workspace = true
+libc.workspace = true
 protocol = { path = "../protocol" }
 rust-mcp-sdk = { version = "0.7.4", default-features = false, features = ["server", "macros", "stdio", "2025_06_18"] }
 serde.workspace = true
