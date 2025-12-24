@@ -7,7 +7,7 @@ use crate::shared::dto::{RequestView, ResultView};
 use protocol::{CommandResponse, CommandStatus};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 struct ServiceState {
@@ -122,7 +122,8 @@ async fn handle_server_event(
                     );
                     let response =
                         execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
-                    let result_view = result_view_from_response(&pending, &response);
+                    let finished_at = SystemTime::now();
+                    let result_view = result_view_from_response(&pending, &response, finished_at);
                     let _ = pending.respond_to.send(response);
                     let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
                 });
@@ -161,7 +162,8 @@ async fn handle_command(
                     );
                     let response =
                         execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
-                    let result_view = result_view_from_response(&pending, &response);
+                    let finished_at = SystemTime::now();
+                    let result_view = result_view_from_response(&pending, &response, finished_at);
                     let _ = pending.respond_to.send(response);
                     let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
                 });
@@ -179,7 +181,8 @@ async fn handle_command(
                 );
                 let response =
                     CommandResponse::denied(pending.request.id.clone(), "denied by operator");
-                let result_view = result_view_from_response(&pending, &response);
+                let finished_at = SystemTime::now();
+                let result_view = result_view_from_response(&pending, &response, finished_at);
                 let _ = pending.respond_to.send(response.clone());
                 let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
                 let output_dir = Arc::clone(output_dir);
@@ -232,21 +235,46 @@ fn to_request_view(pending: &PendingRequest) -> RequestView {
     }
 }
 
-fn result_view_from_response(pending: &PendingRequest, response: &CommandResponse) -> ResultView {
+fn result_view_from_response(
+    pending: &PendingRequest,
+    response: &CommandResponse,
+    finished_at: SystemTime,
+) -> ResultView {
     let summary = match response.status {
         CommandStatus::Completed => format!("completed (exit={:?})", response.exit_code),
         CommandStatus::Denied => "denied".to_string(),
         CommandStatus::Error => "error".to_string(),
         CommandStatus::Approved => "approved".to_string(),
     };
+    let pipeline = if pending.request.pipeline.is_empty() {
+        None
+    } else {
+        Some(format_pipeline(&pending.request.pipeline))
+    };
     ResultView {
         id: pending.request.id.clone(),
         status: format!("{:?}", response.status),
         summary,
-        command: request_summary(&pending.request),
+        command: pending.request.raw_command.clone(),
+        client: pending.request.client.clone(),
         target: pending.request.target.clone(),
+        peer: pending.peer.clone(),
+        intent: pending.request.intent.clone(),
+        mode: format_mode(&pending.request.mode).to_string(),
+        pipeline,
+        cwd: pending.request.cwd.clone(),
+        timeout_ms: pending.request.timeout_ms,
+        max_output_bytes: pending.request.max_output_bytes,
+        queued_for_secs: pending.queued_at.elapsed().as_secs(),
+        finished_at_ms: system_time_ms(finished_at),
         exit_code: response.exit_code,
         stdout: response.stdout.clone(),
         stderr: response.stderr.clone(),
     }
+}
+
+fn system_time_ms(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }

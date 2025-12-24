@@ -1,4 +1,5 @@
 pub(crate) mod app;
+pub(crate) mod theme;
 pub(crate) mod terminal;
 
 use crate::layers::service::events::ServiceCommand;
@@ -6,9 +7,9 @@ use crate::shared::dto::{RequestView, ResultView};
 use app::{ListView, ViewMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{List, ListItem, Paragraph, Wrap};
+use theme::{Theme, ValueStyle};
 use tokio::sync::mpsc;
 
 pub(crate) use app::AppState;
@@ -110,11 +111,11 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         .collect::<Vec<_>>();
     let pending_list = List::new(pending_items)
         .block(theme.block(pending_title))
-        .style(Style::default().fg(theme.text))
+        .style(theme.value_style(ValueStyle::Normal))
         .highlight_style(if app.list_view == ListView::Pending {
             theme.highlight_style()
         } else {
-            Style::default().fg(theme.dim)
+            theme.value_style(ValueStyle::Dim)
         })
         .highlight_symbol(if app.list_view == ListView::Pending {
             ">> "
@@ -131,24 +132,35 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     let history_items = if app.history.is_empty() {
         vec![ListItem::new(Line::styled(
             "no history yet",
-            Style::default().fg(theme.dim),
+            theme.value_style(ValueStyle::Dim),
         ))]
     } else {
+        let available_width = left[1].width.saturating_sub(3) as usize;
         app.history
             .iter()
             .map(|result| {
-                let title = format!("{}  {}", result.id, result.command);
+                let exec_time = format_exec_time(result.finished_at_ms);
+                let suffix = format!("  {exec_time}");
+                let max_cmd = available_width.saturating_sub(suffix.len());
+                let command = truncate_with_ellipsis(&result.command, max_cmd);
+                let title = if available_width == 0 {
+                    String::new()
+                } else if max_cmd == 0 {
+                    suffix.trim_start().to_string()
+                } else {
+                    format!("{command}{suffix}")
+                };
                 ListItem::new(Line::from(title))
             })
             .collect::<Vec<_>>()
     };
     let history_list = List::new(history_items)
         .block(theme.block(history_title))
-        .style(Style::default().fg(theme.text))
+        .style(theme.value_style(ValueStyle::Normal))
         .highlight_style(if app.list_view == ListView::History {
             theme.highlight_style()
         } else {
-            Style::default().fg(theme.dim)
+            theme.value_style(ValueStyle::Dim)
         })
         .highlight_symbol(if app.list_view == ListView::History {
             ">> "
@@ -161,12 +173,12 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         ListView::Pending => app
             .queue
             .get(app.pending_selected)
-            .map(format_request_details)
-            .unwrap_or_else(|| "no pending request".to_string()),
+            .map(|pending| format_request_details(&theme, pending))
+            .unwrap_or_else(|| Text::from("no pending request")),
         ListView::History => app
             .selected_history()
-            .map(format_result_details)
-            .unwrap_or_else(|| "no history result".to_string()),
+            .map(|result| format_result_details(&theme, result))
+            .unwrap_or_else(|| Text::from("no history result")),
     };
     let detail_title = match app.list_view {
         ListView::Pending => "Details",
@@ -174,7 +186,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     };
     let detail_block = Paragraph::new(details)
         .block(theme.block(detail_title))
-        .style(Style::default().fg(theme.text))
+        .style(theme.value_style(ValueStyle::Normal))
         .wrap(Wrap { trim: true });
     frame.render_widget(detail_block, right[0]);
 
@@ -183,19 +195,21 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
             "Last Result",
             app.last_result
                 .as_ref()
-                .map(format_result_details)
-                .unwrap_or_else(|| "no execution yet".to_string()),
+                .map(|result| format_result_details(&theme, result))
+                .unwrap_or_else(|| Text::from("no execution yet")),
         ),
         ListView::History => (
             "Selected Output",
-            app.selected_history()
-                .map(format_result_output)
-                .unwrap_or_else(|| "no output".to_string()),
+            Text::from(
+                app.selected_history()
+                    .map(format_result_output)
+                    .unwrap_or_else(|| "no output".to_string()),
+            ),
         ),
     };
     let result_block = Paragraph::new(result_text)
         .block(theme.block(result_title))
-        .style(Style::default().fg(theme.text))
+        .style(theme.value_style(ValueStyle::Normal))
         .wrap(Wrap { trim: true });
     frame.render_widget(result_block, right[1]);
 
@@ -227,13 +241,13 @@ fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
     let result_text = match app.list_view {
         ListView::History => app
             .selected_history()
-            .map(format_result_details)
-            .unwrap_or_else(|| "no execution yet".to_string()),
+            .map(format_result_output)
+            .unwrap_or_else(|| "no output".to_string()),
         ListView::Pending => app
             .last_result
             .as_ref()
-            .map(format_result_details)
-            .unwrap_or_else(|| "no execution yet".to_string()),
+            .map(format_result_output)
+            .unwrap_or_else(|| "no output".to_string()),
     };
 
     let result_block = theme.block("Result (fullscreen)");
@@ -244,7 +258,7 @@ fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
 
     let result_panel = Paragraph::new(rendered)
         .block(result_block)
-        .style(Style::default().fg(theme.text))
+        .style(theme.value_style(ValueStyle::Normal))
         .scroll((app.result_scroll as u16, 0));
     frame.render_widget(result_panel, chunks[0]);
 
@@ -331,110 +345,197 @@ fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
-struct Theme {
-    border: Color,
-    title: Color,
-    text: Color,
-    dim: Color,
-    accent: Color,
-    highlight_fg: Color,
-    highlight_bg: Color,
-    warn: Color,
-}
 
-impl Theme {
-    fn dark() -> Self {
-        Self {
-            border: Color::DarkGray,
-            title: Color::Blue,
-            text: Color::White,
-            dim: Color::Gray,
-            accent: Color::Cyan,
-            highlight_fg: Color::White,
-            highlight_bg: Color::DarkGray,
-            warn: Color::Yellow,
-        }
-    }
-
-    fn block<'a>(&self, title: &'a str) -> Block<'a> {
-        Block::default()
-            .title(Span::styled(
-                title,
-                Style::default()
-                    .fg(self.title)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.border))
-    }
-
-    fn highlight_style(&self) -> Style {
-        Style::default()
-            .fg(self.highlight_fg)
-            .bg(self.highlight_bg)
-            .add_modifier(Modifier::BOLD)
-    }
-
-    fn help_style(&self) -> Style {
-        Style::default().fg(self.dim)
-    }
-
-    fn accent_style(&self) -> Style {
-        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
-    }
-
-    fn warn_style(&self) -> Style {
-        Style::default().fg(self.warn).add_modifier(Modifier::BOLD)
-    }
-}
-
-fn format_request_details(pending: &RequestView) -> String {
-    let mut lines = vec![
-        format!("id: {}", pending.id),
-        format!("client: {}", pending.client),
-        format!("target: {}", pending.target),
-        format!("peer: {}", pending.peer),
-        format!("intent: {}", pending.intent),
-        format!("mode: {}", pending.mode),
-        format!("command: {}", pending.command),
-    ];
+fn format_request_details(theme: &Theme, pending: &RequestView) -> Text<'static> {
+    let mut lines = Vec::new();
+    lines.push(kv_line(
+        theme,
+        "id",
+        pending.id.clone(),
+        ValueStyle::Dim,
+    ));
+    lines.push(kv_line(
+        theme,
+        "client",
+        pending.client.clone(),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "target",
+        pending.target.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "peer",
+        pending.peer.clone(),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "intent",
+        pending.intent.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "mode",
+        pending.mode.clone(),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "command",
+        pending.command.clone(),
+        ValueStyle::Important,
+    ));
     if let Some(pipeline) = &pending.pipeline {
-        lines.push(format!("pipeline: {pipeline}"));
+        lines.push(kv_line(
+            theme,
+            "pipeline",
+            pipeline.clone(),
+            ValueStyle::Normal,
+        ));
     }
     if let Some(cwd) = &pending.cwd {
-        lines.push(format!("cwd: {cwd}"));
+        lines.push(kv_line(
+            theme,
+            "cwd",
+            cwd.clone(),
+            ValueStyle::Normal,
+        ));
     }
     if let Some(timeout) = pending.timeout_ms {
-        lines.push(format!("timeout_ms: {timeout}"));
+        lines.push(kv_line(
+            theme,
+            "timeout_ms",
+            timeout.to_string(),
+            ValueStyle::Normal,
+        ));
     }
     if let Some(max) = pending.max_output_bytes {
-        lines.push(format!("max_output_bytes: {max}"));
+        lines.push(kv_line(
+            theme,
+            "max_output_bytes",
+            max.to_string(),
+            ValueStyle::Normal,
+        ));
     }
-    lines.push(format!(
-        "queued_for: {}s",
-        pending.queued_at.elapsed().as_secs()
+    lines.push(kv_line(
+        theme,
+        "queued_for",
+        format!("{}s", pending.queued_at.elapsed().as_secs()),
+        ValueStyle::Dim,
     ));
-    lines.join("\n")
+    Text::from(lines)
 }
 
-fn format_result_details(result: &ResultView) -> String {
-    let mut lines = vec![
-        format!("id: {}", result.id),
-        format!("status: {}", result.status),
-        format!("summary: {}", result.summary),
-        format!("command: {}", result.command),
-        format!("target: {}", result.target),
-    ];
+fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
+    let mut lines = Vec::new();
+    lines.push(kv_line(
+        theme,
+        "id",
+        result.id.clone(),
+        ValueStyle::Dim,
+    ));
+    lines.push(Line::from(vec![
+        Span::styled("status: ", theme.key_style()),
+        Span::styled(result.status.clone(), theme.status_style(&result.status)),
+    ]));
+    lines.push(kv_line(
+        theme,
+        "summary",
+        result.summary.clone(),
+        ValueStyle::Normal,
+    ));
     if let Some(code) = result.exit_code {
-        lines.push(format!("exit_code: {code}"));
+        lines.push(Line::from(vec![
+            Span::styled("exit_code: ", theme.key_style()),
+            Span::styled(code.to_string(), theme.status_style(&result.status)),
+        ]));
     }
-    if let Some(stdout) = &result.stdout {
-        lines.push(format!("stdout: {stdout}"));
+    lines.push(kv_line(
+        theme,
+        "command",
+        result.command.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "target",
+        result.target.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "client",
+        result.client.clone(),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "peer",
+        result.peer.clone(),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "intent",
+        result.intent.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "mode",
+        result.mode.clone(),
+        ValueStyle::Normal,
+    ));
+    if let Some(pipeline) = &result.pipeline {
+        lines.push(kv_line(
+            theme,
+            "pipeline",
+            pipeline.clone(),
+            ValueStyle::Normal,
+        ));
     }
-    if let Some(stderr) = &result.stderr {
-        lines.push(format!("stderr: {stderr}"));
+    if let Some(cwd) = &result.cwd {
+        lines.push(kv_line(
+            theme,
+            "cwd",
+            cwd.clone(),
+            ValueStyle::Normal,
+        ));
     }
-    lines.join("\n")
+    if let Some(timeout) = result.timeout_ms {
+        lines.push(kv_line(
+            theme,
+            "timeout_ms",
+            timeout.to_string(),
+            ValueStyle::Normal,
+        ));
+    }
+    if let Some(max) = result.max_output_bytes {
+        lines.push(kv_line(
+            theme,
+            "max_output_bytes",
+            max.to_string(),
+            ValueStyle::Normal,
+        ));
+    }
+    lines.push(kv_line(
+        theme,
+        "queued_for",
+        format!("{}s", result.queued_for_secs),
+        ValueStyle::Dim,
+    ));
+    lines.push(kv_line(
+        theme,
+        "executed_at",
+        format_exec_time(result.finished_at_ms),
+        ValueStyle::Dim,
+    ));
+    Text::from(lines)
 }
 
 fn format_result_output(result: &ResultView) -> String {
@@ -450,4 +551,38 @@ fn format_result_output(result: &ResultView) -> String {
     } else {
         lines.join("\n")
     }
+}
+
+fn kv_line(theme: &Theme, key: &str, value: String, level: ValueStyle) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{key}: "), theme.key_style()),
+        Span::styled(value, theme.value_style(level)),
+    ])
+}
+
+fn truncate_with_ellipsis(text: &str, max_len: usize) -> String {
+    if max_len == 0 {
+        return String::new();
+    }
+    let chars = text.chars();
+    let count = chars.clone().count();
+    if count <= max_len {
+        return text.to_string();
+    }
+    if max_len <= 3 {
+        return chars.take(max_len).collect();
+    }
+    let keep = max_len - 3;
+    let mut out: String = chars.take(keep).collect();
+    out.push_str("...");
+    out
+}
+
+fn format_exec_time(finished_at_ms: u64) -> String {
+    let secs = finished_at_ms / 1000;
+    let secs_in_day = secs % 86_400;
+    let hours = secs_in_day / 3_600;
+    let minutes = (secs_in_day % 3_600) / 60;
+    let seconds = secs_in_day % 60;
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
