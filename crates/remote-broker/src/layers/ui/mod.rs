@@ -49,8 +49,6 @@ pub(crate) fn handle_key_event(
             };
             app.set_list_view(next);
         }
-        KeyCode::Char('h') | KeyCode::Char('H') => app.set_list_view(ListView::History),
-        KeyCode::Char('p') | KeyCode::Char('P') => app.set_list_view(ListView::Pending),
         KeyCode::Char('a') | KeyCode::Char('A') => {
             if app.list_view == ListView::Pending {
                 if let Some(id) = app.selected_request_id() {
@@ -87,43 +85,77 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(chunks[0]);
 
+    let left = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(body[0]);
+
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(body[1]);
 
-    let (list_title, list_items) = match app.list_view {
-        ListView::Pending => (
-            "Pending",
-            app.queue
-                .iter()
-                .map(|pending| {
-                    let title = format!("{}  {}", pending.id, pending.summary);
-                    ListItem::new(Line::from(title))
-                })
-                .collect::<Vec<_>>(),
-        ),
-        ListView::History => (
-            "History (last 50)",
-            app.history
-                .iter()
-                .map(|result| {
-                    let title = format!("{}  {}", result.id, result.command);
-                    ListItem::new(Line::from(title))
-                })
-                .collect::<Vec<_>>(),
-        ),
-    };
-    let queue = List::new(list_items)
-        .block(theme.block(list_title))
-        .style(Style::default().fg(theme.text))
-        .highlight_style(theme.highlight_style())
-        .highlight_symbol(">> ");
-    if app.list_view == ListView::Pending {
-        frame.render_stateful_widget(queue, body[0], &mut app.pending_list_state);
+    let pending_title = if app.list_view == ListView::Pending {
+        "Pending *"
     } else {
-        frame.render_stateful_widget(queue, body[0], &mut app.history_list_state);
-    }
+        "Pending"
+    };
+    let pending_items = app
+        .queue
+        .iter()
+        .map(|pending| {
+            let title = format!("{}  {}", pending.id, pending.summary);
+            ListItem::new(Line::from(title))
+        })
+        .collect::<Vec<_>>();
+    let pending_list = List::new(pending_items)
+        .block(theme.block(pending_title))
+        .style(Style::default().fg(theme.text))
+        .highlight_style(if app.list_view == ListView::Pending {
+            theme.highlight_style()
+        } else {
+            Style::default().fg(theme.dim)
+        })
+        .highlight_symbol(if app.list_view == ListView::Pending {
+            ">> "
+        } else {
+            "   "
+        });
+    frame.render_stateful_widget(pending_list, left[0], &mut app.pending_list_state);
+
+    let history_title = if app.list_view == ListView::History {
+        "History (last 50) *"
+    } else {
+        "History (last 50)"
+    };
+    let history_items = if app.history.is_empty() {
+        vec![ListItem::new(Line::styled(
+            "no history yet",
+            Style::default().fg(theme.dim),
+        ))]
+    } else {
+        app.history
+            .iter()
+            .map(|result| {
+                let title = format!("{}  {}", result.id, result.command);
+                ListItem::new(Line::from(title))
+            })
+            .collect::<Vec<_>>()
+    };
+    let history_list = List::new(history_items)
+        .block(theme.block(history_title))
+        .style(Style::default().fg(theme.text))
+        .highlight_style(if app.list_view == ListView::History {
+            theme.highlight_style()
+        } else {
+            Style::default().fg(theme.dim)
+        })
+        .highlight_symbol(if app.list_view == ListView::History {
+            ">> "
+        } else {
+            "   "
+        });
+    frame.render_stateful_widget(history_list, left[1], &mut app.history_list_state);
 
     let details = match app.list_view {
         ListView::Pending => app
@@ -168,7 +200,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     frame.render_widget(result_block, right[1]);
 
     let mut footer_spans = vec![Span::styled(
-        "A=approve  D=deny  ↑/↓=select  Tab=toggle  H=history  P=pending  R=full  Q=quit  ",
+        "A=approve  D=deny  ↑/↓=select  Tab=focus  R=full  Q=quit  ",
         theme.help_style(),
     )];
     if app.confirm_quit {

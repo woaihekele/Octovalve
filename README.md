@@ -101,12 +101,11 @@ local-proxy：
 - `--max-output-bytes`（默认：`1048576`）
 
 ## TUI 操作
-- 左侧列表支持切换 `Pending/History`（历史默认保留最近 50 条）。
+- 左侧为上下两栏：`Pending/History`（历史默认保留最近 50 条）。
 - 快捷键（非全屏）：
   - `A` 批准执行（仅 Pending）
   - `D` 拒绝（仅 Pending）
-  - `Tab` 切换 Pending/History
-  - `H` 进入 History，`P` 返回 Pending
+  - `Tab` 切换焦点（Pending/History）
   - `R` 进入结果全屏
   - `Q` 退出（二次确认）
 - 全屏结果滚动：
