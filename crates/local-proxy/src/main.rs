@@ -457,13 +457,14 @@ fn spawn_tunnel(target: &mut TargetRuntime) -> anyhow::Result<()> {
         .arg("-o")
         .arg("ExitOnForwardFailure=yes")
         .arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-o")
         .arg("ServerAliveInterval=30")
         .arg("-o")
         .arg("ServerAliveCountMax=3")
         .arg("-L")
         .arg(format!("{bind}:{port}:{remote_host}:{remote_port}"));
+    if target.ssh_password.is_none() {
+        cmd.arg("-o").arg("BatchMode=yes");
+    }
 
     if !target.ssh_args.is_empty() {
         cmd.args(&target.ssh_args);
