@@ -1,0 +1,33 @@
+[whitelist]
+allowed = ["ls", "tail", "/usr/bin/grep"]
+denied = [
+  "rm",
+  "rmdir",
+  "dd",
+  "mkfs",
+  "mkfs.ext4",
+  "mkfs.xfs",
+  "mkfs.btrfs",
+  "mkfs.vfat",
+  "fdisk",
+  "sfdisk",
+  "parted",
+  "wipefs",
+  "shutdown",
+  "reboot",
+  "poweroff",
+  "halt",
+  "init",
+  "systemctl",
+  "service",
+  "userdel",
+  "groupdel",
+  "passwd",
+  "chown",
+  "chmod",
+]
+arg_rules = { grep = "^[A-Za-z0-9_.-]+$" }
+
+[limits]
+timeout_secs = 30
+max_output_bytes = 1048576
