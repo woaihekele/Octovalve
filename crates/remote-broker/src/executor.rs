@@ -19,11 +19,19 @@ pub async fn execute_request(
     whitelist: &Whitelist,
     limits: &LimitsConfig,
     output_dir: &Path,
+    enforce_allowlist: bool,
 ) -> CommandResponse {
     let started_at = Instant::now();
 
     if matches!(&request.mode, CommandMode::Shell) && request.raw_command.trim().is_empty() {
         let response = CommandResponse::error(request.id.clone(), "raw_command is empty");
+        write_result_record(output_dir, &response, started_at.elapsed()).await;
+        return response;
+    }
+
+    if enforce_allowlist && request.pipeline.is_empty() {
+        let response =
+            CommandResponse::error(request.id.clone(), "pipeline is empty for auto-approve");
         write_result_record(output_dir, &response, started_at.elapsed()).await;
         return response;
     }
@@ -43,10 +51,17 @@ pub async fn execute_request(
         );
     } else {
         for stage in &request.pipeline {
-            if let Err(message) = whitelist.validate(stage) {
+            if let Err(message) = whitelist.validate_deny(stage) {
                 let response = CommandResponse::error(request.id.clone(), message);
                 write_result_record(output_dir, &response, started_at.elapsed()).await;
                 return response;
+            }
+            if enforce_allowlist {
+                if let Err(message) = whitelist.validate_allow(stage) {
+                    let response = CommandResponse::error(request.id.clone(), message);
+                    write_result_record(output_dir, &response, started_at.elapsed()).await;
+                    return response;
+                }
             }
         }
     }

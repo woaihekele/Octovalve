@@ -17,6 +17,7 @@
 ```toml
 [whitelist]
 allowed = ["ls", "tail", "/usr/bin/grep"]
+denied = ["rm", "shutdown"]
 arg_rules = { grep = "^[A-Za-z0-9_.-]+$" }
 
 [limits]
@@ -69,7 +70,8 @@ local-proxy：
 
 ## 安全说明
 - 无内置认证，请使用 SSH 隧道并确保服务仅监听 `127.0.0.1`。
-- 命令执行前进行白名单与参数规则校验。
+- `--auto-approve` 模式仅允许白名单命令与参数规则，超出范围直接拒绝。
+- TUI 手动审批模式允许执行任意命令，但 `denied` 列表中的命令会被硬拒绝。
 - `argv` 模式直接执行可执行文件，不经过 shell；`shell` 模式使用 `/bin/bash -lc`。
 - 建议使用非 root 用户运行并关注审计日志。
 

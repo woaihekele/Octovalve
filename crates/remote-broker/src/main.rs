@@ -76,7 +76,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
-    spawn_accept_loop(listener, ui_tx.clone(), Arc::clone(&output_dir));
+    spawn_accept_loop(
+        listener,
+        ui_tx.clone(),
+        Arc::clone(&output_dir),
+        Arc::clone(&whitelist),
+    );
 
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
@@ -113,6 +118,7 @@ fn spawn_accept_loop(
     listener: TcpListener,
     ui_tx: mpsc::Sender<UiEvent>,
     output_dir: Arc<PathBuf>,
+    whitelist: Arc<Whitelist>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -120,9 +126,11 @@ fn spawn_accept_loop(
                 Ok((stream, addr)) => {
                     let accept_tx = ui_tx.clone();
                     let output_dir = Arc::clone(&output_dir);
+                    let whitelist = Arc::clone(&whitelist);
                     tokio::spawn(async move {
                         if let Err(err) =
-                            handle_connection_tui(stream, addr, accept_tx, output_dir).await
+                            handle_connection_tui(stream, addr, accept_tx, output_dir, whitelist)
+                                .await
                         {
                             tracing::error!(error = %err, "connection handler failed");
                         }
@@ -174,6 +182,7 @@ async fn handle_connection_tui(
     addr: SocketAddr,
     ui_tx: mpsc::Sender<UiEvent>,
     output_dir: Arc<PathBuf>,
+    whitelist: Arc<Whitelist>,
 ) -> anyhow::Result<()> {
     let _ = ui_tx.send(UiEvent::ConnectionOpened).await;
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
@@ -197,6 +206,26 @@ async fn handle_connection_tui(
             peer = %addr,
             command = %request_summary(&request),
         );
+
+        if let Some(message) = deny_message(&whitelist, &request) {
+            tracing::info!(
+                event = "request_denied_policy",
+                id = %request.id,
+                client = %request.client,
+                peer = %addr,
+                reason = %message,
+            );
+            let received_at = SystemTime::now();
+            let record = RequestRecord::from_request(&request, &addr.to_string(), received_at);
+            spawn_write_request_record_value(Arc::clone(&output_dir), record);
+            let response =
+                CommandResponse::denied(request.id.clone(), format!("denied by policy: {message}"));
+            crate::executor::write_result_record(&output_dir, &response, Duration::from_secs(0))
+                .await;
+            let payload = serde_json::to_vec(&response)?;
+            let _ = framed.send(Bytes::from(payload)).await;
+            continue;
+        }
 
         let (respond_to, response_rx) = oneshot::channel();
         let received_at = SystemTime::now();
@@ -257,7 +286,7 @@ async fn handle_connection_auto(
         let record = RequestRecord::from_request(&request, &addr.to_string(), received_at);
         spawn_write_request_record_value(Arc::clone(&output_dir), record);
 
-        let response = execute_request(&request, &whitelist, &limits, &output_dir).await;
+        let response = execute_request(&request, &whitelist, &limits, &output_dir, true).await;
         let payload = serde_json::to_vec(&response)?;
         framed.send(Bytes::from(payload)).await?;
     }
@@ -289,7 +318,8 @@ fn handle_key_event(
                 let output_dir = Arc::clone(&output_dir);
                 tokio::spawn(async move {
                     let response =
-                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
+                        execute_request(&pending.request, &whitelist, &limits, &output_dir, false)
+                            .await;
                     let record = ExecutionRecord::from_response(&pending, &response);
                     let _ = pending.respond_to.send(response);
                     let _ = ui_tx.send(UiEvent::Execution(record)).await;
@@ -597,6 +627,15 @@ fn format_result_details(result: &ExecutionRecord) -> String {
         lines.push(format!("stderr: {stderr}"));
     }
     lines.join("\n")
+}
+
+fn deny_message(whitelist: &Whitelist, request: &CommandRequest) -> Option<String> {
+    for stage in &request.pipeline {
+        if let Err(message) = whitelist.validate_deny(stage) {
+            return Some(message);
+        }
+    }
+    None
 }
 
 fn request_summary(request: &CommandRequest) -> String {

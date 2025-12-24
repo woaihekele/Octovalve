@@ -23,6 +23,8 @@ pub struct WhitelistConfig {
     #[serde(default)]
     pub allowed: Vec<String>,
     #[serde(default)]
+    pub denied: Vec<String>,
+    #[serde(default)]
     pub arg_rules: BTreeMap<String, String>,
 }
 

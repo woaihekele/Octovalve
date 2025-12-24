@@ -7,6 +7,7 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct Whitelist {
     allowed: HashSet<String>,
+    denied: HashSet<String>,
     arg_rules: HashMap<String, Regex>,
 }
 
@@ -20,11 +21,12 @@ impl Whitelist {
         }
         Ok(Self {
             allowed: config.allowed.iter().cloned().collect(),
+            denied: config.denied.iter().cloned().collect(),
             arg_rules,
         })
     }
 
-    pub fn validate(&self, stage: &CommandStage) -> Result<(), String> {
+    pub fn validate_allow(&self, stage: &CommandStage) -> Result<(), String> {
         let command = stage.command().ok_or_else(|| "empty command".to_string())?;
         if !self.is_allowed(command) {
             return Err(format!("command not allowed: {command}"));
@@ -46,12 +48,30 @@ impl Whitelist {
         Ok(())
     }
 
+    pub fn validate_deny(&self, stage: &CommandStage) -> Result<(), String> {
+        let command = stage.command().ok_or_else(|| "empty command".to_string())?;
+        if self.is_denied(command) {
+            return Err(format!("command denied: {command}"));
+        }
+        Ok(())
+    }
+
     fn is_allowed(&self, command: &str) -> bool {
         if self.allowed.contains(command) {
             return true;
         }
         if let Some(name) = self.basename(command) {
             return self.allowed.contains(name);
+        }
+        false
+    }
+
+    fn is_denied(&self, command: &str) -> bool {
+        if self.denied.contains(command) {
+            return true;
+        }
+        if let Some(name) = self.basename(command) {
+            return self.denied.contains(name);
         }
         false
     }
@@ -73,39 +93,42 @@ mod tests {
     fn allows_exact_command() {
         let config = WhitelistConfig {
             allowed: vec!["ls".to_string()],
+            denied: Vec::new(),
             arg_rules: BTreeMap::new(),
         };
         let whitelist = Whitelist::from_config(&config).expect("whitelist");
         let stage = CommandStage {
             argv: vec!["ls".to_string(), "-l".to_string()],
         };
-        assert!(whitelist.validate(&stage).is_ok());
+        assert!(whitelist.validate_allow(&stage).is_ok());
     }
 
     #[test]
     fn allows_basename_match() {
         let config = WhitelistConfig {
             allowed: vec!["grep".to_string()],
+            denied: Vec::new(),
             arg_rules: BTreeMap::new(),
         };
         let whitelist = Whitelist::from_config(&config).expect("whitelist");
         let stage = CommandStage {
             argv: vec!["/usr/bin/grep".to_string(), "foo".to_string()],
         };
-        assert!(whitelist.validate(&stage).is_ok());
+        assert!(whitelist.validate_allow(&stage).is_ok());
     }
 
     #[test]
     fn rejects_disallowed_command() {
         let config = WhitelistConfig {
             allowed: vec!["ls".to_string()],
+            denied: Vec::new(),
             arg_rules: BTreeMap::new(),
         };
         let whitelist = Whitelist::from_config(&config).expect("whitelist");
         let stage = CommandStage {
             argv: vec!["rm".to_string(), "-rf".to_string(), "/".to_string()],
         };
-        assert!(whitelist.validate(&stage).is_err());
+        assert!(whitelist.validate_allow(&stage).is_err());
     }
 
     #[test]
@@ -114,6 +137,7 @@ mod tests {
         arg_rules.insert("grep".to_string(), "^[A-Za-z0-9_\\.-]+$".to_string());
         let config = WhitelistConfig {
             allowed: vec!["grep".to_string()],
+            denied: Vec::new(),
             arg_rules,
         };
         let whitelist = Whitelist::from_config(&config).expect("whitelist");
@@ -123,7 +147,35 @@ mod tests {
         let bad_stage = CommandStage {
             argv: vec!["grep".to_string(), "bad$".to_string()],
         };
-        assert!(whitelist.validate(&ok_stage).is_ok());
-        assert!(whitelist.validate(&bad_stage).is_err());
+        assert!(whitelist.validate_allow(&ok_stage).is_ok());
+        assert!(whitelist.validate_allow(&bad_stage).is_err());
+    }
+
+    #[test]
+    fn rejects_denied_command() {
+        let config = WhitelistConfig {
+            allowed: vec!["ls".to_string()],
+            denied: vec!["rm".to_string()],
+            arg_rules: BTreeMap::new(),
+        };
+        let whitelist = Whitelist::from_config(&config).expect("whitelist");
+        let stage = CommandStage {
+            argv: vec!["rm".to_string(), "-rf".to_string(), "/".to_string()],
+        };
+        assert!(whitelist.validate_deny(&stage).is_err());
+    }
+
+    #[test]
+    fn rejects_denied_basename() {
+        let config = WhitelistConfig {
+            allowed: vec!["/bin/ls".to_string()],
+            denied: vec!["rm".to_string()],
+            arg_rules: BTreeMap::new(),
+        };
+        let whitelist = Whitelist::from_config(&config).expect("whitelist");
+        let stage = CommandStage {
+            argv: vec!["/bin/rm".to_string(), "-rf".to_string(), "/".to_string()],
+        };
+        assert!(whitelist.validate_deny(&stage).is_err());
     }
 }
