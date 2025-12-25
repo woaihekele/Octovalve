@@ -141,10 +141,7 @@ pub(crate) fn spawn_tunnel(target: &mut TargetRuntime) -> anyhow::Result<()> {
         target.status = TargetStatus::Ready;
         return Ok(());
     }
-    let bind = target
-        .local_bind
-        .as_ref()
-        .context("missing local_bind")?;
+    let bind = target.local_bind.as_ref().context("missing local_bind")?;
     let port = target.local_port.context("missing local_port")?;
     let (remote_host, remote_port) = parse_host_port(&target.remote_addr)?;
 

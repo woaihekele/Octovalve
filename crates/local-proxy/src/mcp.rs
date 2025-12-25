@@ -207,23 +207,16 @@ impl ServerHandler for ProxyHandler {
     ) -> Result<CallToolResult, CallToolError> {
         match request.params.name.as_str() {
             "run_command" => {
-                let args = parse_arguments(request.params.arguments).map_err(|err| {
-                    CallToolError::invalid_arguments("run_command", Some(err))
-                })?;
-                let pipeline = parse_pipeline(&args.command).map_err(|err| {
-                    CallToolError::invalid_arguments("run_command", Some(err))
-                })?;
+                let args = parse_arguments(request.params.arguments)
+                    .map_err(|err| CallToolError::invalid_arguments("run_command", Some(err)))?;
+                let pipeline = parse_pipeline(&args.command)
+                    .map_err(|err| CallToolError::invalid_arguments("run_command", Some(err)))?;
 
                 let addr = {
                     let mut state = self.state.write().await;
-                    state
-                        .ensure_tunnel(&args.target)
-                        .map_err(|err| {
-                            CallToolError::invalid_arguments(
-                                "run_command",
-                                Some(err.to_string()),
-                            )
-                        })?
+                    state.ensure_tunnel(&args.target).map_err(|err| {
+                        CallToolError::invalid_arguments("run_command", Some(err.to_string()))
+                    })?
                 };
 
                 let mode = args.mode.unwrap_or(CommandMode::Shell);

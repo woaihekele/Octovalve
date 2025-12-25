@@ -359,7 +359,6 @@ async fn read_stream_capture<R: AsyncRead + Unpin>(
     Ok((buffer, truncated))
 }
 
-
 async fn write_chunk(writer: &Arc<Mutex<File>>, data: &[u8]) -> io::Result<()> {
     let mut file = writer.lock().await;
     file.write_all(data).await

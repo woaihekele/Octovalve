@@ -1,7 +1,9 @@
 use crate::layers::execution::executor::execute_request;
 use crate::layers::policy::summary::{deny_message, request_summary};
 use crate::layers::policy::whitelist::Whitelist;
-use crate::layers::service::audit::{spawn_write_request_record, spawn_write_request_record_value, RequestRecord};
+use crate::layers::service::audit::{
+    spawn_write_request_record, spawn_write_request_record_value, RequestRecord,
+};
 use crate::layers::service::events::{PendingRequest, ServerEvent};
 use anyhow::Context;
 use bytes::Bytes;

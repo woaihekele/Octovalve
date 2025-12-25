@@ -24,7 +24,11 @@ pub(crate) struct RequestRecord {
 }
 
 impl RequestRecord {
-    pub(crate) fn from_request(request: &CommandRequest, peer: &str, received_at: SystemTime) -> Self {
+    pub(crate) fn from_request(
+        request: &CommandRequest,
+        peer: &str,
+        received_at: SystemTime,
+    ) -> Self {
         Self {
             id: request.id.clone(),
             client: request.client.clone(),
@@ -57,7 +61,10 @@ pub(crate) fn spawn_write_request_record_value(output_dir: Arc<PathBuf>, record:
     });
 }
 
-pub(crate) async fn write_request_record(output_dir: &Path, record: &RequestRecord) -> anyhow::Result<()> {
+pub(crate) async fn write_request_record(
+    output_dir: &Path,
+    record: &RequestRecord,
+) -> anyhow::Result<()> {
     let path = output_dir.join(format!("{}.request.json", record.id));
     let payload = serde_json::to_vec_pretty(record)?;
     tokio::fs::write(path, payload).await?;

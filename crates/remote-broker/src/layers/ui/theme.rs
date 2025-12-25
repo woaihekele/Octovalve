@@ -36,9 +36,7 @@ impl Theme {
         ratatui::widgets::Block::default()
             .title(ratatui::text::Span::styled(
                 title,
-                Style::default()
-                    .fg(self.title)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(self.title).add_modifier(Modifier::BOLD),
             ))
             .borders(ratatui::widgets::Borders::ALL)
             .border_style(Style::default().fg(self.border))
@@ -56,7 +54,9 @@ impl Theme {
     }
 
     pub(crate) fn accent_style(&self) -> Style {
-        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
     }
 
     pub(crate) fn warn_style(&self) -> Style {
@@ -76,5 +76,4 @@ impl Theme {
             ValueStyle::Dim => Style::default().fg(self.dim),
         }
     }
-
 }

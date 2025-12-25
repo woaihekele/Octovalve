@@ -2,7 +2,7 @@ use crate::layers::execution::executor::execute_request;
 use crate::layers::policy::config::LimitsConfig;
 use crate::layers::policy::summary::{format_mode, format_pipeline, request_summary};
 use crate::layers::policy::whitelist::Whitelist;
-use crate::layers::service::events::{PendingRequest, ServiceCommand, ServiceEvent, ServerEvent};
+use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
 use crate::shared::dto::{RequestView, ResultView};
 use protocol::{CommandResponse, CommandStatus};
 use std::path::PathBuf;

@@ -102,8 +102,8 @@ impl Whitelist {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::config::WhitelistConfig;
+    use super::*;
     use std::collections::BTreeMap;
 
     #[test]

@@ -244,21 +244,15 @@ fn build_state_from_config(
                 target.name
             );
         }
-        let remote_addr = target
-            .remote_addr
-            .unwrap_or_else(|| default_remote.clone());
-        let local_bind = target
-            .local_bind
-            .unwrap_or_else(|| default_bind.clone());
+        let remote_addr = target.remote_addr.unwrap_or_else(|| default_remote.clone());
+        let local_bind = target.local_bind.unwrap_or_else(|| default_bind.clone());
         let local_addr = format!("{local_bind}:{}", target.local_port);
 
         let mut ssh_args = default_ssh_args.clone();
         if let Some(extra) = target.ssh_args {
             ssh_args.extend(extra);
         }
-        let ssh_password = target
-            .ssh_password
-            .or_else(|| default_ssh_password.clone());
+        let ssh_password = target.ssh_password.or_else(|| default_ssh_password.clone());
 
         let mut runtime = TargetRuntime {
             name: target.name.clone(),

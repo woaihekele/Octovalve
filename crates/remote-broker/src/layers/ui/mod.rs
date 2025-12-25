@@ -1,6 +1,6 @@
 pub(crate) mod app;
-pub(crate) mod theme;
 pub(crate) mod terminal;
+pub(crate) mod theme;
 
 use crate::layers::service::events::ServiceCommand;
 use crate::shared::dto::{RequestView, ResultView};
@@ -378,15 +378,9 @@ fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
-
 fn format_request_details(theme: &Theme, pending: &RequestView) -> Text<'static> {
     let mut lines = Vec::new();
-    lines.push(kv_line(
-        theme,
-        "id",
-        pending.id.clone(),
-        ValueStyle::Dim,
-    ));
+    lines.push(kv_line(theme, "id", pending.id.clone(), ValueStyle::Dim));
     lines.push(kv_line(
         theme,
         "client",
@@ -432,12 +426,7 @@ fn format_request_details(theme: &Theme, pending: &RequestView) -> Text<'static>
         ));
     }
     if let Some(cwd) = &pending.cwd {
-        lines.push(kv_line(
-            theme,
-            "cwd",
-            cwd.clone(),
-            ValueStyle::Normal,
-        ));
+        lines.push(kv_line(theme, "cwd", cwd.clone(), ValueStyle::Normal));
     }
     if let Some(timeout) = pending.timeout_ms {
         lines.push(kv_line(
@@ -466,12 +455,7 @@ fn format_request_details(theme: &Theme, pending: &RequestView) -> Text<'static>
 
 fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
     let mut lines = Vec::new();
-    lines.push(kv_line(
-        theme,
-        "id",
-        result.id.clone(),
-        ValueStyle::Dim,
-    ));
+    lines.push(kv_line(theme, "id", result.id.clone(), ValueStyle::Dim));
     lines.push(kv_line(
         theme,
         "intent",
@@ -481,7 +465,10 @@ fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
     lines.push(kv_line(
         theme,
         "cwd",
-        result.cwd.clone().unwrap_or_else(|| "(default)".to_string()),
+        result
+            .cwd
+            .clone()
+            .unwrap_or_else(|| "(default)".to_string()),
         ValueStyle::Important,
     ));
     lines.push(kv_line(
