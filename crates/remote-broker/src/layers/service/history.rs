@@ -33,8 +33,6 @@ struct ResultRecord {
     #[serde(default)]
     exit_code: Option<i32>,
     #[serde(default)]
-    error: Option<String>,
-    #[serde(default)]
     duration_ms: u128,
 }
 
