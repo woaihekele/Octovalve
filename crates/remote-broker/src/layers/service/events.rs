@@ -6,7 +6,7 @@ use tokio::sync::oneshot;
 pub(crate) enum ServiceEvent {
     QueueUpdated(Vec<RequestView>),
     ResultUpdated(ResultView),
-    ConnectionsChanged(usize),
+    ConnectionsChanged,
 }
 
 pub(crate) enum ServiceCommand {

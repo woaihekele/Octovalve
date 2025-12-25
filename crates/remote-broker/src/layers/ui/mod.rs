@@ -256,10 +256,6 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
             theme.warn_style(),
         ));
     }
-    footer_spans.push(Span::styled(
-        format!("connections={}", app.connections),
-        theme.accent_style(),
-    ));
     let footer = Paragraph::new(Line::from(footer_spans)).block(theme.block("Controls"));
     frame.render_widget(footer, chunks[2]);
 }

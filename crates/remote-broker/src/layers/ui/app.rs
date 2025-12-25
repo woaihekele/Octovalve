@@ -29,7 +29,6 @@ pub(crate) struct AppState {
     pub(crate) history_selected: usize,
     pub(crate) history_list_state: ListState,
     pub(crate) list_view: ListView,
-    pub(crate) connections: usize,
     pub(crate) last_result: Option<ResultView>,
     pub(crate) view_mode: ViewMode,
     pub(crate) result_scroll: usize,
@@ -48,9 +47,7 @@ impl AppState {
 
     pub(crate) fn handle_event(&mut self, event: ServiceEvent) {
         match event {
-            ServiceEvent::ConnectionsChanged(count) => {
-                self.connections = count;
-            }
+            ServiceEvent::ConnectionsChanged => {}
             ServiceEvent::QueueUpdated(queue) => {
                 let selected_id = self
                     .queue

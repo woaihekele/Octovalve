@@ -11,14 +11,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 struct ServiceState {
-    connections: usize,
     pending: Vec<PendingRequest>,
 }
 
 impl Default for ServiceState {
     fn default() -> Self {
         Self {
-            connections: 0,
             pending: Vec::new(),
         }
     }
@@ -97,16 +95,10 @@ async fn handle_server_event(
 ) {
     match event {
         ServerEvent::ConnectionOpened => {
-            state.connections += 1;
-            let _ = ui_tx
-                .send(ServiceEvent::ConnectionsChanged(state.connections))
-                .await;
+            let _ = ui_tx.send(ServiceEvent::ConnectionsChanged).await;
         }
         ServerEvent::ConnectionClosed => {
-            state.connections = state.connections.saturating_sub(1);
-            let _ = ui_tx
-                .send(ServiceEvent::ConnectionsChanged(state.connections))
-                .await;
+            let _ = ui_tx.send(ServiceEvent::ConnectionsChanged).await;
         }
         ServerEvent::Request(pending) => {
             if auto_approve_allowed && whitelist.allows_request(&pending.request) {
