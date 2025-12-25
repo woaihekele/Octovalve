@@ -350,6 +350,81 @@ fn wrap_text_lines(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+const TAB_WIDTH: usize = 4;
+
+fn sanitize_text_for_tui(text: &str) -> String {
+    let stripped = strip_ansi_sequences(text);
+    let mut out = String::with_capacity(stripped.len());
+    let tab_width = TAB_WIDTH.max(1);
+    let mut col = 0usize;
+    for ch in stripped.chars() {
+        match ch {
+            '\n' => {
+                out.push('\n');
+                col = 0;
+            }
+            '\r' => {
+                out.push('\n');
+                col = 0;
+            }
+            '\t' => {
+                let spaces = tab_width.saturating_sub(col % tab_width).max(1);
+                out.extend(std::iter::repeat(' ').take(spaces));
+                col += spaces;
+            }
+            _ if ch.is_control() => {
+                out.push(' ');
+                col += 1;
+            }
+            _ => {
+                out.push(ch);
+                col += 1;
+            }
+        }
+    }
+    out
+}
+
+fn strip_ansi_sequences(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            match chars.peek().copied() {
+                Some('[') => {
+                    chars.next();
+                    while let Some(seq_ch) = chars.next() {
+                        if ('@'..='~').contains(&seq_ch) {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                Some(']') => {
+                    chars.next();
+                    loop {
+                        match chars.next() {
+                            Some('\u{7}') => break,
+                            Some('\u{1b}') => {
+                                if let Some('\\') = chars.peek().copied() {
+                                    chars.next();
+                                }
+                                break;
+                            }
+                            Some(_) => continue,
+                            None => break,
+                        }
+                    }
+                    continue;
+                }
+                _ => continue,
+            }
+        }
+        out.push(ch);
+    }
+    out
+}
+
 fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
     match key.code {
         KeyCode::Char('q') | KeyCode::Char('Q') => app.confirm_quit = true,
@@ -554,10 +629,12 @@ fn format_result_details(theme: &Theme, result: &ResultView, width: u16) -> Text
 fn format_result_output(result: &ResultView) -> String {
     let mut lines = Vec::new();
     if let Some(stdout) = &result.stdout {
-        lines.push(format!("stdout: {stdout}"));
+        let cleaned = sanitize_text_for_tui(stdout);
+        lines.push(format!("stdout: {cleaned}"));
     }
     if let Some(stderr) = &result.stderr {
-        lines.push(format!("stderr: {stderr}"));
+        let cleaned = sanitize_text_for_tui(stderr);
+        lines.push(format!("stderr: {cleaned}"));
     }
     if lines.is_empty() {
         "no output".to_string()
@@ -573,6 +650,7 @@ fn kv_lines(
     level: ValueStyle,
     width: u16,
 ) -> Vec<Line<'static>> {
+    let value = sanitize_text_for_tui(&value);
     let key_label = format!("{key}: ");
     let key_width = display_width(&key_label);
     let width = width.max(1) as usize;
