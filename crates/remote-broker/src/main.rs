@@ -12,6 +12,7 @@ use crate::layers::ui::{draw_ui, handle_key_event, AppState, restore_terminal, s
 use anyhow::Context;
 use clap::Parser;
 use crossterm::event::{self, Event};
+use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -54,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
+    app.set_host_info(resolve_hostname(), resolve_ip());
 
     let tick_rate = Duration::from_millis(100);
     loop {
@@ -74,4 +76,32 @@ async fn main() -> anyhow::Result<()> {
 
     restore_terminal(&mut terminal)?;
     Ok(())
+}
+
+fn resolve_hostname() -> String {
+    if let Ok(value) = std::env::var("HOSTNAME") {
+        if !value.trim().is_empty() {
+            return value;
+        }
+    }
+    let mut buf = [0u8; 256];
+    let result = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut i8, buf.len()) };
+    if result == 0 {
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        String::from_utf8_lossy(&buf[..len]).to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+fn resolve_ip() -> String {
+    let socket = UdpSocket::bind("0.0.0.0:0");
+    if let Ok(sock) = socket {
+        if sock.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = sock.local_addr() {
+                return addr.ip().to_string();
+            }
+        }
+    }
+    "unknown".to_string()
 }

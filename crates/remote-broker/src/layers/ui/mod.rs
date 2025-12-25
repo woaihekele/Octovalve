@@ -78,13 +78,17 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     let theme = Theme::dark();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(6), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(6),
+            Constraint::Length(3),
+        ])
         .split(frame.area());
 
     let body = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(chunks[0]);
+        .split(chunks[1]);
 
     let left = Layout::default()
         .direction(Direction::Vertical)
@@ -177,6 +181,27 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         });
     frame.render_stateful_widget(history_list, left[1], &mut app.history_list_state);
 
+    let hostname = if app.hostname.is_empty() {
+        "unknown"
+    } else {
+        app.hostname.as_str()
+    };
+    let host_ip = if app.host_ip.is_empty() {
+        "unknown"
+    } else {
+        app.host_ip.as_str()
+    };
+    let header_line = Line::from(vec![
+        Span::styled("Host: ", theme.key_style()),
+        Span::styled(hostname, theme.value_style(ValueStyle::Important)),
+        Span::styled("  IP: ", theme.key_style()),
+        Span::styled(host_ip, theme.value_style(ValueStyle::Important)),
+    ]);
+    let header = Paragraph::new(header_line)
+        .block(theme.block("Host"))
+        .style(theme.value_style(ValueStyle::Normal));
+    frame.render_widget(header, chunks[0]);
+
     let details = match app.list_view {
         ListView::Pending => app
             .queue
@@ -236,7 +261,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         theme.accent_style(),
     ));
     let footer = Paragraph::new(Line::from(footer_spans)).block(theme.block("Controls"));
-    frame.render_widget(footer, chunks[1]);
+    frame.render_widget(footer, chunks[2]);
 }
 
 fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
@@ -447,52 +472,22 @@ fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
         result.id.clone(),
         ValueStyle::Dim,
     ));
-    lines.push(Line::from(vec![
-        Span::styled("status: ", theme.key_style()),
-        Span::styled(result.status.clone(), theme.status_style(&result.status)),
-    ]));
-    lines.push(kv_line(
-        theme,
-        "summary",
-        result.summary.clone(),
-        ValueStyle::Normal,
-    ));
-    let exit_code = result
-        .exit_code
-        .map(|code| code.to_string())
-        .unwrap_or_else(|| "-".to_string());
-    lines.push(Line::from(vec![
-        Span::styled("exit_code: ", theme.key_style()),
-        Span::styled(exit_code, theme.status_style(&result.status)),
-    ]));
-    lines.push(kv_line(
-        theme,
-        "command",
-        result.command.clone(),
-        ValueStyle::Important,
-    ));
-    lines.push(kv_line(
-        theme,
-        "target",
-        result.target.clone(),
-        ValueStyle::Important,
-    ));
-    lines.push(kv_line(
-        theme,
-        "client",
-        result.client.clone(),
-        ValueStyle::Normal,
-    ));
-    lines.push(kv_line(
-        theme,
-        "peer",
-        result.peer.clone(),
-        ValueStyle::Normal,
-    ));
     lines.push(kv_line(
         theme,
         "intent",
         result.intent.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "cwd",
+        result.cwd.clone().unwrap_or_else(|| "(default)".to_string()),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "command",
+        result.command.clone(),
         ValueStyle::Important,
     ));
     lines.push(kv_line(
@@ -503,44 +498,26 @@ fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
     ));
     lines.push(kv_line(
         theme,
+        "summary",
+        result.summary.clone(),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "peer",
+        result.peer.clone(),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
         "pipeline",
         result.pipeline.clone().unwrap_or_else(|| "-".to_string()),
         ValueStyle::Normal,
     ));
     lines.push(kv_line(
         theme,
-        "cwd",
-        result.cwd.clone().unwrap_or_else(|| "(default)".to_string()),
-        ValueStyle::Important,
-    ));
-    lines.push(kv_line(
-        theme,
-        "timeout_ms",
-        result
-            .timeout_ms
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        ValueStyle::Normal,
-    ));
-    lines.push(kv_line(
-        theme,
-        "max_output_bytes",
-        result
-            .max_output_bytes
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        ValueStyle::Normal,
-    ));
-    lines.push(kv_line(
-        theme,
         "queued_for",
         format!("{}s", result.queued_for_secs),
-        ValueStyle::Dim,
-    ));
-    lines.push(kv_line(
-        theme,
-        "executed_at",
-        format_exec_time(result.finished_at_ms),
         ValueStyle::Dim,
     ));
     Text::from(lines)

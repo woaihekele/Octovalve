@@ -247,27 +247,21 @@ fn result_view_from_response(
         CommandStatus::Approved => "approved".to_string(),
     };
     let pipeline = if pending.request.pipeline.is_empty() {
-        None
+        Some(pending.request.raw_command.clone())
     } else {
         Some(format_pipeline(&pending.request.pipeline))
     };
     ResultView {
         id: pending.request.id.clone(),
-        status: format!("{:?}", response.status),
         summary,
         command: pending.request.raw_command.clone(),
-        client: pending.request.client.clone(),
-        target: pending.request.target.clone(),
         peer: pending.peer.clone(),
         intent: pending.request.intent.clone(),
         mode: format_mode(&pending.request.mode).to_string(),
         pipeline,
         cwd: pending.request.cwd.clone(),
-        timeout_ms: pending.request.timeout_ms,
-        max_output_bytes: pending.request.max_output_bytes,
         queued_for_secs: pending.queued_at.elapsed().as_secs(),
         finished_at_ms: system_time_ms(finished_at),
-        exit_code: response.exit_code,
         stdout: response.stdout.clone(),
         stderr: response.stderr.clone(),
     }

@@ -16,8 +16,6 @@ pub(crate) struct Theme {
     highlight_fg: Color,
     highlight_bg: Color,
     warn: Color,
-    ok: Color,
-    error: Color,
 }
 
 impl Theme {
@@ -31,8 +29,6 @@ impl Theme {
             highlight_fg: Color::White,
             highlight_bg: Color::DarkGray,
             warn: Color::Yellow,
-            ok: Color::Green,
-            error: Color::Red,
         }
     }
 
@@ -81,21 +77,4 @@ impl Theme {
         }
     }
 
-    pub(crate) fn status_style(&self, status: &str) -> Style {
-        match status {
-            "Completed" => Style::default()
-                .fg(self.ok)
-                .add_modifier(Modifier::BOLD),
-            "Denied" => Style::default()
-                .fg(self.warn)
-                .add_modifier(Modifier::BOLD),
-            "Error" => Style::default()
-                .fg(self.error)
-                .add_modifier(Modifier::BOLD),
-            "Approved" => Style::default()
-                .fg(self.accent)
-                .add_modifier(Modifier::BOLD),
-            _ => Style::default().fg(self.text),
-        }
-    }
 }

@@ -20,6 +20,8 @@ pub(crate) enum ListView {
 
 #[derive(Default)]
 pub(crate) struct AppState {
+    pub(crate) hostname: String,
+    pub(crate) host_ip: String,
     pub(crate) queue: Vec<RequestView>,
     pub(crate) pending_selected: usize,
     pub(crate) pending_list_state: ListState,
@@ -39,6 +41,11 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
+    pub(crate) fn set_host_info(&mut self, hostname: String, host_ip: String) {
+        self.hostname = hostname;
+        self.host_ip = host_ip;
+    }
+
     pub(crate) fn handle_event(&mut self, event: ServiceEvent) {
         match event {
             ServiceEvent::ConnectionsChanged(count) => {
