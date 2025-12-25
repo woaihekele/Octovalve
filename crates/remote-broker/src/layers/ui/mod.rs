@@ -135,22 +135,30 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
             theme.value_style(ValueStyle::Dim),
         ))]
     } else {
-        let available_width = left[1].width.saturating_sub(3) as usize;
+        let history_block = theme.block(history_title);
+        let history_inner = history_block.inner(left[1]);
+        let available_width = history_inner.width.saturating_sub(3) as usize;
         app.history
             .iter()
             .map(|result| {
                 let exec_time = format_exec_time(result.finished_at_ms);
-                let suffix = format!("  {exec_time}");
-                let max_cmd = available_width.saturating_sub(suffix.len());
+                let time_width = display_width(&exec_time);
+                let gap = 2usize;
+                if available_width <= time_width {
+                    return ListItem::new(Line::styled(
+                        exec_time,
+                        theme.value_style(ValueStyle::Dim),
+                    ));
+                }
+                let max_cmd = available_width.saturating_sub(time_width + gap);
                 let command = truncate_with_ellipsis(&result.command, max_cmd);
-                let title = if available_width == 0 {
-                    String::new()
-                } else if max_cmd == 0 {
-                    suffix.trim_start().to_string()
-                } else {
-                    format!("{command}{suffix}")
-                };
-                ListItem::new(Line::from(title))
+                let padding_width = available_width.saturating_sub(time_width);
+                let padded = pad_right(&command, padding_width);
+                let line = Line::from(vec![
+                    Span::styled(padded, theme.value_style(ValueStyle::Normal)),
+                    Span::styled(exec_time, theme.value_style(ValueStyle::Dim)),
+                ]);
+                ListItem::new(line)
             })
             .collect::<Vec<_>>()
     };
@@ -449,12 +457,14 @@ fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
         result.summary.clone(),
         ValueStyle::Normal,
     ));
-    if let Some(code) = result.exit_code {
-        lines.push(Line::from(vec![
-            Span::styled("exit_code: ", theme.key_style()),
-            Span::styled(code.to_string(), theme.status_style(&result.status)),
-        ]));
-    }
+    let exit_code = result
+        .exit_code
+        .map(|code| code.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    lines.push(Line::from(vec![
+        Span::styled("exit_code: ", theme.key_style()),
+        Span::styled(exit_code, theme.status_style(&result.status)),
+    ]));
     lines.push(kv_line(
         theme,
         "command",
@@ -491,38 +501,36 @@ fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
         result.mode.clone(),
         ValueStyle::Normal,
     ));
-    if let Some(pipeline) = &result.pipeline {
-        lines.push(kv_line(
-            theme,
-            "pipeline",
-            pipeline.clone(),
-            ValueStyle::Normal,
-        ));
-    }
-    if let Some(cwd) = &result.cwd {
-        lines.push(kv_line(
-            theme,
-            "cwd",
-            cwd.clone(),
-            ValueStyle::Normal,
-        ));
-    }
-    if let Some(timeout) = result.timeout_ms {
-        lines.push(kv_line(
-            theme,
-            "timeout_ms",
-            timeout.to_string(),
-            ValueStyle::Normal,
-        ));
-    }
-    if let Some(max) = result.max_output_bytes {
-        lines.push(kv_line(
-            theme,
-            "max_output_bytes",
-            max.to_string(),
-            ValueStyle::Normal,
-        ));
-    }
+    lines.push(kv_line(
+        theme,
+        "pipeline",
+        result.pipeline.clone().unwrap_or_else(|| "-".to_string()),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "cwd",
+        result.cwd.clone().unwrap_or_else(|| "(default)".to_string()),
+        ValueStyle::Important,
+    ));
+    lines.push(kv_line(
+        theme,
+        "timeout_ms",
+        result
+            .timeout_ms
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        ValueStyle::Normal,
+    ));
+    lines.push(kv_line(
+        theme,
+        "max_output_bytes",
+        result
+            .max_output_bytes
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        ValueStyle::Normal,
+    ));
     lines.push(kv_line(
         theme,
         "queued_for",
@@ -558,6 +566,19 @@ fn kv_line(theme: &Theme, key: &str, value: String, level: ValueStyle) -> Line<'
         Span::styled(format!("{key}: "), theme.key_style()),
         Span::styled(value, theme.value_style(level)),
     ])
+}
+
+fn display_width(text: &str) -> usize {
+    text.chars().count()
+}
+
+fn pad_right(text: &str, width: usize) -> String {
+    let mut out = text.to_string();
+    let current = display_width(text);
+    if current < width {
+        out.extend(std::iter::repeat(' ').take(width - current));
+    }
+    out
 }
 
 fn truncate_with_ellipsis(text: &str, max_len: usize) -> String {
