@@ -20,15 +20,6 @@ pub(crate) enum TargetStatus {
     Down,
 }
 
-impl TargetStatus {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            TargetStatus::Ready => "ready",
-            TargetStatus::Down => "down",
-        }
-    }
-}
-
 pub(crate) struct TargetRuntime {
     pub(crate) name: String,
     pub(crate) desc: String,
@@ -56,7 +47,6 @@ pub(crate) struct ProxyState {
 pub(crate) struct TargetListEntry {
     pub(crate) name: String,
     pub(crate) desc: String,
-    pub(crate) status: String,
     pub(crate) last_seen: Option<String>,
     pub(crate) ssh: Option<String>,
     pub(crate) remote_addr: String,
@@ -138,7 +128,6 @@ impl ProxyState {
             .map(|target| TargetListEntry {
                 name: target.name.clone(),
                 desc: target.desc.clone(),
-                status: target.status.as_str().to_string(),
                 last_seen: target.last_seen.map(format_time),
                 ssh: target.ssh.clone(),
                 remote_addr: target.remote_addr.clone(),

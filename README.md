@@ -77,7 +77,7 @@ cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml
 - 其他可选参数：`cwd`、`timeout_ms`、`max_output_bytes`、`env`。
 
 ## list_targets
-返回本地配置的目标列表及状态，包含 `name/desc/status/last_seen/ssh/remote_addr/local_addr`。
+返回本地配置的目标列表，包含 `name/desc/last_seen/ssh/remote_addr/local_addr`。
 
 ## 密码登录说明
 如果必须使用密码登录，请在目标中配置 `ssh_password`，并确保本机安装 `sshpass`：
