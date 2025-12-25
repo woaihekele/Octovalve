@@ -5,16 +5,17 @@
   - `crates/remote-broker`: TUI approval server (UI, service, policy, execution layers).
   - `crates/local-proxy`: MCP stdio server that forwards `run_command` to remote brokers.
   - `crates/protocol`: shared request/response types.
-- Docs and plans live in `docs/` (example configs, design notes).
-- Top-level `config.toml` is the reference whitelist/limits for `remote-broker`.
+- Docs and plans live in `docs/` (design notes).
+- Config files live in `config/`.
+  - `config/config.toml` is the reference whitelist/limits for `remote-broker`.
 
 ## Build, Test, and Development Commands
 - Build all: `cargo build`
 - Run tests: `cargo test`
 - Format (required before commit): `cargo fmt`
 - Run services locally:
-  - `cargo run -p remote-broker -- --listen-addr 127.0.0.1:19307 --config config.toml --audit-dir logs`
-  - `cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml`
+  - `cargo run -p remote-broker -- --listen-addr 127.0.0.1:19307 --config config/config.toml --audit-dir logs`
+  - `cargo run -p local-proxy -- --config /path/to/config/local-proxy-config.toml`
 
 ## Coding Style & Naming Conventions
 - Rust 2021 edition; format with `cargo fmt` before every commit.
@@ -32,6 +33,6 @@
 - If a change affects configs, update docs/examples in `README.md` or `docs/`.
 
 ## Security & Configuration Tips
-- Do not commit or sync `docs/local-proxy-config.toml` (contains private/local settings).
+- Do not commit or sync `config/local-proxy-config.toml` (contains private/local settings).
 - Keep `remote-broker` listening on `127.0.0.1` and access via SSH tunnels.
 - For search tasks, prefer `rg` / `rg --files` if available.

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 pub(crate) struct Args {
     #[arg(long, default_value = "127.0.0.1:19307")]
     pub(crate) listen_addr: String,
-    #[arg(long, default_value = "config.toml")]
+    #[arg(long, default_value = "config/config.toml")]
     pub(crate) config: PathBuf,
     #[arg(long, default_value = "logs")]
     pub(crate) audit_dir: PathBuf,

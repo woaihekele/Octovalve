@@ -12,7 +12,7 @@
 - Rust 1.88（见 `rust-toolchain.toml`）。
 
 ## 快速开始
-1) 在远端准备 `config.toml`：
+1) 在远端准备 `config/config.toml`：
 
 ```toml
 auto_approve_allowed = true
@@ -48,11 +48,11 @@ max_output_bytes = 1048576
 ```bash
 cargo run -p remote-broker -- \
   --listen-addr 127.0.0.1:19307 \
-  --config config.toml \
+  --config config/config.toml \
   --audit-dir logs
 ```
 
-3) 在本地准备 `local-proxy` 配置（示例见 `docs/local-proxy-config.toml`）：
+3) 在本地准备 `local-proxy` 配置（示例见 `config/local-proxy-config.toml`）：
 
 ```toml
 default_target = "example-target"
@@ -80,7 +80,7 @@ local_port = 19312
 4) 启动本地代理（自动建立并维持隧道）：
 
 ```bash
-cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml
+cargo run -p local-proxy -- --config /path/to/config/local-proxy-config.toml
 ```
 
 5) 将 MCP 客户端配置指向 `local-proxy`（stdio 模式）。
@@ -122,7 +122,7 @@ cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml
 ## CLI 选项
 remote-broker：
 - `--listen-addr`（默认：`127.0.0.1:19307`）
-- `--config`（默认：`config.toml`）
+- `--config`（默认：`config/config.toml`）
 - `--audit-dir`（默认：`logs`）
 - `--auto-approve`（默认：关闭，自动批准并跳过 TUI）
 - `--log-to-stderr`（默认：关闭，TUI 模式建议保持关闭）
