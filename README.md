@@ -106,13 +106,11 @@ local-proxy：
   - `A` 批准执行（仅 Pending）
   - `D` 拒绝（仅 Pending）
   - `Tab` 切换焦点（Pending/History）
-  - 鼠标滚轮：上下滚动列表
   - `R` 进入结果全屏
   - `Q` 退出（二次确认）
 - 全屏结果滚动：
   - `j/k` 上下滚动，`gg/G` 顶/底
   - `Ctrl+f/b` 翻页
-  - 鼠标滚轮：上下滚动
   - `R` 或 `Esc` 退出全屏
 
 ## 安全说明

@@ -5,7 +5,7 @@ pub(crate) mod terminal;
 use crate::layers::service::events::ServiceCommand;
 use crate::shared::dto::{RequestView, ResultView};
 use app::{ListView, ViewMode};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{List, ListItem, Paragraph, Wrap};
@@ -67,26 +67,6 @@ pub(crate) fn handle_key_event(
         _ => {}
     }
     false
-}
-
-pub(crate) fn handle_mouse_event(event: MouseEvent, app: &mut AppState) {
-    match event.kind {
-        MouseEventKind::ScrollUp => {
-            if app.view_mode == ViewMode::ResultFullscreen {
-                app.scroll_up(1);
-            } else {
-                app.select_prev();
-            }
-        }
-        MouseEventKind::ScrollDown => {
-            if app.view_mode == ViewMode::ResultFullscreen {
-                app.scroll_down(1);
-            } else {
-                app.select_next();
-            }
-        }
-        _ => {}
-    }
 }
 
 pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
@@ -267,7 +247,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
     frame.render_widget(result_block, right[1]);
 
     let mut footer_spans = vec![Span::styled(
-        "A=approve  D=deny  ↑/↓=select  Wheel=scroll  Tab=focus  R=full  Q=quit  ",
+        "A=approve  D=deny  ↑/↓=select  Tab=focus  R=full  Q=quit  ",
         theme.help_style(),
     )];
     if app.confirm_quit {
@@ -316,7 +296,7 @@ fn draw_result_fullscreen(frame: &mut ratatui::Frame, app: &mut AppState) {
     frame.render_widget(result_panel, chunks[0]);
 
     let mut footer_spans = vec![Span::styled(
-        "j/k=scroll  Wheel=scroll  gg/G=top/bottom  Ctrl+f/b=page  R/Esc=back  Q=quit  ",
+        "j/k=scroll  gg/G=top/bottom  Ctrl+f/b=page  R/Esc=back  Q=quit  ",
         theme.help_style(),
     )];
     if app.confirm_quit {
