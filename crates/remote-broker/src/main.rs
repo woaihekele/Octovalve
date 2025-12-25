@@ -45,11 +45,13 @@ async fn main() -> anyhow::Result<()> {
     let (ui_event_tx, mut ui_event_rx) = mpsc::channel::<ServiceEvent>(128);
     let (ui_cmd_tx, ui_cmd_rx) = mpsc::channel::<ServiceCommand>(128);
 
+    let history = load_history(output_dir.as_ref(), limits.max_output_bytes, HISTORY_LIMIT);
+
     run_tui_service(
         listener,
         whitelist,
-        limits,
-        output_dir,
+        Arc::clone(&limits),
+        Arc::clone(&output_dir),
         config.auto_approve_allowed,
         ui_event_tx,
         ui_cmd_rx,
@@ -58,7 +60,6 @@ async fn main() -> anyhow::Result<()> {
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
     app.set_host_info(resolve_hostname(), resolve_ip());
-    let history = load_history(output_dir.as_ref(), limits.max_output_bytes, HISTORY_LIMIT);
     app.load_history(history);
 
     let tick_rate = Duration::from_millis(100);

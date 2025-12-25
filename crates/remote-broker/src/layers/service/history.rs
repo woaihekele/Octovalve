@@ -173,7 +173,7 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> anyhow::Result<T> {
 }
 
 fn read_text_limited(path: PathBuf, max_bytes: u64) -> Option<String> {
-    let mut file = File::open(&path).ok()?;
+    let file = File::open(&path).ok()?;
     let mut buf = Vec::new();
     let mut handle = file.take(max_bytes);
     handle.read_to_end(&mut buf).ok()?;
