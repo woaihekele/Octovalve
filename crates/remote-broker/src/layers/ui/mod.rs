@@ -8,7 +8,7 @@ use app::{ListView, ViewMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Clear, List, ListItem, Paragraph, Wrap};
 use theme::{Theme, ValueStyle};
 use tokio::sync::mpsc;
 
@@ -202,49 +202,58 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         .style(theme.value_style(ValueStyle::Normal));
     frame.render_widget(header, chunks[0]);
 
-    let details = match app.list_view {
-        ListView::Pending => app
-            .queue
-            .get(app.pending_selected)
-            .map(|pending| format_request_details(&theme, pending))
-            .unwrap_or_else(|| Text::from("no pending request")),
-        ListView::History => app
-            .selected_history()
-            .map(|result| format_result_details(&theme, result))
-            .unwrap_or_else(|| Text::from("no history result")),
-    };
     let detail_title = match app.list_view {
         ListView::Pending => "Details",
         ListView::History => "Result Details",
     };
-    let detail_block = Paragraph::new(details)
-        .block(theme.block(detail_title))
+    let detail_block = theme.block(detail_title);
+    let detail_inner = detail_block.inner(right[0]);
+    let details = match app.list_view {
+        ListView::Pending => app
+            .queue
+            .get(app.pending_selected)
+            .map(|pending| format_request_details(&theme, pending, detail_inner.width))
+            .unwrap_or_else(|| Text::from("no pending request")),
+        ListView::History => app
+            .selected_history()
+            .map(|result| format_result_details(&theme, result, detail_inner.width))
+            .unwrap_or_else(|| Text::from("no history result")),
+    };
+    let detail_widget = Paragraph::new(details)
+        .block(detail_block)
         .style(theme.value_style(ValueStyle::Normal))
         .wrap(Wrap { trim: true });
-    frame.render_widget(detail_block, right[0]);
+    frame.render_widget(Clear, right[0]);
+    frame.render_widget(detail_widget, right[0]);
 
-    let (result_title, result_text) = match app.list_view {
-        ListView::Pending => (
-            "Last Result",
+    let result_title = match app.list_view {
+        ListView::Pending => "Last Result",
+        ListView::History => "Selected Output",
+    };
+    let result_block = theme.block(result_title);
+    let result_inner = result_block.inner(right[1]);
+    let result_widget = match app.list_view {
+        ListView::Pending => Paragraph::new(
             app.last_result
                 .as_ref()
-                .map(|result| format_result_details(&theme, result))
+                .map(|result| format_result_details(&theme, result, result_inner.width))
                 .unwrap_or_else(|| Text::from("no execution yet")),
         ),
-        ListView::History => (
-            "Selected Output",
-            Text::from(
-                app.selected_history()
-                    .map(format_result_output)
-                    .unwrap_or_else(|| "no output".to_string()),
-            ),
-        ),
+        ListView::History => {
+            let output = app
+                .selected_history()
+                .map(format_result_output)
+                .unwrap_or_else(|| "no output".to_string());
+            let wrapped = wrap_text_lines(&output, result_inner.width.max(1) as usize);
+            Paragraph::new(wrapped.join("\n"))
+        }
     };
-    let result_block = Paragraph::new(result_text)
-        .block(theme.block(result_title))
+    let result_widget = result_widget
+        .block(result_block)
         .style(theme.value_style(ValueStyle::Normal))
         .wrap(Wrap { trim: true });
-    frame.render_widget(result_block, right[1]);
+    frame.render_widget(Clear, right[1]);
+    frame.render_widget(result_widget, right[1]);
 
     let mut footer_spans = vec![Span::styled(
         "A=approve  D=deny  ↑/↓=select  Tab=focus  R=full  Q=quit  ",
@@ -374,91 +383,120 @@ fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
-fn format_request_details(theme: &Theme, pending: &RequestView) -> Text<'static> {
+fn format_request_details(theme: &Theme, pending: &RequestView, width: u16) -> Text<'static> {
     let mut lines = Vec::new();
-    lines.push(kv_line(theme, "id", pending.id.clone(), ValueStyle::Dim));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
+        theme,
+        "id",
+        pending.id.clone(),
+        ValueStyle::Dim,
+        width,
+    ));
+    lines.extend(kv_lines(
         theme,
         "client",
         pending.client.clone(),
         ValueStyle::Normal,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "target",
         pending.target.clone(),
         ValueStyle::Important,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "peer",
         pending.peer.clone(),
         ValueStyle::Normal,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "intent",
         pending.intent.clone(),
         ValueStyle::Important,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "mode",
         pending.mode.clone(),
         ValueStyle::Normal,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "command",
         pending.command.clone(),
         ValueStyle::Important,
+        width,
     ));
     if let Some(pipeline) = &pending.pipeline {
-        lines.push(kv_line(
+        lines.extend(kv_lines(
             theme,
             "pipeline",
             pipeline.clone(),
             ValueStyle::Normal,
+            width,
         ));
     }
     if let Some(cwd) = &pending.cwd {
-        lines.push(kv_line(theme, "cwd", cwd.clone(), ValueStyle::Normal));
+        lines.extend(kv_lines(
+            theme,
+            "cwd",
+            cwd.clone(),
+            ValueStyle::Normal,
+            width,
+        ));
     }
     if let Some(timeout) = pending.timeout_ms {
-        lines.push(kv_line(
+        lines.extend(kv_lines(
             theme,
             "timeout_ms",
             timeout.to_string(),
             ValueStyle::Normal,
+            width,
         ));
     }
     if let Some(max) = pending.max_output_bytes {
-        lines.push(kv_line(
+        lines.extend(kv_lines(
             theme,
             "max_output_bytes",
             max.to_string(),
             ValueStyle::Normal,
+            width,
         ));
     }
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "queued_for",
         format!("{}s", pending.queued_at.elapsed().as_secs()),
         ValueStyle::Dim,
+        width,
     ));
     Text::from(lines)
 }
 
-fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
+fn format_result_details(theme: &Theme, result: &ResultView, width: u16) -> Text<'static> {
     let mut lines = Vec::new();
-    lines.push(kv_line(theme, "id", result.id.clone(), ValueStyle::Dim));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
+        theme,
+        "id",
+        result.id.clone(),
+        ValueStyle::Dim,
+        width,
+    ));
+    lines.extend(kv_lines(
         theme,
         "intent",
         result.intent.clone(),
         ValueStyle::Important,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "cwd",
         result
@@ -466,42 +504,49 @@ fn format_result_details(theme: &Theme, result: &ResultView) -> Text<'static> {
             .clone()
             .unwrap_or_else(|| "(default)".to_string()),
         ValueStyle::Important,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "command",
         result.command.clone(),
         ValueStyle::Important,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "mode",
         result.mode.clone(),
         ValueStyle::Normal,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "summary",
         result.summary.clone(),
         ValueStyle::Important,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "peer",
         result.peer.clone(),
         ValueStyle::Normal,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "pipeline",
         result.pipeline.clone().unwrap_or_else(|| "-".to_string()),
         ValueStyle::Normal,
+        width,
     ));
-    lines.push(kv_line(
+    lines.extend(kv_lines(
         theme,
         "queued_for",
         format!("{}s", result.queued_for_secs),
         ValueStyle::Dim,
+        width,
     ));
     Text::from(lines)
 }
@@ -521,11 +566,34 @@ fn format_result_output(result: &ResultView) -> String {
     }
 }
 
-fn kv_line(theme: &Theme, key: &str, value: String, level: ValueStyle) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(format!("{key}: "), theme.key_style()),
-        Span::styled(value, theme.value_style(level)),
-    ])
+fn kv_lines(
+    theme: &Theme,
+    key: &str,
+    value: String,
+    level: ValueStyle,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let key_label = format!("{key}: ");
+    let key_width = display_width(&key_label);
+    let width = width.max(1) as usize;
+    let value_width = width.saturating_sub(key_width).max(1);
+    let wrapped = wrap_text_lines(&value, value_width);
+    let mut lines = Vec::with_capacity(wrapped.len().max(1));
+    let indent = " ".repeat(key_width);
+    for (idx, segment) in wrapped.into_iter().enumerate() {
+        if idx == 0 {
+            lines.push(Line::from(vec![
+                Span::styled(key_label.clone(), theme.key_style()),
+                Span::styled(segment, theme.value_style(level)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(indent.clone(), theme.key_style()),
+                Span::styled(segment, theme.value_style(level)),
+            ]));
+        }
+    }
+    lines
 }
 
 fn display_width(text: &str) -> usize {
