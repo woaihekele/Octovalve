@@ -1,4 +1,4 @@
-# Conduit 远程命令代理
+# Octovalve 远程命令代理
 
 本项目提供本地 MCP stdio 代理与远端审批执行服务。模型只连接本地 stdio，本地代理自动维护 SSH 隧道，将
 `run_command` 请求转发至对应远端，远端在 TUI 中人工审批后执行并返回结果。
