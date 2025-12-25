@@ -8,7 +8,9 @@ use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{ServiceCommand, ServiceEvent};
 use crate::layers::service::{run_headless, run_tui_service};
 use crate::layers::service::logging::init_tracing;
-use crate::layers::ui::{draw_ui, handle_key_event, AppState, restore_terminal, setup_terminal};
+use crate::layers::ui::{
+    draw_ui, handle_key_event, handle_mouse_event, AppState, restore_terminal, setup_terminal,
+};
 use anyhow::Context;
 use clap::Parser;
 use crossterm::event::{self, Event};
@@ -66,10 +68,16 @@ async fn main() -> anyhow::Result<()> {
         terminal.draw(|frame| draw_ui(frame, &mut app))?;
 
         if event::poll(tick_rate)? {
-            if let Event::Key(key) = event::read()? {
-                if handle_key_event(key, &mut app, ui_cmd_tx.clone()) {
-                    break;
+            match event::read()? {
+                Event::Key(key) => {
+                    if handle_key_event(key, &mut app, ui_cmd_tx.clone()) {
+                        break;
+                    }
                 }
+                Event::Mouse(mouse) => {
+                    handle_mouse_event(mouse, &mut app);
+                }
+                _ => {}
             }
         }
     }
