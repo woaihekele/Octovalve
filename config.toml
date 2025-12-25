@@ -1,7 +1,23 @@
 auto_approve_allowed = true
 
 [whitelist]
-allowed = ["ls", "tail", "grep"]
+allowed = [
+  "ls",
+  "cat",
+  "head",
+  "tail",
+  "sed",
+  "rg",
+  "grep",
+  "wc",
+  "sort",
+  "uniq",
+  "find",
+  "ps",
+  "uname",
+  "df",
+  "free",
+]
 denied = [
   "rm",
   "rmdir",
@@ -28,7 +44,7 @@ denied = [
   "chown",
   "chmod",
 ]
-arg_rules = { grep = "^[A-Za-z0-9_.-]+$" }
+arg_rules = { grep = "^[A-Za-z0-9_./-]+$" }
 
 [limits]
 timeout_secs = 30

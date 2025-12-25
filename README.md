@@ -18,9 +18,25 @@
 auto_approve_allowed = true
 
 [whitelist]
-allowed = ["ls", "tail", "/usr/bin/grep"]
+allowed = [
+  "ls",
+  "cat",
+  "head",
+  "tail",
+  "sed",
+  "rg",
+  "grep",
+  "wc",
+  "sort",
+  "uniq",
+  "find",
+  "ps",
+  "uname",
+  "df",
+  "free",
+]
 denied = ["rm", "shutdown"]
-arg_rules = { grep = "^[A-Za-z0-9_.-]+$" }
+arg_rules = { grep = "^[A-Za-z0-9_./-]+$" }
 
 [limits]
 timeout_secs = 30
@@ -75,6 +91,24 @@ cargo run -p local-proxy -- --config /path/to/local-proxy-config.toml
 - `target`：必填，目标名称（在 `local-proxy` 配置中定义）。
 - `mode`：`shell` 或 `argv`，默认 `shell`（`shell` 使用 `/bin/bash -lc` 执行）。
 - 其他可选参数：`cwd`、`timeout_ms`、`max_output_bytes`、`env`。
+
+## 常用只读命令（建议加入白名单）
+查找/定位：
+- `rg -n "pattern" path`
+- `rg --files -g "*.rs"`
+- `grep -R -n "pattern" path`
+
+浏览/检查：
+- `ls`、`ls -la`
+- `cat`、`head -n 20`、`tail -n 20`
+- `sed -n '1,120p' file`
+
+统计/筛选：
+- `wc -l`、`sort`、`uniq -c`
+- `find path -type f -name "*.rs"`
+
+系统/环境（只读）：
+- `ps -ef`、`uname -a`、`df -h`、`free -m`
 
 ## list_targets
 返回本地配置的目标列表，包含 `name/desc/last_seen/ssh/remote_addr/local_addr`。
