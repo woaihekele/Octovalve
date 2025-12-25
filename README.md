@@ -163,6 +163,7 @@ local-proxy：
 
 `request.json` 会包含 `intent`、`mode`、`raw_command`、`pipeline` 等完整请求字段。
 审计信息仍写入 `logs/audit.log`，包含请求元信息与命令。
+重启 `remote-broker` 会从 `logs/requests` 自动恢复最近的历史记录。
 
 ## 测试
 

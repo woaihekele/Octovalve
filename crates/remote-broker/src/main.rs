@@ -6,8 +6,10 @@ use crate::cli::Args;
 use crate::layers::policy::config::Config;
 use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{ServiceCommand, ServiceEvent};
+use crate::layers::service::history::load_history;
 use crate::layers::service::logging::init_tracing;
 use crate::layers::service::{run_headless, run_tui_service};
+use crate::layers::ui::app::HISTORY_LIMIT;
 use crate::layers::ui::{draw_ui, handle_key_event, restore_terminal, setup_terminal, AppState};
 use anyhow::Context;
 use clap::Parser;
@@ -56,6 +58,8 @@ async fn main() -> anyhow::Result<()> {
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
     app.set_host_info(resolve_hostname(), resolve_ip());
+    let history = load_history(output_dir.as_ref(), limits.max_output_bytes, HISTORY_LIMIT);
+    app.load_history(history);
 
     let tick_rate = Duration::from_millis(100);
     loop {

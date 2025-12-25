@@ -2,7 +2,7 @@ use crate::layers::service::events::ServiceEvent;
 use crate::shared::dto::{RequestView, ResultView};
 use ratatui::widgets::ListState;
 
-const HISTORY_LIMIT: usize = 50;
+pub(crate) const HISTORY_LIMIT: usize = 50;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum ViewMode {
@@ -43,6 +43,16 @@ impl AppState {
     pub(crate) fn set_host_info(&mut self, hostname: String, host_ip: String) {
         self.hostname = hostname;
         self.host_ip = host_ip;
+    }
+
+    pub(crate) fn load_history(&mut self, mut history: Vec<ResultView>) {
+        if history.len() > HISTORY_LIMIT {
+            history.truncate(HISTORY_LIMIT);
+        }
+        self.history = history;
+        self.last_result = self.history.first().cloned();
+        self.history_selected = if self.history.is_empty() { 0 } else { 0 };
+        self.sync_history_selection();
     }
 
     pub(crate) fn handle_event(&mut self, event: ServiceEvent) {
