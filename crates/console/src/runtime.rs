@@ -77,7 +77,9 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to spawn ssh tunnel");
-                    tokio::time::sleep(RECONNECT_DELAY).await;
+                    if wait_reconnect_or_shutdown(&shutdown).await {
+                        break;
+                    }
                     continue;
                 }
             }
@@ -94,7 +96,9 @@ async fn run_target_worker(
             )
             .await;
             warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
-            tokio::time::sleep(RECONNECT_DELAY).await;
+            if wait_reconnect_or_shutdown(&shutdown).await {
+                break;
+            }
             continue;
         }
 
@@ -114,7 +118,9 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to subscribe");
-                    tokio::time::sleep(RECONNECT_DELAY).await;
+                    if wait_reconnect_or_shutdown(&shutdown).await {
+                        break;
+                    }
                     continue;
                 }
                 if let Err(err) = send_request(&mut framed, ControlRequest::Snapshot).await {
@@ -127,11 +133,13 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to request snapshot");
-                    tokio::time::sleep(RECONNECT_DELAY).await;
+                    if wait_reconnect_or_shutdown(&shutdown).await {
+                        break;
+                    }
                     continue;
                 }
 
-        info!(target = %runtime.name, "control session started");
+                info!(target = %runtime.name, "control session started");
                 if let Err(err) = session_loop(
                     &mut framed,
                     &runtime.name,
@@ -166,7 +174,16 @@ async fn run_target_worker(
             }
         }
 
-        tokio::time::sleep(RECONNECT_DELAY).await;
+        if wait_reconnect_or_shutdown(&shutdown).await {
+            break;
+        }
+    }
+}
+
+async fn wait_reconnect_or_shutdown(shutdown: &CancellationToken) -> bool {
+    tokio::select! {
+        _ = shutdown.cancelled() => true,
+        _ = tokio::time::sleep(RECONNECT_DELAY) => false,
     }
 }
 
