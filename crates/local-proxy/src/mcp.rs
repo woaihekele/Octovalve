@@ -1,4 +1,5 @@
 use crate::state::{ProxyRuntimeDefaults, ProxyState, TargetListEntry};
+use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -25,6 +26,7 @@ pub(crate) struct ProxyHandler {
     client_id: String,
     default_timeout_ms: u64,
     default_max_output_bytes: u64,
+    tunnel_client: Option<TunnelClient>,
 }
 
 impl ProxyHandler {
@@ -32,12 +34,14 @@ impl ProxyHandler {
         state: Arc<RwLock<ProxyState>>,
         client_id: String,
         defaults: ProxyRuntimeDefaults,
+        tunnel_client: Option<TunnelClient>,
     ) -> Self {
         Self {
             state,
             client_id,
             default_timeout_ms: defaults.timeout_ms,
             default_max_output_bytes: defaults.max_output_bytes,
+            tunnel_client,
         }
     }
 
@@ -212,7 +216,41 @@ impl ServerHandler for ProxyHandler {
                 let pipeline = parse_pipeline(&args.command)
                     .map_err(|err| CallToolError::invalid_arguments("run_command", Some(err)))?;
 
-                let addr = {
+                let addr = if let Some(tunnel_client) = self.tunnel_client.as_ref() {
+                    let forward = {
+                        let state = self.state.read().await;
+                        state.forward_spec(&args.target).map_err(|err| {
+                            CallToolError::invalid_arguments(
+                                "run_command",
+                                Some(err.to_string()),
+                            )
+                        })?
+                    };
+                    if let Some(forward) = forward {
+                        let local_addr = tunnel_client
+                            .ensure_forward(forward)
+                            .await
+                            .map_err(|err| {
+                                CallToolError::invalid_arguments(
+                                    "run_command",
+                                    Some(err.to_string()),
+                                )
+                            })?;
+                        {
+                            let mut state = self.state.write().await;
+                            state.note_tunnel_ready(&args.target);
+                        }
+                        local_addr
+                    } else {
+                        let mut state = self.state.write().await;
+                        state.ensure_tunnel(&args.target).map_err(|err| {
+                            CallToolError::invalid_arguments(
+                                "run_command",
+                                Some(err.to_string()),
+                            )
+                        })?
+                    }
+                } else {
                     let mut state = self.state.write().await;
                     state.ensure_tunnel(&args.target).map_err(|err| {
                         CallToolError::invalid_arguments("run_command", Some(err.to_string()))

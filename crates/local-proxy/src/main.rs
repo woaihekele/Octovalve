@@ -3,6 +3,7 @@ mod config;
 mod mcp;
 mod state;
 mod tunnel;
+mod tunnel_client;
 
 use clap::Parser;
 use cli::Args;
@@ -20,6 +21,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use tunnel::{shutdown_tunnels, spawn_shutdown_handler, spawn_tunnel_manager};
+use tunnel_client::TunnelClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -28,7 +30,17 @@ async fn main() -> anyhow::Result<()> {
     let (state, defaults) = build_proxy_state(&args)?;
     let state = Arc::new(RwLock::new(state));
     let shutdown = CancellationToken::new();
-    spawn_tunnel_manager(Arc::clone(&state), shutdown.clone());
+    let tunnel_client = args
+        .tunnel_daemon_addr
+        .as_ref()
+        .map(|addr| TunnelClient::new(addr.clone(), args.client_id.clone()));
+    {
+        let mut guard = state.write().await;
+        guard.set_tunnel_client(tunnel_client.clone());
+    }
+    if tunnel_client.is_none() {
+        spawn_tunnel_manager(Arc::clone(&state), shutdown.clone());
+    }
     spawn_shutdown_handler(Arc::clone(&state), shutdown.clone());
 
     let server_details = InitializeResult {
@@ -51,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = StdioTransport::new(TransportOptions::default())
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-    let handler = ProxyHandler::new(Arc::clone(&state), args.client_id, defaults);
+    let handler = ProxyHandler::new(Arc::clone(&state), args.client_id, defaults, tunnel_client);
     let server = server_runtime::create_server(server_details, transport, handler);
     let result = server.start().await;
     shutdown.cancel();

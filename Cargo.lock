@@ -287,6 +287,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "tunnel-protocol",
 ]
 
 [[package]]
@@ -792,6 +793,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "tunnel-protocol",
  "uuid",
 ]
 
@@ -1705,6 +1707,30 @@ dependencies = [
  "sha1",
  "thiserror 1.0.69",
  "utf-8",
+]
+
+[[package]]
+name = "tunnel-daemon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "tunnel-protocol",
+]
+
+[[package]]
+name = "tunnel-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

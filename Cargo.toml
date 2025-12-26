@@ -5,6 +5,8 @@ members = [
   "crates/protocol",
   "crates/local-proxy",
   "crates/remote-broker",
+  "crates/tunnel-protocol",
+  "crates/tunnel-daemon",
 ]
 
 [workspace.package]

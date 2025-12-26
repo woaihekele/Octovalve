@@ -76,6 +76,16 @@ pub(crate) fn spawn_shutdown_handler(state: Arc<RwLock<ProxyState>>, shutdown: C
 }
 
 pub(crate) async fn shutdown_tunnels(state: Arc<RwLock<ProxyState>>) {
+    let (tunnel_client, forwards) = {
+        let state = state.read().await;
+        (state.tunnel_client(), state.forward_specs())
+    };
+    if let Some(client) = tunnel_client {
+        for forward in forwards {
+            let _ = client.release_forward(forward).await;
+        }
+        return;
+    }
     let mut state = state.write().await;
     for name in state.target_names() {
         if let Some(target) = state.get_target_mut(&name) {

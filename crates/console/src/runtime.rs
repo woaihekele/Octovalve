@@ -3,6 +3,7 @@ use crate::control::{ControlRequest, ControlResponse};
 use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
 use crate::tunnel::{spawn_tunnel, stop_tunnel, TargetRuntime};
+use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
@@ -13,6 +14,7 @@ use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
+use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 use tracing::{info, warn};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
@@ -22,6 +24,7 @@ pub(crate) async fn spawn_target_workers(
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
+    tunnel_client: Option<TunnelClient>,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     let targets = {
@@ -39,8 +42,9 @@ pub(crate) async fn spawn_target_workers(
         let shutdown = shutdown.clone();
         let bootstrap = bootstrap.clone();
         let event_tx = event_tx.clone();
+        let tunnel_client = tunnel_client.clone();
         let handle = tokio::spawn(async move {
-            run_target_worker(spec, state, rx, bootstrap, shutdown, event_tx).await;
+            run_target_worker(spec, state, rx, bootstrap, shutdown, event_tx, tunnel_client).await;
         });
         handles.push(handle);
     }
@@ -54,18 +58,55 @@ async fn run_target_worker(
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
+    tunnel_client: Option<TunnelClient>,
 ) {
     let mut runtime = TargetRuntime::from_spec(spec);
+    let forward_spec = control_forward_spec(&runtime);
     loop {
         if shutdown.is_cancelled() {
             info!(target = %runtime.name, "shutdown requested, stopping tunnel");
-            stop_tunnel(&mut runtime).await;
+            if let (Some(client), Some(forward)) = (tunnel_client.as_ref(), forward_spec.as_ref()) {
+                let _ = client.release_forward(forward.clone()).await;
+            } else {
+                stop_tunnel(&mut runtime).await;
+            }
             info!(target = %runtime.name, "worker stopped");
             break;
         }
 
         if runtime.ssh.is_some() {
-            if !runtime.refresh_tunnel() {
+            if let Some(client) = tunnel_client.as_ref() {
+                if let Some(forward) = forward_spec.as_ref() {
+                    if let Err(err) = client.ensure_forward(forward.clone()).await {
+                        set_status_and_notify(
+                            &runtime.name,
+                            TargetStatus::Down,
+                            Some(err.to_string()),
+                            &state,
+                            &event_tx,
+                        )
+                        .await;
+                        warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
+                        if wait_reconnect_or_shutdown(&shutdown).await {
+                            break;
+                        }
+                        continue;
+                    }
+                } else {
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some("missing control local bind/port".to_string()),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
+                    if wait_reconnect_or_shutdown(&shutdown).await {
+                        break;
+                    }
+                    continue;
+                }
+            } else if !runtime.refresh_tunnel() {
                 info!(target = %runtime.name, "spawning ssh tunnel");
                 if let Err(err) = spawn_tunnel(&mut runtime) {
                     set_status_and_notify(
@@ -185,6 +226,21 @@ async fn wait_reconnect_or_shutdown(shutdown: &CancellationToken) -> bool {
         _ = shutdown.cancelled() => true,
         _ = tokio::time::sleep(RECONNECT_DELAY) => false,
     }
+}
+
+fn control_forward_spec(runtime: &TargetRuntime) -> Option<ForwardSpec> {
+    if runtime.ssh.is_none() {
+        return None;
+    }
+    let bind = runtime.control_local_bind.clone()?;
+    let port = runtime.control_local_port?;
+    Some(ForwardSpec {
+        target: runtime.name.clone(),
+        purpose: ForwardPurpose::Control,
+        local_bind: bind,
+        local_port: port,
+        remote_addr: runtime.control_remote_addr.clone(),
+    })
 }
 
 async fn session_loop(

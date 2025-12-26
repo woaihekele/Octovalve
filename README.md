@@ -8,6 +8,7 @@
 - local-proxy：MCP stdio server，提供 `run_command` 工具并转发请求。
 - remote-broker：TUI 审批服务，人工确认后执行命令并返回结果。
 - console：本地控制服务，自动启动/同步远端 `remote-broker`，提供 HTTP 控制接口。
+- tunnel-daemon：本地 SSH 隧道复用服务，供多进程 local-proxy/console 共享连接。
 - protocol：本地与远端共享的请求/响应结构体。
 
 ## 环境要求
@@ -161,6 +162,28 @@ cargo run -p remote-broker -- \
   - `targets_snapshot`：初始全量目标列表
   - `target_updated`：单目标状态更新
 
+## Tunnel Daemon（可选）
+用于多进程 local-proxy/console 共享 SSH 隧道（严格模式：只允许 `config/tunnel-daemon.toml` 中声明的转发）。
+
+启动服务：
+```bash
+cargo run -p tunnel-daemon -- --config config/tunnel-daemon.toml --listen-addr 127.0.0.1:19310
+```
+
+local-proxy 使用：
+```bash
+cargo run -p local-proxy -- --config config/local-proxy-config.toml --tunnel-daemon-addr 127.0.0.1:19310
+```
+
+console 使用：
+```bash
+cargo run -p console -- --config config/local-proxy-config.toml --tunnel-daemon-addr 127.0.0.1:19310
+```
+
+注意：
+- `tunnel-daemon` 配置中的 target/端口需与 `local-proxy` / `console` 的目标配置保持一致。
+- `purpose = "data"` 对应 `remote_addr`，`purpose = "control"` 对应 `control_remote_addr`。
+
 ## Console UI（Tauri）
 可选的本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
 
@@ -201,6 +224,7 @@ local-proxy：
 - `--client-id`（默认：`local-proxy`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
+- `--tunnel-daemon-addr`（可选，使用 tunnel-daemon 复用隧道）
 
 console：
 - `--config`（目标配置，沿用 `config/local-proxy-config.toml`）
@@ -211,6 +235,13 @@ console：
 - `--remote-listen-addr`（默认：`127.0.0.1:19307`）
 - `--remote-control-addr`（默认：`127.0.0.1:19308`）
 - `--remote-audit-dir`（默认：`~/.octovalve/logs`）
+- `--tunnel-daemon-addr`（可选，使用 tunnel-daemon 复用隧道）
+- `--tunnel-client-id`（默认：`console`）
+
+tunnel-daemon：
+- `--config`（隧道配置，默认 `config/tunnel-daemon.toml`）
+- `--listen-addr`（默认：`127.0.0.1:19310`）
+- `--control-dir`（默认：`~/.octovalve/tunnel-control`）
 
 ## TUI 操作
 - 左侧为上下两栏：`Pending/History`（历史默认保留最近 50 条）。

@@ -14,6 +14,8 @@ pub(crate) struct Args {
     pub(crate) config: Option<PathBuf>,
     #[arg(long, default_value = "local-proxy")]
     pub(crate) client_id: String,
+    #[arg(long)]
+    pub(crate) tunnel_daemon_addr: Option<String>,
     #[arg(long, default_value_t = 30_000)]
     pub(crate) timeout_ms: u64,
     #[arg(long, default_value_t = 1024 * 1024)]

@@ -1,10 +1,12 @@
 use crate::cli::Args;
 use crate::config::{load_proxy_config, ProxyConfig};
 use crate::tunnel::spawn_tunnel;
+use crate::tunnel_client::TunnelClient;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::SystemTime;
 use tokio::process::Child;
+use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
 const DEFAULT_REMOTE_ADDR: &str = "127.0.0.1:19307";
 const DEFAULT_BIND_HOST: &str = "127.0.0.1";
@@ -41,6 +43,7 @@ pub(crate) struct ProxyState {
     targets: HashMap<String, TargetRuntime>,
     target_order: Vec<String>,
     default_target: Option<String>,
+    tunnel_client: Option<TunnelClient>,
 }
 
 #[derive(Serialize)]
@@ -85,6 +88,14 @@ impl ProxyState {
         self.target_order.clone()
     }
 
+    pub(crate) fn set_tunnel_client(&mut self, client: Option<TunnelClient>) {
+        self.tunnel_client = client;
+    }
+
+    pub(crate) fn tunnel_client(&self) -> Option<TunnelClient> {
+        self.tunnel_client.clone()
+    }
+
     pub(crate) fn default_target(&self) -> Option<String> {
         self.default_target.clone()
     }
@@ -94,6 +105,9 @@ impl ProxyState {
     }
 
     pub(crate) fn ensure_all_tunnels(&mut self) {
+        if self.tunnel_client.is_some() {
+            return;
+        }
         for name in &self.target_order {
             if let Some(target) = self.targets.get_mut(name) {
                 if target.ssh.is_none() {
@@ -113,6 +127,9 @@ impl ProxyState {
     }
 
     fn refresh_statuses(&mut self) {
+        if self.tunnel_client.is_some() {
+            return;
+        }
         for name in &self.target_order {
             if let Some(target) = self.targets.get_mut(name) {
                 target.refresh_status();
@@ -141,11 +158,69 @@ impl ProxyState {
             .targets
             .get_mut(name)
             .ok_or_else(|| anyhow::anyhow!("unknown target: {name}"))?;
+        if self.tunnel_client.is_some() {
+            return Ok(target.local_addr.clone());
+        }
         target.refresh_status();
         if target.ssh.is_some() && target.status != TargetStatus::Ready {
             spawn_tunnel(target)?;
         }
         Ok(target.local_addr.clone())
+    }
+
+    pub(crate) fn forward_spec(&self, name: &str) -> anyhow::Result<Option<ForwardSpec>> {
+        let target = self
+            .targets
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("unknown target: {name}"))?;
+        if target.ssh.is_none() {
+            return Ok(None);
+        }
+        let bind = target
+            .local_bind
+            .clone()
+            .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
+        let port = target
+            .local_port
+            .ok_or_else(|| anyhow::anyhow!("missing local_port for target {name}"))?;
+        Ok(Some(ForwardSpec {
+            target: target.name.clone(),
+            purpose: ForwardPurpose::Data,
+            local_bind: bind,
+            local_port: port,
+            remote_addr: target.remote_addr.clone(),
+        }))
+    }
+
+    pub(crate) fn forward_specs(&self) -> Vec<ForwardSpec> {
+        self.target_order
+            .iter()
+            .filter_map(|name| self.targets.get(name))
+            .filter_map(|target| {
+                if target.ssh.is_none() {
+                    return None;
+                }
+                let bind = target
+                    .local_bind
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
+                let port = target.local_port?;
+                Some(ForwardSpec {
+                    target: target.name.clone(),
+                    purpose: ForwardPurpose::Data,
+                    local_bind: bind,
+                    local_port: port,
+                    remote_addr: target.remote_addr.clone(),
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn note_tunnel_ready(&mut self, name: &str) {
+        if let Some(target) = self.targets.get_mut(name) {
+            target.status = TargetStatus::Ready;
+            target.last_error = None;
+        }
     }
 
     pub(crate) fn note_success(&mut self, name: &str) {
@@ -169,9 +244,10 @@ fn format_time(time: SystemTime) -> String {
 }
 
 pub(crate) fn build_proxy_state(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntimeDefaults)> {
+    let use_tunnel_daemon = args.tunnel_daemon_addr.is_some();
     if let Some(path) = &args.config {
         let config = load_proxy_config(path)?;
-        build_state_from_config(args, config)
+        build_state_from_config(args, config, use_tunnel_daemon)
     } else {
         build_state_from_args(args)
     }
@@ -200,6 +276,7 @@ fn build_state_from_args(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntim
         targets,
         target_order: vec!["default".to_string()],
         default_target: Some("default".to_string()),
+        tunnel_client: None,
     };
     let defaults = ProxyRuntimeDefaults {
         timeout_ms: args.timeout_ms,
@@ -211,6 +288,7 @@ fn build_state_from_args(args: &Args) -> anyhow::Result<(ProxyState, ProxyRuntim
 fn build_state_from_config(
     args: &Args,
     config: ProxyConfig,
+    use_tunnel_daemon: bool,
 ) -> anyhow::Result<(ProxyState, ProxyRuntimeDefaults)> {
     let defaults = config.defaults.unwrap_or_default();
     let default_remote = defaults
@@ -271,9 +349,11 @@ fn build_state_from_config(
             tunnel_pgid: None,
         };
 
-        if let Err(err) = spawn_tunnel(&mut runtime) {
-            runtime.status = TargetStatus::Down;
-            runtime.last_error = Some(err.to_string());
+        if !use_tunnel_daemon {
+            if let Err(err) = spawn_tunnel(&mut runtime) {
+                runtime.status = TargetStatus::Down;
+                runtime.last_error = Some(err.to_string());
+            }
         }
 
         order.push(runtime.name.clone());
@@ -290,6 +370,7 @@ fn build_state_from_config(
         targets,
         target_order: order,
         default_target: config.default_target,
+        tunnel_client: None,
     };
 
     let defaults = ProxyRuntimeDefaults {
@@ -309,6 +390,7 @@ mod tests {
             remote_addr: "127.0.0.1:19306".to_string(),
             config: None,
             client_id: "local-proxy".to_string(),
+            tunnel_daemon_addr: None,
             timeout_ms: 10,
             max_output_bytes: 20,
         };

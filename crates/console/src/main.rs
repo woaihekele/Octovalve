@@ -6,6 +6,7 @@ mod events;
 mod runtime;
 mod state;
 mod tunnel;
+mod tunnel_client;
 
 use crate::bootstrap::BootstrapConfig;
 use crate::cli::Args;
@@ -14,6 +15,7 @@ use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, ControlCommand, TargetInfo};
+use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
@@ -78,11 +80,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .with_state(app_state);
 
+    let tunnel_client = args
+        .tunnel_daemon_addr
+        .as_ref()
+        .map(|addr| TunnelClient::new(addr.clone(), args.tunnel_client_id.clone()));
     let worker_handles = spawn_target_workers(
         Arc::clone(&shared_state),
         bootstrap,
         shutdown.clone(),
         event_tx,
+        tunnel_client,
     )
     .await;
 
