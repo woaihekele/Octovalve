@@ -2,6 +2,11 @@ use crate::tunnel::TargetRuntime;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
+use tokio::time::{timeout, Duration};
+
+const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+const SCP_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BootstrapConfig {
@@ -93,13 +98,11 @@ async fn run_ssh(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Result<()>
         .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
     let mut cmd = build_ssh_base(target, "ssh");
     cmd.arg("-T");
-    if target.ssh_password.is_none() {
-        cmd.arg("-o").arg("BatchMode=yes");
-    }
+    apply_ssh_options(&mut cmd, target.ssh_password.is_some());
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
     cmd.arg(remote_cmd);
-    let output = cmd.output().await.context("ssh command failed")?;
+    let output = run_command_with_timeout(&mut cmd, SSH_COMMAND_TIMEOUT, "ssh").await?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -115,13 +118,11 @@ async fn run_scp(target: &TargetRuntime, local: &Path, remote_path: &str) -> any
         .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
     let remote = format!("{}:{}", ssh, remote_path);
     let mut cmd = build_ssh_base(target, "scp");
-    if target.ssh_password.is_none() {
-        cmd.arg("-o").arg("BatchMode=yes");
-    }
+    apply_ssh_options(&mut cmd, target.ssh_password.is_some());
     cmd.args(&target.ssh_args);
     cmd.arg(local);
     cmd.arg(remote);
-    let output = cmd.output().await.context("scp command failed")?;
+    let output = run_command_with_timeout(&mut cmd, SCP_COMMAND_TIMEOUT, "scp").await?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -137,13 +138,11 @@ async fn run_ssh_capture(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Re
         .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
     let mut cmd = build_ssh_base(target, "ssh");
     cmd.arg("-T");
-    if target.ssh_password.is_none() {
-        cmd.arg("-o").arg("BatchMode=yes");
-    }
+    apply_ssh_options(&mut cmd, target.ssh_password.is_some());
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
     cmd.arg(remote_cmd);
-    let output = cmd.output().await.context("ssh command failed")?;
+    let output = run_command_with_timeout(&mut cmd, SSH_COMMAND_TIMEOUT, "ssh").await?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -180,6 +179,29 @@ fn build_ssh_base(target: &TargetRuntime, command: &str) -> Command {
         cmd
     } else {
         Command::new(command)
+    }
+}
+
+fn apply_ssh_options(cmd: &mut Command, has_password: bool) {
+    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+    cmd.arg("-o")
+        .arg(format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT_SECS));
+    if !has_password {
+        cmd.arg("-o").arg("BatchMode=yes");
+    }
+}
+
+async fn run_command_with_timeout(
+    cmd: &mut Command,
+    command_timeout: Duration,
+    label: &str,
+) -> anyhow::Result<std::process::Output> {
+    match timeout(command_timeout, cmd.output()).await {
+        Ok(result) => result.with_context(|| format!("{label} command failed")),
+        Err(_) => anyhow::bail!(
+            "{label} command timed out after {}s",
+            command_timeout.as_secs()
+        ),
     }
 }
 
