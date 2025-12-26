@@ -16,32 +16,33 @@ use tokio_util::sync::CancellationToken;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-pub(crate) fn spawn_target_workers(
+pub(crate) async fn spawn_target_workers(
     state: Arc<RwLock<ConsoleState>>,
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
-) {
-    tokio::spawn(async move {
-        let targets = {
-            let state = state.read().await;
-            state.target_specs()
-        };
-        for spec in targets {
-            let (tx, rx) = mpsc::channel(64);
-            {
-                let mut state = state.write().await;
-                state.register_command_sender(spec.name.clone(), tx.clone());
-            }
-            let state = Arc::clone(&state);
-            let shutdown = shutdown.clone();
-            let bootstrap = bootstrap.clone();
-            let event_tx = event_tx.clone();
-            tokio::spawn(async move {
-                run_target_worker(spec, state, rx, bootstrap, shutdown, event_tx).await;
-            });
+) -> Vec<tokio::task::JoinHandle<()>> {
+    let mut handles = Vec::new();
+    let targets = {
+        let state = state.read().await;
+        state.target_specs()
+    };
+    for spec in targets {
+        let (tx, rx) = mpsc::channel(64);
+        {
+            let mut state = state.write().await;
+            state.register_command_sender(spec.name.clone(), tx.clone());
         }
-    });
+        let state = Arc::clone(&state);
+        let shutdown = shutdown.clone();
+        let bootstrap = bootstrap.clone();
+        let event_tx = event_tx.clone();
+        let handle = tokio::spawn(async move {
+            run_target_worker(spec, state, rx, bootstrap, shutdown, event_tx).await;
+        });
+        handles.push(handle);
+    }
+    handles
 }
 
 async fn run_target_worker(

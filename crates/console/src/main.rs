@@ -71,12 +71,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .with_state(app_state);
 
-    spawn_target_workers(
+    let worker_handles = spawn_target_workers(
         Arc::clone(&shared_state),
         bootstrap,
         shutdown.clone(),
         event_tx,
-    );
+    )
+    .await;
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
@@ -84,6 +85,10 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown(shutdown.clone()))
         .await?;
+    shutdown.cancel();
+    for handle in worker_handles {
+        let _ = handle.await;
+    }
     Ok(())
 }
 
