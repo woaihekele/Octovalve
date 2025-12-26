@@ -1,13 +1,21 @@
 use crate::config::{
     default_control_remote_addr, default_remote_addr, ConsoleConfig, ConsoleDefaults, TargetConfig,
 };
+use crate::control::{ServiceEvent, ServiceSnapshot};
 use anyhow::Context;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
+use tokio::sync::mpsc;
 
 const DEFAULT_BIND_HOST: &str = "127.0.0.1";
 const DEFAULT_CONTROL_PORT_OFFSET: u16 = 100;
+const HISTORY_LIMIT: usize = 50;
+
+pub(crate) enum ControlCommand {
+    Approve(String),
+    Deny(String),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,6 +32,8 @@ pub(crate) struct TargetSpec {
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
     pub(crate) control_remote_addr: String,
+    pub(crate) control_local_bind: Option<String>,
+    pub(crate) control_local_port: Option<u16>,
     pub(crate) control_local_addr: Option<String>,
 }
 
@@ -37,6 +47,7 @@ pub(crate) struct TargetInfo {
     pub(crate) last_error: Option<String>,
     pub(crate) control_addr: String,
     pub(crate) local_addr: Option<String>,
+    pub(crate) is_default: bool,
 }
 
 pub(crate) struct ConsoleState {
@@ -47,6 +58,8 @@ pub(crate) struct ConsoleState {
     pending_count: HashMap<String, usize>,
     last_seen: HashMap<String, SystemTime>,
     last_error: HashMap<String, String>,
+    snapshots: HashMap<String, ServiceSnapshot>,
+    command_txs: HashMap<String, mpsc::Sender<ControlCommand>>,
 }
 
 impl ConsoleState {
@@ -66,12 +79,91 @@ impl ConsoleState {
                     .clone()
                     .unwrap_or_else(|| target.control_remote_addr.clone()),
                 local_addr: target.control_local_addr.clone(),
+                is_default: self
+                    .default_target
+                    .as_ref()
+                    .map(|default| default == &target.name)
+                    .unwrap_or(false),
             })
             .collect()
     }
 
-    pub(crate) fn default_target(&self) -> Option<String> {
-        self.default_target.clone()
+    pub(crate) fn target_specs(&self) -> Vec<TargetSpec> {
+        self.order
+            .iter()
+            .filter_map(|name| self.targets.get(name).cloned())
+            .collect()
+    }
+
+    pub(crate) fn snapshot(&self, name: &str) -> Option<ServiceSnapshot> {
+        self.snapshots.get(name).cloned()
+    }
+
+    pub(crate) fn register_command_sender(
+        &mut self,
+        name: String,
+        sender: mpsc::Sender<ControlCommand>,
+    ) {
+        self.command_txs.insert(name, sender);
+    }
+
+    pub(crate) fn command_sender(&self, name: &str) -> Option<mpsc::Sender<ControlCommand>> {
+        self.command_txs.get(name).cloned()
+    }
+
+    pub(crate) fn set_status(&mut self, name: &str, status: TargetStatus, error: Option<String>) {
+        self.status.insert(name.to_string(), status);
+        if let Some(err) = error {
+            self.last_error.insert(name.to_string(), err);
+        } else {
+            self.last_error.remove(name);
+        }
+    }
+
+    pub(crate) fn note_seen(&mut self, name: &str) {
+        self.last_seen.insert(name.to_string(), SystemTime::now());
+    }
+
+    pub(crate) fn apply_snapshot(&mut self, name: &str, snapshot: ServiceSnapshot) {
+        self.pending_count
+            .insert(name.to_string(), snapshot.queue.len());
+        self.snapshots.insert(name.to_string(), snapshot);
+        self.note_seen(name);
+    }
+
+    pub(crate) fn apply_event(&mut self, name: &str, event: ServiceEvent) {
+        match event {
+            ServiceEvent::QueueUpdated(queue) => {
+                let entry =
+                    self.snapshots
+                        .entry(name.to_string())
+                        .or_insert_with(|| ServiceSnapshot {
+                            queue: Vec::new(),
+                            history: Vec::new(),
+                            last_result: None,
+                        });
+                entry.queue = queue;
+                self.pending_count
+                    .insert(name.to_string(), entry.queue.len());
+            }
+            ServiceEvent::ResultUpdated(result) => {
+                let entry =
+                    self.snapshots
+                        .entry(name.to_string())
+                        .or_insert_with(|| ServiceSnapshot {
+                            queue: Vec::new(),
+                            history: Vec::new(),
+                            last_result: None,
+                        });
+                entry.last_result = Some(result.clone());
+                entry.history.insert(0, result);
+                if entry.history.len() > HISTORY_LIMIT {
+                    entry.history.truncate(HISTORY_LIMIT);
+                }
+            }
+            ServiceEvent::ConnectionsChanged => {}
+        }
+        self.note_seen(name);
     }
 }
 
@@ -127,6 +219,8 @@ pub(crate) fn build_console_state(config: ConsoleConfig) -> anyhow::Result<Conso
         pending_count,
         last_seen: HashMap::new(),
         last_error: HashMap::new(),
+        snapshots: HashMap::new(),
+        command_txs: HashMap::new(),
     })
 }
 
@@ -143,14 +237,12 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         .or_else(|| derive_control_addr(&remote_addr).ok())
         .unwrap_or_else(default_control_remote_addr);
 
-    let default_bind = defaults
-        .local_bind
-        .clone()
-        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
     let control_bind = target
         .control_local_bind
+        .or_else(|| target.local_bind.clone())
         .or_else(|| defaults.control_local_bind.clone())
-        .unwrap_or(default_bind);
+        .or_else(|| defaults.local_bind.clone())
+        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
 
     let offset = defaults
         .control_local_port_offset
@@ -183,6 +275,8 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         ssh_args,
         ssh_password,
         control_remote_addr,
+        control_local_bind: control_local_port.map(|_| control_bind),
+        control_local_port,
         control_local_addr,
     })
 }
