@@ -15,6 +15,7 @@ const settings = ref(loadSettings());
 const isSettingsOpen = ref(false);
 const notification = ref<{ message: string; count?: number } | null>(null);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
+const snapshotLoading = ref<Record<string, boolean>>({});
 
 let ws: WebSocket | null = null;
 let reconnectTimer: number | null = null;
@@ -75,10 +76,7 @@ function applyTargetUpdate(target: TargetInfo) {
   lastPendingCounts.value[target.name] = target.pending_count;
 
   if (selectedTargetName.value === target.name) {
-    const snapshot = snapshots.value[target.name];
-    if (!snapshot || snapshot.queue.length !== target.pending_count) {
-      refreshSnapshot(target.name);
-    }
+    refreshSnapshot(target.name);
   }
 }
 
@@ -131,12 +129,18 @@ async function refreshTargets() {
 }
 
 async function refreshSnapshot(name: string) {
+  if (snapshotLoading.value[name]) {
+    return;
+  }
+  snapshotLoading.value[name] = true;
   try {
     const snapshot = await fetchSnapshot(name);
     snapshots.value = { ...snapshots.value, [name]: snapshot };
     lastPendingCounts.value[name] = snapshot.queue.length;
   } catch {
     // ignore fetch errors; connection status handled by websocket
+  } finally {
+    snapshotLoading.value[name] = false;
   }
 }
 
