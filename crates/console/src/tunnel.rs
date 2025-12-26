@@ -3,6 +3,7 @@ use std::process::Stdio;
 use tokio::process::Child;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
+use tracing::warn;
 
 pub(crate) struct TargetRuntime {
     pub(crate) name: String,
@@ -28,12 +29,14 @@ impl TargetRuntime {
         if let Some(child) = self.tunnel.as_mut() {
             match child.try_wait() {
                 Ok(None) => true,
-                Ok(Some(_)) => {
+                Ok(Some(status)) => {
+                    warn!(target = %self.name, status = %status, "ssh tunnel exited");
                     self.tunnel = None;
                     self.tunnel_pgid = None;
                     false
                 }
-                Err(_) => {
+                Err(err) => {
+                    warn!(target = %self.name, error = %err, "ssh tunnel status check failed");
                     self.tunnel = None;
                     self.tunnel_pgid = None;
                     false
