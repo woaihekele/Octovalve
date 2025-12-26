@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
 use tokio_util::codec::{Framed, LinesCodec};
 use tokio_util::sync::CancellationToken;
 use tunnel_protocol::{TunnelRequest, TunnelResponse};
@@ -155,7 +155,8 @@ fn expand_tilde(path: &str) -> PathBuf {
 
 fn spawn_cleanup_task(state: Arc<RwLock<DaemonState>>, shutdown: CancellationToken) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
+        let start = Instant::now() + CLEANUP_INTERVAL;
+        let mut interval = tokio::time::interval_at(start, CLEANUP_INTERVAL);
         loop {
             tokio::select! {
                 _ = shutdown.cancelled() => break,
