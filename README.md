@@ -161,6 +161,24 @@ cargo run -p remote-broker -- \
   - `targets_snapshot`：初始全量目标列表
   - `target_updated`：单目标状态更新
 
+## Console UI（Tauri）
+可选的本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
+
+准备环境：
+- Node.js + npm
+
+开发/构建：
+```bash
+cd console-ui
+npm install
+
+# 启动 Tauri 开发模式（会先跑 Vite）
+npm run tauri dev
+
+# 产出桌面应用
+npm run tauri build
+```
+
 ## 密码登录说明
 如果必须使用密码登录，请在目标中配置 `ssh_password`，并确保本机安装 `sshpass`：
 - macOS：`brew install sshpass`
