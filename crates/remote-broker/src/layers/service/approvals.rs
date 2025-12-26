@@ -3,21 +3,42 @@ use crate::layers::policy::config::LimitsConfig;
 use crate::layers::policy::summary::request_summary;
 use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
-use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
+use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot, ServiceSnapshot};
 use protocol::CommandResponse;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 struct ServiceState {
     pending: Vec<PendingRequest>,
+    history: Vec<ResultSnapshot>,
+    history_limit: usize,
 }
 
-impl Default for ServiceState {
-    fn default() -> Self {
+impl ServiceState {
+    fn new(history: Vec<ResultSnapshot>, history_limit: usize) -> Self {
         Self {
             pending: Vec::new(),
+            history,
+            history_limit,
+        }
+    }
+
+    fn push_result(&mut self, result: ResultSnapshot) {
+        self.history.insert(0, result);
+        if self.history.len() > self.history_limit {
+            self.history.truncate(self.history_limit);
+        }
+    }
+
+    fn snapshot(&self) -> ServiceSnapshot {
+        let queue = build_queue_snapshots(&self.pending);
+        let last_result = self.history.first().cloned();
+        ServiceSnapshot {
+            queue,
+            history: self.history.clone(),
+            last_result,
         }
     }
 }
@@ -28,10 +49,13 @@ pub(crate) fn run_tui_service(
     limits: Arc<LimitsConfig>,
     output_dir: Arc<PathBuf>,
     auto_approve_allowed: bool,
-    ui_tx: mpsc::Sender<ServiceEvent>,
-    ui_cmd_rx: mpsc::Receiver<ServiceCommand>,
+    history: Vec<ResultSnapshot>,
+    history_limit: usize,
+    event_tx: broadcast::Sender<ServiceEvent>,
+    cmd_rx: mpsc::Receiver<ServiceCommand>,
 ) {
     let (server_tx, server_rx) = mpsc::channel::<ServerEvent>(128);
+    let (result_tx, result_rx) = mpsc::channel::<ResultSnapshot>(128);
     crate::layers::service::server::spawn_accept_loop(
         listener,
         server_tx,
@@ -41,12 +65,16 @@ pub(crate) fn run_tui_service(
     tokio::spawn(async move {
         service_loop(
             server_rx,
-            ui_cmd_rx,
-            ui_tx,
+            cmd_rx,
+            result_rx,
+            result_tx,
+            event_tx,
             whitelist,
             limits,
             output_dir,
             auto_approve_allowed,
+            history,
+            history_limit,
         )
         .await;
     });
@@ -54,21 +82,26 @@ pub(crate) fn run_tui_service(
 
 async fn service_loop(
     mut server_rx: mpsc::Receiver<ServerEvent>,
-    mut ui_cmd_rx: mpsc::Receiver<ServiceCommand>,
-    ui_tx: mpsc::Sender<ServiceEvent>,
+    mut cmd_rx: mpsc::Receiver<ServiceCommand>,
+    mut result_rx: mpsc::Receiver<ResultSnapshot>,
+    result_tx: mpsc::Sender<ResultSnapshot>,
+    event_tx: broadcast::Sender<ServiceEvent>,
     whitelist: Arc<Whitelist>,
     limits: Arc<LimitsConfig>,
     output_dir: Arc<PathBuf>,
     auto_approve_allowed: bool,
+    history: Vec<ResultSnapshot>,
+    history_limit: usize,
 ) {
-    let mut state = ServiceState::default();
+    let mut state = ServiceState::new(history, history_limit);
     loop {
         tokio::select! {
             Some(event) = server_rx.recv() => {
                 handle_server_event(
                     event,
                     &mut state,
-                    &ui_tx,
+                    &event_tx,
+                    &result_tx,
                     &whitelist,
                     &limits,
                     &output_dir,
@@ -76,8 +109,20 @@ async fn service_loop(
                 )
                 .await;
             }
-            Some(command) = ui_cmd_rx.recv() => {
-                handle_command(command, &mut state, &ui_tx, &whitelist, &limits, &output_dir).await;
+            Some(command) = cmd_rx.recv() => {
+                handle_command(
+                    command,
+                    &mut state,
+                    &event_tx,
+                    &result_tx,
+                    &whitelist,
+                    &limits,
+                    &output_dir,
+                )
+                .await;
+            }
+            Some(result) = result_rx.recv() => {
+                handle_result_snapshot(result, &mut state, &event_tx);
             }
             else => break,
         }
@@ -87,7 +132,8 @@ async fn service_loop(
 async fn handle_server_event(
     event: ServerEvent,
     state: &mut ServiceState,
-    ui_tx: &mpsc::Sender<ServiceEvent>,
+    event_tx: &broadcast::Sender<ServiceEvent>,
+    result_tx: &mpsc::Sender<ResultSnapshot>,
     whitelist: &Arc<Whitelist>,
     limits: &Arc<LimitsConfig>,
     output_dir: &Arc<PathBuf>,
@@ -95,14 +141,14 @@ async fn handle_server_event(
 ) {
     match event {
         ServerEvent::ConnectionOpened => {
-            let _ = ui_tx.send(ServiceEvent::ConnectionsChanged).await;
+            let _ = event_tx.send(ServiceEvent::ConnectionsChanged);
         }
         ServerEvent::ConnectionClosed => {
-            let _ = ui_tx.send(ServiceEvent::ConnectionsChanged).await;
+            let _ = event_tx.send(ServiceEvent::ConnectionsChanged);
         }
         ServerEvent::Request(pending) => {
             if auto_approve_allowed && whitelist.allows_request(&pending.request) {
-                let ui_tx = ui_tx.clone();
+                let result_tx = result_tx.clone();
                 let whitelist = Arc::clone(whitelist);
                 let limits = Arc::clone(limits);
                 let output_dir = Arc::clone(output_dir);
@@ -118,14 +164,12 @@ async fn handle_server_event(
                     let result_snapshot =
                         result_snapshot_from_response(&pending, &response, finished_at);
                     let _ = pending.respond_to.send(response);
-                    let _ = ui_tx
-                        .send(ServiceEvent::ResultUpdated(result_snapshot))
-                        .await;
+                    let _ = result_tx.send(result_snapshot).await;
                 });
             } else {
                 state.pending.push(pending);
                 let queue = build_queue_snapshots(&state.pending);
-                let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
+                let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
             }
         }
     }
@@ -134,7 +178,8 @@ async fn handle_server_event(
 async fn handle_command(
     command: ServiceCommand,
     state: &mut ServiceState,
-    ui_tx: &mpsc::Sender<ServiceEvent>,
+    event_tx: &broadcast::Sender<ServiceEvent>,
+    result_tx: &mpsc::Sender<ResultSnapshot>,
     whitelist: &Arc<Whitelist>,
     limits: &Arc<LimitsConfig>,
     output_dir: &Arc<PathBuf>,
@@ -143,9 +188,9 @@ async fn handle_command(
         ServiceCommand::Approve(id) => {
             if let Some(pending) = remove_pending(state, &id) {
                 let queue = build_queue_snapshots(&state.pending);
-                let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
+                let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
 
-                let ui_tx = ui_tx.clone();
+                let result_tx = result_tx.clone();
                 let whitelist = Arc::clone(whitelist);
                 let limits = Arc::clone(limits);
                 let output_dir = Arc::clone(output_dir);
@@ -161,16 +206,14 @@ async fn handle_command(
                     let result_snapshot =
                         result_snapshot_from_response(&pending, &response, finished_at);
                     let _ = pending.respond_to.send(response);
-                    let _ = ui_tx
-                        .send(ServiceEvent::ResultUpdated(result_snapshot))
-                        .await;
+                    let _ = result_tx.send(result_snapshot).await;
                 });
             }
         }
         ServiceCommand::Deny(id) => {
             if let Some(pending) = remove_pending(state, &id) {
                 let queue = build_queue_snapshots(&state.pending);
-                let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
+                let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
 
                 tracing::info!(
                     event = "request_denied",
@@ -183,9 +226,7 @@ async fn handle_command(
                 let result_snapshot =
                     result_snapshot_from_response(&pending, &response, finished_at);
                 let _ = pending.respond_to.send(response.clone());
-                let _ = ui_tx
-                    .send(ServiceEvent::ResultUpdated(result_snapshot))
-                    .await;
+                let _ = result_tx.send(result_snapshot).await;
                 let output_dir = Arc::clone(output_dir);
                 tokio::spawn(async move {
                     crate::layers::execution::output::write_result_record(
@@ -197,7 +238,19 @@ async fn handle_command(
                 });
             }
         }
+        ServiceCommand::Snapshot(respond_to) => {
+            let _ = respond_to.send(state.snapshot());
+        }
     }
+}
+
+fn handle_result_snapshot(
+    result: ResultSnapshot,
+    state: &mut ServiceState,
+    event_tx: &broadcast::Sender<ServiceEvent>,
+) {
+    state.push_result(result.clone());
+    let _ = event_tx.send(ServiceEvent::ResultUpdated(result));
 }
 
 fn remove_pending(state: &mut ServiceState, id: &str) -> Option<PendingRequest> {

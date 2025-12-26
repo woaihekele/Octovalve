@@ -1,4 +1,4 @@
-use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
+use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot, ServiceSnapshot};
 use protocol::{CommandRequest, CommandResponse};
 use std::time::{Instant, SystemTime};
 use tokio::sync::oneshot;
@@ -14,6 +14,7 @@ pub(crate) enum ServiceEvent {
 pub(crate) enum ServiceCommand {
     Approve(String),
     Deny(String),
+    Snapshot(oneshot::Sender<ServiceSnapshot>),
 }
 
 pub(crate) enum ServerEvent {

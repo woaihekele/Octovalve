@@ -8,7 +8,7 @@ use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{ServiceCommand, ServiceEvent};
 use crate::layers::service::history::load_history;
 use crate::layers::service::logging::init_tracing;
-use crate::layers::service::{run_headless, run_tui_service};
+use crate::layers::service::{run_headless, run_tui_service, spawn_control_server};
 use crate::layers::ui::app::HISTORY_LIMIT;
 use crate::layers::ui::{draw_ui, handle_key_event, restore_terminal, setup_terminal, AppState};
 use anyhow::Context;
@@ -18,7 +18,8 @@ use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::{broadcast, mpsc};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,12 +39,15 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("failed to bind {}", args.listen_addr))?;
 
     if args.auto_approve {
+        if args.control_addr.is_some() {
+            tracing::warn!("control api is disabled in auto-approve mode");
+        }
         run_headless(listener, whitelist, limits, output_dir).await?;
         return Ok(());
     }
 
-    let (ui_event_tx, mut ui_event_rx) = mpsc::channel::<ServiceEvent>(128);
-    let (ui_cmd_tx, ui_cmd_rx) = mpsc::channel::<ServiceCommand>(128);
+    let (event_tx, _) = broadcast::channel::<ServiceEvent>(128);
+    let (cmd_tx, cmd_rx) = mpsc::channel::<ServiceCommand>(128);
 
     let history = load_history(output_dir.as_ref(), limits.max_output_bytes, HISTORY_LIMIT);
 
@@ -53,9 +57,15 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&limits),
         Arc::clone(&output_dir),
         config.auto_approve_allowed,
-        ui_event_tx,
-        ui_cmd_rx,
+        history.clone(),
+        HISTORY_LIMIT,
+        event_tx.clone(),
+        cmd_rx,
     );
+
+    if let Some(control_addr) = args.control_addr.clone() {
+        spawn_control_server(control_addr, cmd_tx.clone(), event_tx.clone()).await?;
+    }
 
     let mut terminal = setup_terminal()?;
     let mut app = AppState::default();
@@ -63,16 +73,22 @@ async fn main() -> anyhow::Result<()> {
     app.load_history(history);
 
     let tick_rate = Duration::from_millis(100);
+    let mut ui_event_rx = event_tx.subscribe();
     loop {
-        while let Ok(event) = ui_event_rx.try_recv() {
-            app.handle_event(event);
+        loop {
+            match ui_event_rx.try_recv() {
+                Ok(event) => app.handle_event(event),
+                Err(TryRecvError::Lagged(_)) => continue,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Closed) => break,
+            }
         }
 
         terminal.draw(|frame| draw_ui(frame, &mut app))?;
 
         if event::poll(tick_rate)? {
             if let Event::Key(key) = event::read()? {
-                if handle_key_event(key, &mut app, ui_cmd_tx.clone()) {
+                if handle_key_event(key, &mut app, cmd_tx.clone()) {
                     break;
                 }
             }

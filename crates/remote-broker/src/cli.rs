@@ -15,6 +15,8 @@ pub(crate) struct Args {
     #[arg(long, default_value = "logs")]
     pub(crate) audit_dir: PathBuf,
     #[arg(long)]
+    pub(crate) control_addr: Option<String>,
+    #[arg(long)]
     pub(crate) auto_approve: bool,
     #[arg(long, default_value_t = false)]
     pub(crate) log_to_stderr: bool,

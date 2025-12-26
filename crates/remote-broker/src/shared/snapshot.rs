@@ -34,3 +34,10 @@ pub(crate) struct ResultSnapshot {
     pub(crate) stdout: Option<String>,
     pub(crate) stderr: Option<String>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct ServiceSnapshot {
+    pub(crate) queue: Vec<RequestSnapshot>,
+    pub(crate) history: Vec<ResultSnapshot>,
+    pub(crate) last_result: Option<ResultSnapshot>,
+}
