@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/console",
   "crates/protocol",
   "crates/local-proxy",
   "crates/remote-broker",
