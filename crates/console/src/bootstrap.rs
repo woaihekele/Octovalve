@@ -36,7 +36,9 @@ pub(crate) async fn bootstrap_remote_broker(
     let remote_dir = resolve_remote_path(target, &bootstrap.remote_dir).await?;
     let remote_audit_dir = resolve_remote_path(target, &bootstrap.remote_audit_dir).await?;
     let remote_bin = join_remote(&remote_dir, "remote-broker");
+    let remote_bin_tmp = format!("{remote_bin}.tmp");
     let remote_config = join_remote(&remote_dir, "config.toml");
+    let remote_config_tmp = format!("{remote_config}.tmp");
     let remote_log = join_remote(&remote_dir, "remote-broker.log");
 
     run_ssh(
@@ -49,8 +51,19 @@ pub(crate) async fn bootstrap_remote_broker(
     )
     .await?;
 
-    run_scp(target, &bootstrap.local_bin, &remote_bin).await?;
-    run_scp(target, &bootstrap.local_config, &remote_config).await?;
+    run_scp(target, &bootstrap.local_bin, &remote_bin_tmp).await?;
+    run_scp(target, &bootstrap.local_config, &remote_config_tmp).await?;
+    run_ssh(
+        target,
+        &format!(
+            "mv -f {} {} && mv -f {} {}",
+            shell_escape(&remote_bin_tmp),
+            shell_escape(&remote_bin),
+            shell_escape(&remote_config_tmp),
+            shell_escape(&remote_config)
+        ),
+    )
+    .await?;
 
     run_ssh(target, &format!("chmod +x {}", shell_escape(&remote_bin))).await?;
 
