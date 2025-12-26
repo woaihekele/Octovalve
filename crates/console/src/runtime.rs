@@ -62,6 +62,8 @@ async fn run_target_worker(
 ) {
     let mut runtime = TargetRuntime::from_spec(spec);
     let forward_spec = control_forward_spec(&runtime);
+    let mut bootstrap_needed = true;
+    let mut connect_failures = 0;
     loop {
         if shutdown.is_cancelled() {
             info!(target = %runtime.name, "shutdown requested, stopping tunnel");
@@ -126,27 +128,32 @@ async fn run_target_worker(
             }
         }
 
-        info!(target = %runtime.name, "bootstrapping remote broker");
-        if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
-            set_status_and_notify(
-                &runtime.name,
-                TargetStatus::Down,
-                Some(err.to_string()),
-                &state,
-                &event_tx,
-            )
-            .await;
-            warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
-            if wait_reconnect_or_shutdown(&shutdown).await {
-                break;
+        if bootstrap_needed {
+            info!(target = %runtime.name, "bootstrapping remote broker");
+            if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
+                set_status_and_notify(
+                    &runtime.name,
+                    TargetStatus::Down,
+                    Some(err.to_string()),
+                    &state,
+                    &event_tx,
+                )
+                .await;
+                warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
+                if wait_reconnect_or_shutdown(&shutdown).await {
+                    break;
+                }
+                continue;
             }
-            continue;
+            bootstrap_needed = false;
+            connect_failures = 0;
         }
 
         let addr = runtime.connect_addr();
         info!(target = %runtime.name, addr = %addr, "connecting control channel");
         match connect_control(&addr).await {
             Ok(mut framed) => {
+                connect_failures = 0;
                 set_status_and_notify(&runtime.name, TargetStatus::Ready, None, &state, &event_tx)
                     .await;
                 if let Err(err) = send_request(&mut framed, ControlRequest::Subscribe).await {
@@ -212,6 +219,11 @@ async fn run_target_worker(
                 )
                 .await;
                 warn!(target = %runtime.name, error = %err, "failed to connect control channel");
+                connect_failures += 1;
+                if connect_failures >= 3 {
+                    bootstrap_needed = true;
+                    connect_failures = 0;
+                }
             }
         }
 
