@@ -68,7 +68,7 @@ pub(crate) async fn bootstrap_remote_broker(
     run_ssh(target, &format!("chmod +x {}", shell_escape(&remote_bin))).await?;
 
     let pgrep_pattern = shell_escape(&format!(
-        "remote-broker.*--control-addr {}",
+        "[r]emote-broker.*--control-addr {}",
         bootstrap.remote_control_addr
     ));
     let start_cmd = format!(
