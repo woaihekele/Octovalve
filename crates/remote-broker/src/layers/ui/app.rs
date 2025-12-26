@@ -1,5 +1,5 @@
 use crate::layers::service::events::ServiceEvent;
-use crate::shared::dto::{RequestView, ResultView};
+use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
 use ratatui::widgets::ListState;
 
 pub(crate) const HISTORY_LIMIT: usize = 50;
@@ -22,14 +22,14 @@ pub(crate) enum ListView {
 pub(crate) struct AppState {
     pub(crate) hostname: String,
     pub(crate) host_ip: String,
-    pub(crate) queue: Vec<RequestView>,
+    pub(crate) queue: Vec<RequestSnapshot>,
     pub(crate) pending_selected: usize,
     pub(crate) pending_list_state: ListState,
-    pub(crate) history: Vec<ResultView>,
+    pub(crate) history: Vec<ResultSnapshot>,
     pub(crate) history_selected: usize,
     pub(crate) history_list_state: ListState,
     pub(crate) list_view: ListView,
-    pub(crate) last_result: Option<ResultView>,
+    pub(crate) last_result: Option<ResultSnapshot>,
     pub(crate) view_mode: ViewMode,
     pub(crate) result_scroll: usize,
     pub(crate) result_max_scroll: usize,
@@ -45,7 +45,7 @@ impl AppState {
         self.host_ip = host_ip;
     }
 
-    pub(crate) fn load_history(&mut self, mut history: Vec<ResultView>) {
+    pub(crate) fn load_history(&mut self, mut history: Vec<ResultSnapshot>) {
         if history.len() > HISTORY_LIMIT {
             history.truncate(HISTORY_LIMIT);
         }
@@ -211,7 +211,7 @@ impl AppState {
             .map(|item| item.id.clone())
     }
 
-    pub(crate) fn selected_history(&self) -> Option<&ResultView> {
+    pub(crate) fn selected_history(&self) -> Option<&ResultSnapshot> {
         if self.list_view != ListView::History {
             return None;
         }

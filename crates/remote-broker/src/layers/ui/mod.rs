@@ -2,13 +2,16 @@ pub(crate) mod app;
 pub(crate) mod terminal;
 pub(crate) mod theme;
 
+use crate::layers::policy::summary::{format_mode, format_pipeline};
 use crate::layers::service::events::ServiceCommand;
-use crate::shared::dto::{RequestView, ResultView};
+use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
 use app::{ListView, ViewMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use protocol::{CommandMode, CommandStatus};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Clear, List, ListItem, Paragraph, Wrap};
+use std::time::{SystemTime, UNIX_EPOCH};
 use theme::{Theme, ValueStyle};
 use tokio::sync::mpsc;
 
@@ -109,7 +112,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
         .queue
         .iter()
         .map(|pending| {
-            let title = format!("{}  {}", pending.id, pending.summary);
+            let title = format!("{}  {}", pending.id, request_summary(pending));
             ListItem::new(Line::from(title))
         })
         .collect::<Vec<_>>();
@@ -155,7 +158,7 @@ pub(crate) fn draw_ui(frame: &mut ratatui::Frame, app: &mut AppState) {
                     ));
                 }
                 let max_cmd = available_width.saturating_sub(time_width + gap);
-                let command = truncate_with_ellipsis(&result.command, max_cmd);
+                let command = truncate_with_ellipsis(&result.raw_command, max_cmd);
                 let padding_width = available_width.saturating_sub(time_width);
                 let padded = pad_right(&command, padding_width);
                 let line = Line::from(vec![
@@ -458,7 +461,7 @@ fn handle_result_fullscreen_key(key: KeyEvent, app: &mut AppState) -> bool {
     false
 }
 
-fn format_request_details(theme: &Theme, pending: &RequestView, width: u16) -> Text<'static> {
+fn format_request_details(theme: &Theme, pending: &RequestSnapshot, width: u16) -> Text<'static> {
     let mut lines = Vec::new();
     lines.extend(kv_lines(
         theme,
@@ -498,22 +501,22 @@ fn format_request_details(theme: &Theme, pending: &RequestView, width: u16) -> T
     lines.extend(kv_lines(
         theme,
         "mode",
-        pending.mode.clone(),
+        format_mode(&pending.mode).to_string(),
         ValueStyle::Normal,
         width,
     ));
     lines.extend(kv_lines(
         theme,
         "command",
-        pending.command.clone(),
+        pending.raw_command.clone(),
         ValueStyle::Important,
         width,
     ));
-    if let Some(pipeline) = &pending.pipeline {
+    if !pending.pipeline.is_empty() {
         lines.extend(kv_lines(
             theme,
             "pipeline",
-            pipeline.clone(),
+            format_pipeline(&pending.pipeline),
             ValueStyle::Normal,
             width,
         ));
@@ -548,14 +551,14 @@ fn format_request_details(theme: &Theme, pending: &RequestView, width: u16) -> T
     lines.extend(kv_lines(
         theme,
         "queued_for",
-        format!("{}s", pending.queued_at.elapsed().as_secs()),
+        format!("{}s", queued_for_secs(pending.received_at_ms)),
         ValueStyle::Dim,
         width,
     ));
     Text::from(lines)
 }
 
-fn format_result_details(theme: &Theme, result: &ResultView, width: u16) -> Text<'static> {
+fn format_result_details(theme: &Theme, result: &ResultSnapshot, width: u16) -> Text<'static> {
     let mut lines = Vec::new();
     lines.extend(kv_lines(
         theme,
@@ -584,21 +587,21 @@ fn format_result_details(theme: &Theme, result: &ResultView, width: u16) -> Text
     lines.extend(kv_lines(
         theme,
         "command",
-        result.command.clone(),
+        result.raw_command.clone(),
         ValueStyle::Important,
         width,
     ));
     lines.extend(kv_lines(
         theme,
         "mode",
-        result.mode.clone(),
+        format_mode(&result.mode).to_string(),
         ValueStyle::Normal,
         width,
     ));
     lines.extend(kv_lines(
         theme,
         "summary",
-        result.summary.clone(),
+        format_result_summary(result),
         ValueStyle::Important,
         width,
     ));
@@ -612,7 +615,7 @@ fn format_result_details(theme: &Theme, result: &ResultView, width: u16) -> Text
     lines.extend(kv_lines(
         theme,
         "pipeline",
-        result.pipeline.clone().unwrap_or_else(|| "-".to_string()),
+        format_pipeline_or_command(&result.raw_command, &result.pipeline),
         ValueStyle::Normal,
         width,
     ));
@@ -626,7 +629,7 @@ fn format_result_details(theme: &Theme, result: &ResultView, width: u16) -> Text
     Text::from(lines)
 }
 
-fn format_result_output(result: &ResultView) -> String {
+fn format_result_output(result: &ResultSnapshot) -> String {
     let mut lines = Vec::new();
     if let Some(stdout) = &result.stdout {
         let cleaned = sanitize_text_for_tui(stdout);
@@ -641,6 +644,52 @@ fn format_result_output(result: &ResultView) -> String {
     } else {
         lines.join("\n")
     }
+}
+
+fn request_summary(pending: &RequestSnapshot) -> String {
+    match pending.mode {
+        CommandMode::Shell => pending.raw_command.clone(),
+        CommandMode::Argv => {
+            let pipeline = format_pipeline(&pending.pipeline);
+            if pipeline.is_empty() {
+                pending.raw_command.clone()
+            } else {
+                pipeline
+            }
+        }
+    }
+}
+
+fn format_result_summary(result: &ResultSnapshot) -> String {
+    match result.status {
+        CommandStatus::Completed => format!("completed (exit={:?})", result.exit_code),
+        CommandStatus::Denied => "denied".to_string(),
+        CommandStatus::Error => "error".to_string(),
+        CommandStatus::Approved => "approved".to_string(),
+    }
+}
+
+fn format_pipeline_or_command(command: &str, pipeline: &[protocol::CommandStage]) -> String {
+    if pipeline.is_empty() {
+        command.to_string()
+    } else {
+        format_pipeline(pipeline)
+    }
+}
+
+fn queued_for_secs(received_at_ms: u64) -> u64 {
+    let now_ms = system_time_ms(SystemTime::now());
+    if received_at_ms == 0 {
+        0
+    } else {
+        now_ms.saturating_sub(received_at_ms) / 1000
+    }
+}
+
+fn system_time_ms(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn kv_lines(

@@ -1,5 +1,4 @@
-use crate::layers::policy::summary::{format_mode, format_pipeline};
-use crate::shared::dto::ResultView;
+use crate::shared::snapshot::ResultSnapshot;
 use protocol::{CommandMode, CommandStage, CommandStatus};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -33,6 +32,8 @@ struct ResultRecord {
     #[serde(default)]
     exit_code: Option<i32>,
     #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
     duration_ms: u128,
 }
 
@@ -40,7 +41,7 @@ pub(crate) fn load_history(
     output_dir: &Path,
     max_output_bytes: u64,
     limit: usize,
-) -> Vec<ResultView> {
+) -> Vec<ResultSnapshot> {
     let request_records = load_request_records(output_dir);
     let result_files = collect_result_files(output_dir);
     let mut results = Vec::new();
@@ -60,15 +61,10 @@ pub(crate) fn load_history(
             );
             continue;
         };
-        let command = if request.raw_command.is_empty() {
+        let raw_command = if request.raw_command.is_empty() {
             request.command.clone()
         } else {
             request.raw_command.clone()
-        };
-        let pipeline = if request.pipeline.is_empty() {
-            Some(command.clone())
-        } else {
-            Some(format_pipeline(&request.pipeline))
         };
         let finished_at_ms = finished_at_ms
             .or_else(|| {
@@ -91,15 +87,17 @@ pub(crate) fn load_history(
             output_dir.join(format!("{}.stderr", record.id)),
             max_output_bytes,
         );
-        results.push(ResultView {
+        results.push(ResultSnapshot {
             id: record.id.clone(),
-            summary: format_summary(&record.status, record.exit_code),
-            command,
-            peer: request.peer.clone(),
+            status: record.status,
+            exit_code: record.exit_code,
+            error: record.error,
             intent: request.intent.clone(),
-            mode: format_mode(&request.mode).to_string(),
-            pipeline,
+            mode: request.mode.clone(),
+            raw_command,
+            pipeline: request.pipeline.clone(),
             cwd: request.cwd.clone(),
+            peer: request.peer.clone(),
             queued_for_secs,
             finished_at_ms,
             stdout,
@@ -207,15 +205,6 @@ fn is_result_record(path: &Path) -> bool {
             .and_then(|name| name.to_str())
             .map(|name| name.ends_with(".result.json"))
             .unwrap_or(false)
-}
-
-fn format_summary(status: &CommandStatus, exit_code: Option<i32>) -> String {
-    match status {
-        CommandStatus::Completed => format!("completed (exit={exit_code:?})"),
-        CommandStatus::Denied => "denied".to_string(),
-        CommandStatus::Error => "error".to_string(),
-        CommandStatus::Approved => "approved".to_string(),
-    }
 }
 
 fn system_time_ms(time: SystemTime) -> Option<u64> {

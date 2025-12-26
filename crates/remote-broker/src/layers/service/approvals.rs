@@ -1,10 +1,10 @@
 use crate::layers::execution::executor::execute_request;
 use crate::layers::policy::config::LimitsConfig;
-use crate::layers::policy::summary::{format_mode, format_pipeline, request_summary};
+use crate::layers::policy::summary::request_summary;
 use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
-use crate::shared::dto::{RequestView, ResultView};
-use protocol::{CommandResponse, CommandStatus};
+use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
+use protocol::CommandResponse;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -115,13 +115,16 @@ async fn handle_server_event(
                     let response =
                         execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
                     let finished_at = SystemTime::now();
-                    let result_view = result_view_from_response(&pending, &response, finished_at);
+                    let result_snapshot =
+                        result_snapshot_from_response(&pending, &response, finished_at);
                     let _ = pending.respond_to.send(response);
-                    let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
+                    let _ = ui_tx
+                        .send(ServiceEvent::ResultUpdated(result_snapshot))
+                        .await;
                 });
             } else {
                 state.pending.push(pending);
-                let queue = build_queue_views(&state.pending);
+                let queue = build_queue_snapshots(&state.pending);
                 let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
             }
         }
@@ -139,7 +142,7 @@ async fn handle_command(
     match command {
         ServiceCommand::Approve(id) => {
             if let Some(pending) = remove_pending(state, &id) {
-                let queue = build_queue_views(&state.pending);
+                let queue = build_queue_snapshots(&state.pending);
                 let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
 
                 let ui_tx = ui_tx.clone();
@@ -155,15 +158,18 @@ async fn handle_command(
                     let response =
                         execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
                     let finished_at = SystemTime::now();
-                    let result_view = result_view_from_response(&pending, &response, finished_at);
+                    let result_snapshot =
+                        result_snapshot_from_response(&pending, &response, finished_at);
                     let _ = pending.respond_to.send(response);
-                    let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
+                    let _ = ui_tx
+                        .send(ServiceEvent::ResultUpdated(result_snapshot))
+                        .await;
                 });
             }
         }
         ServiceCommand::Deny(id) => {
             if let Some(pending) = remove_pending(state, &id) {
-                let queue = build_queue_views(&state.pending);
+                let queue = build_queue_snapshots(&state.pending);
                 let _ = ui_tx.send(ServiceEvent::QueueUpdated(queue)).await;
 
                 tracing::info!(
@@ -174,9 +180,12 @@ async fn handle_command(
                 let response =
                     CommandResponse::denied(pending.request.id.clone(), "denied by operator");
                 let finished_at = SystemTime::now();
-                let result_view = result_view_from_response(&pending, &response, finished_at);
+                let result_snapshot =
+                    result_snapshot_from_response(&pending, &response, finished_at);
                 let _ = pending.respond_to.send(response.clone());
-                let _ = ui_tx.send(ServiceEvent::ResultUpdated(result_view)).await;
+                let _ = ui_tx
+                    .send(ServiceEvent::ResultUpdated(result_snapshot))
+                    .await;
                 let output_dir = Arc::clone(output_dir);
                 tokio::spawn(async move {
                     crate::layers::execution::output::write_result_record(
@@ -199,59 +208,44 @@ fn remove_pending(state: &mut ServiceState, id: &str) -> Option<PendingRequest> 
     Some(state.pending.remove(index))
 }
 
-fn build_queue_views(pending: &[PendingRequest]) -> Vec<RequestView> {
-    pending.iter().map(to_request_view).collect()
+fn build_queue_snapshots(pending: &[PendingRequest]) -> Vec<RequestSnapshot> {
+    pending.iter().map(to_request_snapshot).collect()
 }
 
-fn to_request_view(pending: &PendingRequest) -> RequestView {
+fn to_request_snapshot(pending: &PendingRequest) -> RequestSnapshot {
     let request = &pending.request;
-    let pipeline = if request.pipeline.is_empty() {
-        None
-    } else {
-        Some(format_pipeline(&request.pipeline))
-    };
-    RequestView {
+    RequestSnapshot {
         id: request.id.clone(),
-        summary: request_summary(request),
         client: request.client.clone(),
         target: request.target.clone(),
         peer: pending.peer.clone(),
         intent: request.intent.clone(),
-        mode: format_mode(&request.mode).to_string(),
-        command: request.raw_command.clone(),
-        pipeline,
+        mode: request.mode.clone(),
+        raw_command: request.raw_command.clone(),
+        pipeline: request.pipeline.clone(),
         cwd: request.cwd.clone(),
         timeout_ms: request.timeout_ms,
         max_output_bytes: request.max_output_bytes,
-        queued_at: pending.queued_at,
+        received_at_ms: system_time_ms(pending.received_at),
     }
 }
 
-fn result_view_from_response(
+fn result_snapshot_from_response(
     pending: &PendingRequest,
     response: &CommandResponse,
     finished_at: SystemTime,
-) -> ResultView {
-    let summary = match response.status {
-        CommandStatus::Completed => format!("completed (exit={:?})", response.exit_code),
-        CommandStatus::Denied => "denied".to_string(),
-        CommandStatus::Error => "error".to_string(),
-        CommandStatus::Approved => "approved".to_string(),
-    };
-    let pipeline = if pending.request.pipeline.is_empty() {
-        Some(pending.request.raw_command.clone())
-    } else {
-        Some(format_pipeline(&pending.request.pipeline))
-    };
-    ResultView {
+) -> ResultSnapshot {
+    ResultSnapshot {
         id: pending.request.id.clone(),
-        summary,
-        command: pending.request.raw_command.clone(),
-        peer: pending.peer.clone(),
+        status: response.status.clone(),
+        exit_code: response.exit_code,
+        error: response.error.clone(),
         intent: pending.request.intent.clone(),
-        mode: format_mode(&pending.request.mode).to_string(),
-        pipeline,
+        mode: pending.request.mode.clone(),
+        raw_command: pending.request.raw_command.clone(),
+        pipeline: pending.request.pipeline.clone(),
         cwd: pending.request.cwd.clone(),
+        peer: pending.peer.clone(),
         queued_for_secs: pending.queued_at.elapsed().as_secs(),
         finished_at_ms: system_time_ms(finished_at),
         stdout: response.stdout.clone(),
