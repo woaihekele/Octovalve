@@ -1,12 +1,10 @@
 use anyhow::Context;
 use serde::Deserialize;
 use std::path::PathBuf;
-use tunnel_protocol::ForwardPurpose;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct DaemonConfig {
     pub(crate) defaults: Option<DaemonDefaults>,
-    pub(crate) control_dir: Option<String>,
     pub(crate) targets: Vec<TargetConfig>,
 }
 
@@ -15,23 +13,24 @@ pub(crate) struct DaemonDefaults {
     pub(crate) ssh_args: Option<Vec<String>>,
     pub(crate) ssh_password: Option<String>,
     pub(crate) local_bind: Option<String>,
+    pub(crate) remote_addr: Option<String>,
+    pub(crate) control_remote_addr: Option<String>,
+    pub(crate) control_local_bind: Option<String>,
+    pub(crate) control_local_port_offset: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TargetConfig {
     pub(crate) name: String,
-    pub(crate) ssh: String,
+    pub(crate) ssh: Option<String>,
+    pub(crate) remote_addr: Option<String>,
+    pub(crate) local_port: Option<u16>,
+    pub(crate) local_bind: Option<String>,
     pub(crate) ssh_args: Option<Vec<String>>,
     pub(crate) ssh_password: Option<String>,
-    pub(crate) forwards: Vec<ForwardConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ForwardConfig {
-    pub(crate) purpose: ForwardPurpose,
-    pub(crate) local_bind: Option<String>,
-    pub(crate) local_port: u16,
-    pub(crate) remote_addr: String,
+    pub(crate) control_remote_addr: Option<String>,
+    pub(crate) control_local_port: Option<u16>,
+    pub(crate) control_local_bind: Option<String>,
 }
 
 impl Default for DaemonDefaults {
@@ -40,6 +39,10 @@ impl Default for DaemonDefaults {
             ssh_args: None,
             ssh_password: None,
             local_bind: None,
+            remote_addr: None,
+            control_remote_addr: None,
+            control_local_bind: None,
+            control_local_port_offset: None,
         }
     }
 }

@@ -13,8 +13,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tokio::time::Duration;
 use tokio_util::codec::{Framed, LinesCodec};
+use tokio_util::sync::CancellationToken;
 use tunnel_protocol::{TunnelRequest, TunnelResponse};
+
+const CLIENT_TTL: Duration = Duration::from_secs(30);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,13 +28,15 @@ async fn main() -> anyhow::Result<()> {
 
     let config = load_daemon_config(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
-    let control_dir = resolve_control_dir(args.control_dir.as_ref(), config.control_dir.as_ref());
+    let control_dir = resolve_control_dir(args.control_dir.as_ref());
     std::fs::create_dir_all(&control_dir)
         .with_context(|| format!("failed to create {}", control_dir.display()))?;
 
     let state = Arc::new(RwLock::new(
         DaemonState::build(config, control_dir).context("failed to build daemon state")?,
     ));
+    let shutdown = CancellationToken::new();
+    spawn_cleanup_task(Arc::clone(&state), shutdown.clone());
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
@@ -37,14 +44,23 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(addr = %args.listen_addr, "tunnel-daemon listening");
 
     loop {
-        let (stream, peer) = listener.accept().await?;
-        let state = Arc::clone(&state);
-        tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, state).await {
-                tracing::warn!(peer = %peer, error = %err, "failed to handle connection");
+        tokio::select! {
+            _ = shutdown.cancelled() => {
+                tracing::info!("tunnel-daemon shutting down");
+                break;
             }
-        });
+            accept = listener.accept() => {
+                let (stream, peer) = accept?;
+                let state = Arc::clone(&state);
+                tokio::spawn(async move {
+                    if let Err(err) = handle_connection(stream, state).await {
+                        tracing::warn!(peer = %peer, error = %err, "failed to handle connection");
+                    }
+                });
+            }
+        }
     }
+    Ok(())
 }
 
 async fn handle_connection(
@@ -86,6 +102,11 @@ async fn handle_connection(
                 },
             }
         }
+        TunnelRequest::Heartbeat { client_id } => {
+            let mut state = state.write().await;
+            state.heartbeat(&client_id);
+            TunnelResponse::Ok
+        }
         TunnelRequest::ListForwards => {
             let state = state.read().await;
             TunnelResponse::Forwards {
@@ -111,13 +132,9 @@ fn init_tracing(log_to_stderr: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn resolve_control_dir(
-    cli_value: Option<&String>,
-    config_value: Option<&String>,
-) -> PathBuf {
+fn resolve_control_dir(cli_value: Option<&String>) -> PathBuf {
     let raw = cli_value
         .cloned()
-        .or_else(|| config_value.cloned())
         .unwrap_or_else(|| "~/.octovalve/tunnel-control".to_string());
     expand_tilde(&raw)
 }
@@ -134,4 +151,23 @@ fn expand_tilde(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+fn spawn_cleanup_task(state: Arc<RwLock<DaemonState>>, shutdown: CancellationToken) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
+        loop {
+            tokio::select! {
+                _ = shutdown.cancelled() => break,
+                _ = interval.tick() => {
+                    let mut state = state.write().await;
+                    let should_exit = state.cleanup_expired(CLIENT_TTL).await;
+                    if should_exit {
+                        shutdown.cancel();
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }

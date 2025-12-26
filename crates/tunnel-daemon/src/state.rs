@@ -1,14 +1,20 @@
-use crate::config::{DaemonConfig, DaemonDefaults};
+use crate::config::{DaemonConfig, DaemonDefaults, TargetConfig};
 use crate::ssh::{exit_master, forward_add, forward_cancel, spawn_master, SshTarget};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tokio::process::Child;
-use tunnel_protocol::{ForwardSpec, ForwardStatus};
+use tunnel_protocol::{ForwardPurpose, ForwardSpec, ForwardStatus};
+
+const DEFAULT_REMOTE_ADDR: &str = "127.0.0.1:19307";
+const DEFAULT_CONTROL_REMOTE_ADDR: &str = "127.0.0.1:19308";
+const DEFAULT_BIND_HOST: &str = "127.0.0.1";
+const DEFAULT_CONTROL_PORT_OFFSET: u16 = 100;
 
 pub(crate) struct DaemonState {
     targets: HashMap<String, TargetState>,
+    clients_last_seen: HashMap<String, SystemTime>,
 }
 
 struct TargetState {
@@ -17,7 +23,6 @@ struct TargetState {
     allowed_forwards: HashSet<ForwardSpec>,
     active_forwards: HashMap<ForwardSpec, ActiveForward>,
     master: Option<SshMaster>,
-    last_used: Option<SystemTime>,
 }
 
 struct ActiveForward {
@@ -26,6 +31,13 @@ struct ActiveForward {
 
 struct SshMaster {
     child: Child,
+}
+
+struct ResolvedTarget {
+    name: String,
+    ssh: SshTarget,
+    data_forward: ForwardSpec,
+    control_forward: ForwardSpec,
 }
 
 impl DaemonState {
@@ -44,59 +56,41 @@ impl DaemonState {
             }
             seen.insert(target.name.clone());
 
-            if target.forwards.is_empty() {
-                anyhow::bail!("target {} must include at least one forward", target.name);
-            }
-
-            let ssh_args = merge_ssh_args(&defaults, target.ssh_args);
-            let ssh_password = target
-                .ssh_password
-                .or_else(|| defaults.ssh_password.clone());
-            let ssh = SshTarget {
-                ssh: target.ssh,
-                ssh_args,
-                ssh_password,
+            let Some(resolved) = resolve_target(&defaults, target)? else {
+                continue;
             };
-            let control_path = control_path_for(&control_dir, &target.name);
 
+            let control_path = control_path_for(&control_dir, &resolved.name);
             let mut allowed_forwards = HashSet::new();
-            for forward in target.forwards {
-                if forward.local_port == 0 {
-                    anyhow::bail!("target {} has invalid local_port 0", target.name);
-                }
-                let local_bind = forward
-                    .local_bind
-                    .or_else(|| defaults.local_bind.clone())
-                    .unwrap_or_else(|| "127.0.0.1".to_string());
-                let forward_spec = ForwardSpec {
-                    target: target.name.clone(),
-                    purpose: forward.purpose,
-                    local_bind: local_bind.clone(),
-                    local_port: forward.local_port,
-                    remote_addr: forward.remote_addr,
-                };
-                let local_addr = forward_spec.local_addr();
+            for forward in [resolved.data_forward.clone(), resolved.control_forward.clone()] {
+                let local_addr = forward.local_addr();
                 if local_addr_used.contains(&local_addr) {
                     anyhow::bail!("duplicate local addr: {local_addr}");
                 }
                 local_addr_used.insert(local_addr);
-                if !allowed_forwards.insert(forward_spec) {
-                    anyhow::bail!("duplicate forward in target {}", target.name);
+                if !allowed_forwards.insert(forward) {
+                    anyhow::bail!("duplicate forward in target {}", resolved.name);
                 }
             }
 
             let state = TargetState {
-                ssh,
+                ssh: resolved.ssh,
                 control_path,
                 allowed_forwards,
                 active_forwards: HashMap::new(),
                 master: None,
-                last_used: None,
             };
-            targets.insert(target.name.clone(), state);
+            targets.insert(resolved.name, state);
         }
 
-        Ok(Self { targets })
+        if targets.is_empty() {
+            anyhow::bail!("no ssh targets available for tunnel-daemon");
+        }
+
+        Ok(Self {
+            targets,
+            clients_last_seen: HashMap::new(),
+        })
     }
 
     pub(crate) async fn ensure_forward(
@@ -108,7 +102,12 @@ impl DaemonState {
             .targets
             .get_mut(&forward.target)
             .ok_or_else(|| anyhow::anyhow!("unknown target {}", forward.target))?;
-        target.ensure_forward(client_id, &forward).await
+        let result = target.ensure_forward(client_id, &forward).await;
+        if result.is_ok() {
+            self.clients_last_seen
+                .insert(client_id.to_string(), SystemTime::now());
+        }
+        result
     }
 
     pub(crate) async fn release_forward(
@@ -120,7 +119,39 @@ impl DaemonState {
             .targets
             .get_mut(&forward.target)
             .ok_or_else(|| anyhow::anyhow!("unknown target {}", forward.target))?;
-        target.release_forward(client_id, &forward).await
+        let released = target.release_forward(client_id, &forward).await?;
+        if released && !self.client_in_use(client_id) {
+            self.clients_last_seen.remove(client_id);
+        }
+        Ok(released)
+    }
+
+    pub(crate) fn heartbeat(&mut self, client_id: &str) {
+        self.clients_last_seen
+            .insert(client_id.to_string(), SystemTime::now());
+    }
+
+    pub(crate) async fn cleanup_expired(&mut self, ttl: Duration) -> bool {
+        let now = SystemTime::now();
+        let mut expired = HashSet::new();
+        for (client, last_seen) in &self.clients_last_seen {
+            if now
+                .duration_since(*last_seen)
+                .unwrap_or(Duration::ZERO)
+                > ttl
+            {
+                expired.insert(client.clone());
+            }
+        }
+        if !expired.is_empty() {
+            for target in self.targets.values_mut() {
+                target.cleanup_expired_clients(&expired).await;
+            }
+            for client in expired {
+                self.clients_last_seen.remove(&client);
+            }
+        }
+        self.clients_last_seen.is_empty() && !self.has_active_forwards()
     }
 
     pub(crate) fn list_forwards(&self) -> Vec<ForwardStatus> {
@@ -136,6 +167,21 @@ impl DaemonState {
             }
         }
         list
+    }
+
+    fn client_in_use(&self, client_id: &str) -> bool {
+        self.targets.values().any(|target| {
+            target
+                .active_forwards
+                .values()
+                .any(|active| active.clients.contains(client_id))
+        })
+    }
+
+    fn has_active_forwards(&self) -> bool {
+        self.targets
+            .values()
+            .any(|target| !target.active_forwards.is_empty())
     }
 }
 
@@ -162,7 +208,6 @@ impl TargetState {
             }
         };
         active.clients.insert(client_id.to_string());
-        self.last_used = Some(SystemTime::now());
         Ok((forward.local_addr(), reused))
     }
 
@@ -184,6 +229,27 @@ impl TargetState {
             self.master = None;
         }
         Ok(removed)
+    }
+
+    async fn cleanup_expired_clients(&mut self, expired: &HashSet<String>) {
+        if expired.is_empty() {
+            return;
+        }
+        let mut to_remove = Vec::new();
+        for (forward, active) in &mut self.active_forwards {
+            active.clients.retain(|client| !expired.contains(client));
+            if active.clients.is_empty() {
+                to_remove.push(forward.clone());
+            }
+        }
+        for forward in to_remove {
+            let _ = forward_cancel(&self.ssh, &self.control_path, &forward).await;
+            self.active_forwards.remove(&forward);
+        }
+        if self.active_forwards.is_empty() {
+            let _ = exit_master(&self.ssh, &self.control_path).await;
+            self.master = None;
+        }
     }
 
     async fn ensure_master(&mut self) -> anyhow::Result<()> {
@@ -209,12 +275,99 @@ impl TargetState {
     }
 }
 
-fn merge_ssh_args(defaults: &DaemonDefaults, target: Option<Vec<String>>) -> Vec<String> {
-    let mut args = defaults.ssh_args.clone().unwrap_or_default();
-    if let Some(extra) = target {
-        args.extend(extra);
+fn resolve_target(
+    defaults: &DaemonDefaults,
+    target: TargetConfig,
+) -> anyhow::Result<Option<ResolvedTarget>> {
+    let Some(ssh) = target.ssh else {
+        tracing::warn!(target = %target.name, "skip target without ssh");
+        return Ok(None);
+    };
+    if ssh.trim().is_empty() {
+        tracing::warn!(target = %target.name, "skip target with empty ssh");
+        return Ok(None);
     }
-    args
+    let local_port = target
+        .local_port
+        .ok_or_else(|| anyhow::anyhow!("target {} missing local_port", target.name))?;
+    if local_port == 0 {
+        anyhow::bail!("target {} has invalid local_port 0", target.name);
+    }
+
+    let remote_addr = target
+        .remote_addr
+        .or_else(|| defaults.remote_addr.clone())
+        .unwrap_or_else(|| DEFAULT_REMOTE_ADDR.to_string());
+
+    let control_remote_addr = target
+        .control_remote_addr
+        .or_else(|| defaults.control_remote_addr.clone())
+        .or_else(|| derive_control_addr(&remote_addr).ok())
+        .unwrap_or_else(|| DEFAULT_CONTROL_REMOTE_ADDR.to_string());
+
+    let data_bind = target
+        .local_bind
+        .clone()
+        .or_else(|| defaults.local_bind.clone())
+        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
+
+    let control_bind = target
+        .control_local_bind
+        .or_else(|| target.local_bind.clone())
+        .or_else(|| defaults.control_local_bind.clone())
+        .or_else(|| defaults.local_bind.clone())
+        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
+
+    let offset = defaults
+        .control_local_port_offset
+        .unwrap_or(DEFAULT_CONTROL_PORT_OFFSET);
+    let control_local_port = target
+        .control_local_port
+        .or_else(|| local_port.checked_add(offset));
+
+    if control_local_port.is_none() {
+        anyhow::bail!(
+            "target {} requires control_local_port (or local_port + offset)",
+            target.name
+        );
+    }
+
+    let mut ssh_args = defaults.ssh_args.clone().unwrap_or_default();
+    if let Some(extra) = target.ssh_args {
+        ssh_args.extend(extra);
+    }
+    let ssh_password = target
+        .ssh_password
+        .or_else(|| defaults.ssh_password.clone());
+
+    let ssh_target = SshTarget {
+        ssh,
+        ssh_args,
+        ssh_password,
+    };
+
+    let data_forward = ForwardSpec {
+        target: target.name.clone(),
+        purpose: ForwardPurpose::Data,
+        local_bind: data_bind,
+        local_port,
+        remote_addr,
+    };
+
+    let control_forward = ForwardSpec {
+        target: target.name.clone(),
+        purpose: ForwardPurpose::Control,
+        local_bind: control_bind,
+        local_port: control_local_port.unwrap(),
+        remote_addr: control_remote_addr,
+    };
+
+    Ok(Some(ResolvedTarget {
+        name: target.name,
+        ssh: ssh_target,
+        data_forward,
+        control_forward,
+    }))
 }
 
 fn control_path_for(control_dir: &Path, name: &str) -> PathBuf {
@@ -226,4 +379,20 @@ fn hash_name(name: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     name.hash(&mut hasher);
     hasher.finish()
+}
+
+fn derive_control_addr(remote_addr: &str) -> anyhow::Result<String> {
+    let (host, port) = parse_host_port(remote_addr)?;
+    let control_port = port.saturating_add(1);
+    Ok(format!("{host}:{control_port}"))
+}
+
+fn parse_host_port(addr: &str) -> anyhow::Result<(String, u16)> {
+    let (host, port) = addr
+        .rsplit_once(':')
+        .ok_or_else(|| anyhow::anyhow!("invalid address {addr}, expected host:port"))?;
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| anyhow::anyhow!("invalid port in address {addr}"))?;
+    Ok((host.to_string(), port))
 }

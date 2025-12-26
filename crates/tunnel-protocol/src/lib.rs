@@ -29,6 +29,7 @@ impl ForwardSpec {
 pub enum TunnelRequest {
     EnsureForward { client_id: String, forward: ForwardSpec },
     ReleaseForward { client_id: String, forward: ForwardSpec },
+    Heartbeat { client_id: String },
     ListForwards,
 }
 
@@ -37,6 +38,7 @@ pub enum TunnelRequest {
 pub enum TunnelResponse {
     EnsureForward { local_addr: String, reused: bool },
     ReleaseForward { released: bool },
+    Ok,
     Forwards { items: Vec<ForwardStatus> },
     Error { message: String },
 }

@@ -5,7 +5,7 @@ use tunnel_protocol::DEFAULT_TUNNEL_DAEMON_ADDR;
 #[derive(Parser, Debug)]
 #[command(name = "tunnel-daemon", version, about = "SSH tunnel manager for Octovalve")]
 pub(crate) struct Args {
-    #[arg(long, default_value = "config/tunnel-daemon.toml")]
+    #[arg(long, default_value = "config/local-proxy-config.toml")]
     pub(crate) config: PathBuf,
     #[arg(long, default_value = DEFAULT_TUNNEL_DAEMON_ADDR)]
     pub(crate) listen_addr: String,

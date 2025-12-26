@@ -16,24 +16,41 @@ use rust_mcp_sdk::schema::{
 use rust_mcp_sdk::{McpServer, StdioTransport, TransportOptions};
 use state::build_proxy_state;
 use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::process::Command;
 use tokio::sync::RwLock;
+use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use tunnel::{shutdown_tunnels, spawn_shutdown_handler, spawn_tunnel_manager};
 use tunnel_client::TunnelClient;
 
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+const TUNNEL_DAEMON_BOOT_RETRIES: usize = 10;
+const TUNNEL_DAEMON_BOOT_DELAY: Duration = Duration::from_millis(200);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
     let args = Args::parse();
+    if args.tunnel_daemon_addr.is_some() && args.config.is_none() {
+        anyhow::bail!("--tunnel-daemon-addr requires --config for strict tunnel allowlist");
+    }
     let (state, defaults) = build_proxy_state(&args)?;
     let state = Arc::new(RwLock::new(state));
     let shutdown = CancellationToken::new();
-    let tunnel_client = args
-        .tunnel_daemon_addr
-        .as_ref()
-        .map(|addr| TunnelClient::new(addr.clone(), args.client_id.clone()));
+    let tunnel_client = if let Some(addr) = args.tunnel_daemon_addr.as_ref() {
+        let client = TunnelClient::new(addr.clone(), args.client_id.clone());
+        if let Some(config) = args.config.as_ref() {
+            ensure_tunnel_daemon(&client, addr, config).await?;
+        }
+        spawn_heartbeat_task(client.clone(), shutdown.clone());
+        Some(client)
+    } else {
+        None
+    };
     {
         let mut guard = state.write().await;
         guard.set_tunnel_client(tunnel_client.clone());
@@ -77,4 +94,69 @@ fn init_tracing() {
         .with_writer(io::stderr)
         .with_target(false);
     tracing_subscriber::registry().with(layer).init();
+}
+
+fn spawn_heartbeat_task(client: TunnelClient, shutdown: CancellationToken) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
+        loop {
+            tokio::select! {
+                _ = shutdown.cancelled() => break,
+                _ = interval.tick() => {
+                    let _ = client.heartbeat().await;
+                }
+            }
+        }
+    });
+}
+
+async fn ensure_tunnel_daemon(
+    client: &TunnelClient,
+    addr: &str,
+    config: &Path,
+) -> anyhow::Result<()> {
+    if client.list_forwards().await.is_ok() {
+        return Ok(());
+    }
+    spawn_tunnel_daemon(addr, config)?;
+    for _ in 0..TUNNEL_DAEMON_BOOT_RETRIES {
+        if client.list_forwards().await.is_ok() {
+            return Ok(());
+        }
+        sleep(TUNNEL_DAEMON_BOOT_DELAY).await;
+    }
+    anyhow::bail!("tunnel-daemon not available at {addr}");
+}
+
+fn spawn_tunnel_daemon(addr: &str, config: &Path) -> anyhow::Result<()> {
+    let bin = resolve_tunnel_daemon_bin();
+    let mut cmd = Command::new(bin);
+    cmd.arg("--config")
+        .arg(config)
+        .arg("--listen-addr")
+        .arg(addr)
+        .arg("--log-to-stderr")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    cmd.spawn().map_err(|err| {
+        anyhow::anyhow!(
+            "failed to spawn tunnel-daemon: {} (set OCTOVALVE_TUNNEL_DAEMON_BIN to override)",
+            err
+        )
+    })?;
+    Ok(())
+}
+
+fn resolve_tunnel_daemon_bin() -> PathBuf {
+    if let Ok(path) = std::env::var("OCTOVALVE_TUNNEL_DAEMON_BIN") {
+        return PathBuf::from(path);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let candidate = exe.with_file_name("tunnel-daemon");
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    PathBuf::from("tunnel-daemon")
 }

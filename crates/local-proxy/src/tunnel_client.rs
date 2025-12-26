@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::codec::{Framed, LinesCodec};
-use tunnel_protocol::{ForwardSpec, TunnelRequest, TunnelResponse};
+use tunnel_protocol::{ForwardSpec, ForwardStatus, TunnelRequest, TunnelResponse};
 
 const TUNNEL_DAEMON_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -38,6 +38,25 @@ impl TunnelClient {
         };
         match self.send_request(request).await? {
             TunnelResponse::ReleaseForward { released } => Ok(released),
+            TunnelResponse::Error { message } => anyhow::bail!(message),
+            other => anyhow::bail!("unexpected response: {:?}", other),
+        }
+    }
+
+    pub(crate) async fn heartbeat(&self) -> anyhow::Result<()> {
+        let request = TunnelRequest::Heartbeat {
+            client_id: self.client_id.clone(),
+        };
+        match self.send_request(request).await? {
+            TunnelResponse::Ok => Ok(()),
+            TunnelResponse::Error { message } => anyhow::bail!(message),
+            other => anyhow::bail!("unexpected response: {:?}", other),
+        }
+    }
+
+    pub(crate) async fn list_forwards(&self) -> anyhow::Result<Vec<ForwardStatus>> {
+        match self.send_request(TunnelRequest::ListForwards).await? {
+            TunnelResponse::Forwards { items } => Ok(items),
             TunnelResponse::Error { message } => anyhow::bail!(message),
             other => anyhow::bail!("unexpected response: {:?}", other),
         }
