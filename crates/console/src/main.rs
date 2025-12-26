@@ -2,6 +2,7 @@ mod bootstrap;
 mod cli;
 mod config;
 mod control;
+mod events;
 mod runtime;
 mod state;
 mod tunnel;
@@ -10,12 +11,15 @@ use crate::bootstrap::BootstrapConfig;
 use crate::cli::Args;
 use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
+use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, ControlCommand, TargetInfo};
 use anyhow::Context;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::routing::post;
 use axum::{Json, Router};
@@ -23,12 +27,14 @@ use clap::Parser;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 struct AppState {
     state: Arc<RwLock<crate::state::ConsoleState>>,
+    event_tx: broadcast::Sender<ConsoleEvent>,
 }
 
 #[tokio::main]
@@ -50,8 +56,10 @@ async fn main() -> anyhow::Result<()> {
         remote_audit_dir: args.remote_audit_dir.clone(),
     };
     let shared_state = Arc::new(RwLock::new(state));
+    let (event_tx, _) = broadcast::channel(512);
     let app_state = AppState {
         state: Arc::clone(&shared_state),
+        event_tx: event_tx.clone(),
     };
 
     let app = Router::new()
@@ -60,9 +68,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/snapshot", get(get_snapshot))
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
+        .route("/ws", get(ws_handler))
         .with_state(app_state);
 
-    spawn_target_workers(Arc::clone(&shared_state), bootstrap, shutdown.clone());
+    spawn_target_workers(
+        Arc::clone(&shared_state),
+        bootstrap,
+        shutdown.clone(),
+        event_tx,
+    );
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
@@ -137,6 +151,61 @@ async fn deny_command(
     Ok(Json(ActionResponse {
         message: "deny queued".to_string(),
     }))
+}
+
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_ws(socket, state))
+}
+
+async fn handle_ws(mut socket: WebSocket, state: AppState) {
+    let snapshot = {
+        let state = state.state.read().await;
+        state.list_targets()
+    };
+    if send_ws_event(
+        &mut socket,
+        ConsoleEvent::TargetsSnapshot { targets: snapshot },
+    )
+    .await
+    .is_err()
+    {
+        return;
+    }
+
+    let mut rx = state.event_tx.subscribe();
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Ok(event) => {
+                        if send_ws_event(&mut socket, event).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => break,
+                }
+            }
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
+}
+
+async fn send_ws_event(socket: &mut WebSocket, event: ConsoleEvent) -> Result<(), axum::Error> {
+    let payload = match serde_json::to_string(&event) {
+        Ok(payload) => payload,
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to serialize websocket event");
+            return Ok(());
+        }
+    };
+    socket.send(Message::Text(payload)).await
 }
 
 fn init_tracing(log_to_stderr: bool) -> anyhow::Result<()> {

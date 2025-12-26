@@ -5,6 +5,7 @@ use crate::control::{ServiceEvent, ServiceSnapshot};
 use anyhow::Context;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::time::SystemTime;
 use tokio::sync::mpsc;
 
@@ -28,6 +29,8 @@ pub(crate) enum TargetStatus {
 pub(crate) struct TargetSpec {
     pub(crate) name: String,
     pub(crate) desc: String,
+    pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
     pub(crate) ssh: Option<String>,
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
@@ -40,6 +43,8 @@ pub(crate) struct TargetSpec {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct TargetInfo {
     pub(crate) name: String,
+    pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
     pub(crate) desc: String,
     pub(crate) status: TargetStatus,
     pub(crate) pending_count: usize,
@@ -67,24 +72,7 @@ impl ConsoleState {
         self.order
             .iter()
             .filter_map(|name| self.targets.get(name))
-            .map(|target| TargetInfo {
-                name: target.name.clone(),
-                desc: target.desc.clone(),
-                status: *self.status.get(&target.name).unwrap_or(&TargetStatus::Down),
-                pending_count: *self.pending_count.get(&target.name).unwrap_or(&0),
-                last_seen: self.last_seen.get(&target.name).map(format_time),
-                last_error: self.last_error.get(&target.name).cloned(),
-                control_addr: target
-                    .control_local_addr
-                    .clone()
-                    .unwrap_or_else(|| target.control_remote_addr.clone()),
-                local_addr: target.control_local_addr.clone(),
-                is_default: self
-                    .default_target
-                    .as_ref()
-                    .map(|default| default == &target.name)
-                    .unwrap_or(false),
-            })
+            .filter_map(|target| self.target_info(&target.name))
             .collect()
     }
 
@@ -97,6 +85,30 @@ impl ConsoleState {
 
     pub(crate) fn snapshot(&self, name: &str) -> Option<ServiceSnapshot> {
         self.snapshots.get(name).cloned()
+    }
+
+    pub(crate) fn target_info(&self, name: &str) -> Option<TargetInfo> {
+        let target = self.targets.get(name)?;
+        Some(TargetInfo {
+            name: target.name.clone(),
+            hostname: target.hostname.clone(),
+            ip: target.ip.clone(),
+            desc: target.desc.clone(),
+            status: *self.status.get(&target.name).unwrap_or(&TargetStatus::Down),
+            pending_count: *self.pending_count.get(&target.name).unwrap_or(&0),
+            last_seen: self.last_seen.get(&target.name).map(format_time),
+            last_error: self.last_error.get(&target.name).cloned(),
+            control_addr: target
+                .control_local_addr
+                .clone()
+                .unwrap_or_else(|| target.control_remote_addr.clone()),
+            local_addr: target.control_local_addr.clone(),
+            is_default: self
+                .default_target
+                .as_ref()
+                .map(|default| default == &target.name)
+                .unwrap_or(false),
+        })
     }
 
     pub(crate) fn register_command_sender(
@@ -276,9 +288,23 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         .ssh_password
         .or_else(|| defaults.ssh_password.clone());
 
+    let ssh_host = target
+        .ssh
+        .as_deref()
+        .and_then(parse_ssh_host)
+        .map(|host| host.to_string());
+    let hostname = target.hostname.or_else(|| ssh_host.clone());
+    let ip = target.ip.or_else(|| {
+        ssh_host
+            .as_deref()
+            .and_then(|host| host.parse::<IpAddr>().ok().map(|_| host.to_string()))
+    });
+
     Ok(TargetSpec {
         name: target.name,
         desc: target.desc,
+        hostname,
+        ip,
         ssh: target.ssh,
         ssh_args,
         ssh_password,
@@ -293,6 +319,18 @@ fn derive_control_addr(remote_addr: &str) -> anyhow::Result<String> {
     let (host, port) = parse_host_port(remote_addr)?;
     let control_port = port.saturating_add(1);
     Ok(format!("{host}:{control_port}"))
+}
+
+fn parse_ssh_host(value: &str) -> Option<&str> {
+    if value.is_empty() {
+        return None;
+    }
+    Some(
+        value
+            .rsplit_once('@')
+            .map(|(_, host)| host)
+            .unwrap_or(value),
+    )
 }
 
 fn parse_host_port(addr: &str) -> anyhow::Result<(String, u16)> {
@@ -323,6 +361,8 @@ mod tests {
             targets: vec![TargetConfig {
                 name: "dev".to_string(),
                 desc: "dev".to_string(),
+                hostname: None,
+                ip: None,
                 ssh: Some("devops@127.0.0.1".to_string()),
                 remote_addr: Some("127.0.0.1:19307".to_string()),
                 local_port: Some(19311),

@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-axum = { version = "0.7", features = ["json"] }
+axum = { version = "0.7", features = ["json", "ws"] }
 bytes.workspace = true
 clap.workspace = true
 futures-util.workspace = true

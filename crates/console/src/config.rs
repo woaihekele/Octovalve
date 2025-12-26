@@ -27,6 +27,8 @@ pub(crate) struct ConsoleDefaults {
 pub(crate) struct TargetConfig {
     pub(crate) name: String,
     pub(crate) desc: String,
+    pub(crate) hostname: Option<String>,
+    pub(crate) ip: Option<String>,
     pub(crate) ssh: Option<String>,
     pub(crate) remote_addr: Option<String>,
     pub(crate) local_port: Option<u16>,

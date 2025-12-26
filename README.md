@@ -75,6 +75,8 @@ remote_addr = "127.0.0.1:19307"
 [[targets]]
 name = "example-target"
 desc = "主开发机"
+hostname = "***REMOVED***"
+ip = "192.168.2.162"
 ssh = "devops@192.168.2.162"
 # ssh_password = "你的密码"
 local_port = 19311
@@ -152,9 +154,12 @@ cargo run -p remote-broker -- \
 
 ## Console API（可选）
 - `GET /health`：健康检查
-- `GET /targets`：目标列表（含 pending 计数）
+- `GET /targets`：目标列表（含 `name/hostname/ip/desc/status/pending_count`）
 - `GET /targets/:name/snapshot`：获取快照
 - `POST /targets/:name/approve` / `deny`：审批/拒绝
+- `GET /ws`：WebSocket 推送
+  - `targets_snapshot`：初始全量目标列表
+  - `target_updated`：单目标状态更新
 
 ## 密码登录说明
 如果必须使用密码登录，请在目标中配置 `ssh_password`，并确保本机安装 `sshpass`：

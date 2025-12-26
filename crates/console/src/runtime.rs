@@ -1,5 +1,6 @@
 use crate::bootstrap::{bootstrap_remote_broker, BootstrapConfig};
 use crate::control::{ControlRequest, ControlResponse};
+use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
 use crate::tunnel::{spawn_tunnel, stop_tunnel, TargetRuntime};
 use anyhow::Context;
@@ -8,6 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
+use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
@@ -18,6 +20,7 @@ pub(crate) fn spawn_target_workers(
     state: Arc<RwLock<ConsoleState>>,
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
+    event_tx: broadcast::Sender<ConsoleEvent>,
 ) {
     tokio::spawn(async move {
         let targets = {
@@ -33,8 +36,9 @@ pub(crate) fn spawn_target_workers(
             let state = Arc::clone(&state);
             let shutdown = shutdown.clone();
             let bootstrap = bootstrap.clone();
+            let event_tx = event_tx.clone();
             tokio::spawn(async move {
-                run_target_worker(spec, state, rx, bootstrap, shutdown).await;
+                run_target_worker(spec, state, rx, bootstrap, shutdown, event_tx).await;
             });
         }
     });
@@ -46,6 +50,7 @@ async fn run_target_worker(
     mut cmd_rx: mpsc::Receiver<ControlCommand>,
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
+    event_tx: broadcast::Sender<ConsoleEvent>,
 ) {
     let mut runtime = TargetRuntime::from_spec(spec);
     loop {
@@ -57,9 +62,14 @@ async fn run_target_worker(
         if runtime.ssh.is_some() {
             if !runtime.refresh_tunnel() {
                 if let Err(err) = spawn_tunnel(&mut runtime) {
-                    let mut state = state.write().await;
-                    state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
-                    drop(state);
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(err.to_string()),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     tokio::time::sleep(RECONNECT_DELAY).await;
                     continue;
                 }
@@ -67,8 +77,14 @@ async fn run_target_worker(
         }
 
         if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
-            let mut state = state.write().await;
-            state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
+            set_status_and_notify(
+                &runtime.name,
+                TargetStatus::Down,
+                Some(err.to_string()),
+                &state,
+                &event_tx,
+            )
+            .await;
             tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         }
@@ -76,33 +92,62 @@ async fn run_target_worker(
         let addr = runtime.connect_addr();
         match connect_control(&addr).await {
             Ok(mut framed) => {
-                {
-                    let mut state = state.write().await;
-                    state.set_status(&runtime.name, TargetStatus::Ready, None);
-                }
+                set_status_and_notify(&runtime.name, TargetStatus::Ready, None, &state, &event_tx)
+                    .await;
                 if let Err(err) = send_request(&mut framed, ControlRequest::Subscribe).await {
-                    let mut state = state.write().await;
-                    state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(err.to_string()),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     tokio::time::sleep(RECONNECT_DELAY).await;
                     continue;
                 }
                 if let Err(err) = send_request(&mut framed, ControlRequest::Snapshot).await {
-                    let mut state = state.write().await;
-                    state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(err.to_string()),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     tokio::time::sleep(RECONNECT_DELAY).await;
                     continue;
                 }
 
-                if let Err(err) =
-                    session_loop(&mut framed, &runtime.name, &state, &mut cmd_rx, &shutdown).await
+                if let Err(err) = session_loop(
+                    &mut framed,
+                    &runtime.name,
+                    &state,
+                    &mut cmd_rx,
+                    &shutdown,
+                    &event_tx,
+                )
+                .await
                 {
-                    let mut state = state.write().await;
-                    state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(err.to_string()),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                 }
             }
             Err(err) => {
-                let mut state = state.write().await;
-                state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
+                set_status_and_notify(
+                    &runtime.name,
+                    TargetStatus::Down,
+                    Some(err.to_string()),
+                    &state,
+                    &event_tx,
+                )
+                .await;
             }
         }
 
@@ -116,6 +161,7 @@ async fn session_loop(
     state: &Arc<RwLock<ConsoleState>>,
     cmd_rx: &mut mpsc::Receiver<ControlCommand>,
     shutdown: &CancellationToken,
+    event_tx: &broadcast::Sender<ConsoleEvent>,
 ) -> anyhow::Result<()> {
     loop {
         tokio::select! {
@@ -133,26 +179,37 @@ async fn session_loop(
                 let frame = frame.context("control stream closed")?;
                 let bytes = frame.context("read control frame")?;
                 let response: ControlResponse = serde_json::from_slice(&bytes)?;
-                handle_response(name, state, response).await;
+                handle_response(name, state, response, event_tx).await;
             }
         }
     }
 }
 
-async fn handle_response(name: &str, state: &Arc<RwLock<ConsoleState>>, response: ControlResponse) {
+async fn handle_response(
+    name: &str,
+    state: &Arc<RwLock<ConsoleState>>,
+    response: ControlResponse,
+    event_tx: &broadcast::Sender<ConsoleEvent>,
+) {
     match response {
         ControlResponse::Snapshot { snapshot } => {
-            let mut state = state.write().await;
-            state.apply_snapshot(name, snapshot);
+            let mut guard = state.write().await;
+            guard.apply_snapshot(name, snapshot);
+            drop(guard);
+            emit_target_update(name, state, event_tx).await;
         }
         ControlResponse::Event { event } => {
-            let mut state = state.write().await;
-            state.apply_event(name, event);
+            let mut guard = state.write().await;
+            guard.apply_event(name, event);
+            drop(guard);
+            emit_target_update(name, state, event_tx).await;
         }
         ControlResponse::Ack { .. } => {}
         ControlResponse::Error { message } => {
-            let mut state = state.write().await;
-            state.set_status(name, TargetStatus::Ready, Some(message));
+            let mut guard = state.write().await;
+            guard.set_status(name, TargetStatus::Ready, Some(message));
+            drop(guard);
+            emit_target_update(name, state, event_tx).await;
         }
     }
 }
@@ -187,5 +244,33 @@ impl TargetRuntime {
             tunnel: None,
             tunnel_pgid: None,
         }
+    }
+}
+
+async fn set_status_and_notify(
+    name: &str,
+    status: TargetStatus,
+    error: Option<String>,
+    state: &Arc<RwLock<ConsoleState>>,
+    event_tx: &broadcast::Sender<ConsoleEvent>,
+) {
+    {
+        let mut state = state.write().await;
+        state.set_status(name, status, error);
+    }
+    emit_target_update(name, state, event_tx).await;
+}
+
+async fn emit_target_update(
+    name: &str,
+    state: &Arc<RwLock<ConsoleState>>,
+    event_tx: &broadcast::Sender<ConsoleEvent>,
+) {
+    let target = {
+        let state = state.read().await;
+        state.target_info(name)
+    };
+    if let Some(target) = target {
+        let _ = event_tx.send(ConsoleEvent::TargetUpdated { target });
     }
 }
