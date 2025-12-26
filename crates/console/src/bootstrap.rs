@@ -13,20 +13,6 @@ pub(crate) struct BootstrapConfig {
     pub(crate) remote_audit_dir: String,
 }
 
-impl BootstrapConfig {
-    pub(crate) fn remote_bin_path(&self) -> String {
-        join_remote(&self.remote_dir, "remote-broker")
-    }
-
-    pub(crate) fn remote_config_path(&self) -> String {
-        join_remote(&self.remote_dir, "config.toml")
-    }
-
-    pub(crate) fn remote_log_path(&self) -> String {
-        join_remote(&self.remote_dir, "remote-broker.log")
-    }
-}
-
 pub(crate) async fn bootstrap_remote_broker(
     target: &TargetRuntime,
     bootstrap: &BootstrapConfig,
@@ -47,18 +33,21 @@ pub(crate) async fn bootstrap_remote_broker(
         );
     }
 
+    let remote_dir = resolve_remote_path(target, &bootstrap.remote_dir).await?;
+    let remote_audit_dir = resolve_remote_path(target, &bootstrap.remote_audit_dir).await?;
+    let remote_bin = join_remote(&remote_dir, "remote-broker");
+    let remote_config = join_remote(&remote_dir, "config.toml");
+    let remote_log = join_remote(&remote_dir, "remote-broker.log");
+
     run_ssh(
         target,
         &format!(
             "mkdir -p {} {}",
-            shell_escape(&bootstrap.remote_dir),
-            shell_escape(&bootstrap.remote_audit_dir)
+            shell_escape(&remote_dir),
+            shell_escape(&remote_audit_dir)
         ),
     )
     .await?;
-
-    let remote_bin = bootstrap.remote_bin_path();
-    let remote_config = bootstrap.remote_config_path();
 
     run_scp(target, &bootstrap.local_bin, &remote_bin).await?;
     run_scp(target, &bootstrap.local_config, &remote_config).await?;
@@ -76,8 +65,8 @@ pub(crate) async fn bootstrap_remote_broker(
         shell_escape(&bootstrap.remote_listen_addr),
         shell_escape(&bootstrap.remote_control_addr),
         shell_escape(&remote_config),
-        shell_escape(&bootstrap.remote_audit_dir),
-        shell_escape(&bootstrap.remote_log_path()),
+        shell_escape(&remote_audit_dir),
+        shell_escape(&remote_log),
     );
     run_ssh(target, &start_cmd).await?;
 
@@ -126,6 +115,47 @@ async fn run_scp(target: &TargetRuntime, local: &Path, remote_path: &str) -> any
         anyhow::bail!("scp failed: {}{}", stdout, stderr);
     }
     Ok(())
+}
+
+async fn run_ssh_capture(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Result<String> {
+    let ssh = target
+        .ssh
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
+    let mut cmd = build_ssh_base(target, "ssh");
+    cmd.arg("-T");
+    if target.ssh_password.is_none() {
+        cmd.arg("-o").arg("BatchMode=yes");
+    }
+    cmd.args(&target.ssh_args);
+    cmd.arg(ssh);
+    cmd.arg("sh").arg("-lc").arg(remote_cmd);
+    let output = cmd.output().await.context("ssh command failed")?;
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("ssh failed: {}{}", stdout, stderr);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+async fn resolve_remote_path(target: &TargetRuntime, path: &str) -> anyhow::Result<String> {
+    if path == "~" {
+        return remote_home(target).await;
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        let home = remote_home(target).await?;
+        return Ok(join_remote(&home, rest));
+    }
+    Ok(path.to_string())
+}
+
+async fn remote_home(target: &TargetRuntime) -> anyhow::Result<String> {
+    let home = run_ssh_capture(target, "printf %s \"$HOME\"").await?;
+    if home.is_empty() {
+        anyhow::bail!("unable to resolve remote home directory");
+    }
+    Ok(home)
 }
 
 fn build_ssh_base(target: &TargetRuntime, command: &str) -> Command {
