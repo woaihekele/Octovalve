@@ -171,7 +171,8 @@ function handleGlobalKey(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
   }
-  if (event.altKey && event.key.toLowerCase() === settings.value.shortcuts.jumpNextPending.toLowerCase()) {
+  const modifierPressed = event.altKey || event.metaKey;
+  if (modifierPressed && event.key.toLowerCase() === settings.value.shortcuts.jumpNextPending.toLowerCase()) {
     event.preventDefault();
     const target = targets.value.find((item) => item.pending_count > 0);
     if (target) {

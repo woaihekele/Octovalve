@@ -62,7 +62,7 @@ function save() {
           <div class="text-sm font-medium mb-3">快捷键</div>
           <div class="space-y-3">
             <label class="flex items-center justify-between gap-4 text-sm">
-              <span class="text-slate-400">跳转到下一个 Pending（Alt + 键）</span>
+              <span class="text-slate-400">跳转到下一个 Pending（Alt/Cmd + 键）</span>
               <input
                 v-model="localSettings.shortcuts.jumpNextPending"
                 class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
