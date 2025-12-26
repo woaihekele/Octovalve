@@ -1,0 +1,32 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Octovalve Console",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false
+    },
+    "security": {
+      "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
+    },
+    "windows": [
+      {
+        "title": "Octovalve Console",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 640
+      }
+    ],
+    "bundle": {
+      "active": false
+    }
+  }
+}
