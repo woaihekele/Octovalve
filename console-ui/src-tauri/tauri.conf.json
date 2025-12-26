@@ -26,7 +26,8 @@
       }
     ],
     "bundle": {
-      "active": false
+      "active": false,
+      "identifier": "com.octovalve.console"
     }
   }
 }
