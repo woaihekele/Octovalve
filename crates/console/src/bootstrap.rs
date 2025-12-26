@@ -85,7 +85,7 @@ async fn run_ssh(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Result<()>
     }
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
-    cmd.arg("sh").arg("-lc").arg(remote_cmd);
+    cmd.arg(remote_cmd);
     let output = cmd.output().await.context("ssh command failed")?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -129,7 +129,7 @@ async fn run_ssh_capture(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Re
     }
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
-    cmd.arg("sh").arg("-lc").arg(remote_cmd);
+    cmd.arg(remote_cmd);
     let output = cmd.output().await.context("ssh command failed")?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -151,7 +151,7 @@ async fn resolve_remote_path(target: &TargetRuntime, path: &str) -> anyhow::Resu
 }
 
 async fn remote_home(target: &TargetRuntime) -> anyhow::Result<String> {
-    let home = run_ssh_capture(target, "printf %s \"$HOME\"").await?;
+    let home = run_ssh_capture(target, "printf '%s' \"$HOME\"").await?;
     if home.is_empty() {
         anyhow::bail!("unable to resolve remote home directory");
     }
