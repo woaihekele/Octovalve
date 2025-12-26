@@ -1,3 +1,4 @@
+use crate::bootstrap::{bootstrap_remote_broker, BootstrapConfig};
 use crate::control::{ControlRequest, ControlResponse};
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
 use crate::tunnel::{spawn_tunnel, stop_tunnel, TargetRuntime};
@@ -13,7 +14,11 @@ use tokio_util::sync::CancellationToken;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-pub(crate) fn spawn_target_workers(state: Arc<RwLock<ConsoleState>>, shutdown: CancellationToken) {
+pub(crate) fn spawn_target_workers(
+    state: Arc<RwLock<ConsoleState>>,
+    bootstrap: BootstrapConfig,
+    shutdown: CancellationToken,
+) {
     tokio::spawn(async move {
         let targets = {
             let state = state.read().await;
@@ -27,8 +32,9 @@ pub(crate) fn spawn_target_workers(state: Arc<RwLock<ConsoleState>>, shutdown: C
             }
             let state = Arc::clone(&state);
             let shutdown = shutdown.clone();
+            let bootstrap = bootstrap.clone();
             tokio::spawn(async move {
-                run_target_worker(spec, state, rx, shutdown).await;
+                run_target_worker(spec, state, rx, bootstrap, shutdown).await;
             });
         }
     });
@@ -38,6 +44,7 @@ async fn run_target_worker(
     spec: TargetSpec,
     state: Arc<RwLock<ConsoleState>>,
     mut cmd_rx: mpsc::Receiver<ControlCommand>,
+    bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
 ) {
     let mut runtime = TargetRuntime::from_spec(spec);
@@ -57,6 +64,13 @@ async fn run_target_worker(
                     continue;
                 }
             }
+        }
+
+        if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
+            let mut state = state.write().await;
+            state.set_status(&runtime.name, TargetStatus::Down, Some(err.to_string()));
+            tokio::time::sleep(RECONNECT_DELAY).await;
+            continue;
         }
 
         let addr = runtime.connect_addr();

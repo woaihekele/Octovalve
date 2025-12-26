@@ -188,6 +188,14 @@ pub(crate) fn build_console_state(config: ConsoleConfig) -> anyhow::Result<Conso
         seen.insert(target.name.clone());
 
         let resolved = resolve_target(&defaults, target)?;
+        if let Some(ssh) = resolved.ssh.as_ref() {
+            if ssh.split_whitespace().count() > 1 {
+                anyhow::bail!(
+                    "target {} ssh must be a single destination; use ssh_args for options",
+                    resolved.name
+                );
+            }
+        }
         if let Some(local_addr) = &resolved.control_local_addr {
             if local_addr_used.contains(local_addr) {
                 anyhow::bail!("duplicate control local addr: {}", local_addr);

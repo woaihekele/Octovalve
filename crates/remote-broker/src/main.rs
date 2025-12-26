@@ -65,6 +65,13 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(control_addr) = args.control_addr.clone() {
         spawn_control_server(control_addr, cmd_tx.clone(), event_tx.clone()).await?;
+    } else if args.headless {
+        tracing::warn!("headless mode without control api will require local approvals");
+    }
+
+    if args.headless {
+        tokio::signal::ctrl_c().await?;
+        return Ok(());
     }
 
     let mut terminal = setup_terminal()?;

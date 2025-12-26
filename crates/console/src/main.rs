@@ -1,3 +1,4 @@
+mod bootstrap;
 mod cli;
 mod config;
 mod control;
@@ -5,6 +6,7 @@ mod runtime;
 mod state;
 mod tunnel;
 
+use crate::bootstrap::BootstrapConfig;
 use crate::cli::Args;
 use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
@@ -39,6 +41,14 @@ async fn main() -> anyhow::Result<()> {
     let state = build_console_state(config)?;
 
     let shutdown = CancellationToken::new();
+    let bootstrap = BootstrapConfig {
+        local_bin: args.broker_bin.clone(),
+        local_config: args.broker_config.clone(),
+        remote_dir: args.remote_dir.clone(),
+        remote_listen_addr: args.remote_listen_addr.clone(),
+        remote_control_addr: args.remote_control_addr.clone(),
+        remote_audit_dir: args.remote_audit_dir.clone(),
+    };
     let shared_state = Arc::new(RwLock::new(state));
     let app_state = AppState {
         state: Arc::clone(&shared_state),
@@ -52,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/deny", post(deny_command))
         .with_state(app_state);
 
-    spawn_target_workers(Arc::clone(&shared_state), shutdown.clone());
+    spawn_target_workers(Arc::clone(&shared_state), bootstrap, shutdown.clone());
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await

@@ -16,6 +16,8 @@ pub(crate) struct Args {
     pub(crate) audit_dir: PathBuf,
     #[arg(long)]
     pub(crate) control_addr: Option<String>,
+    #[arg(long, default_value_t = false)]
+    pub(crate) headless: bool,
     #[arg(long)]
     pub(crate) auto_approve: bool,
     #[arg(long, default_value_t = false)]
