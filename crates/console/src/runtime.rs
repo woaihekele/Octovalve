@@ -13,6 +13,7 @@ use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -33,6 +34,7 @@ pub(crate) async fn spawn_target_workers(
             let mut state = state.write().await;
             state.register_command_sender(spec.name.clone(), tx.clone());
         }
+        info!(target = %spec.name, "console worker spawned");
         let state = Arc::clone(&state);
         let shutdown = shutdown.clone();
         let bootstrap = bootstrap.clone();
@@ -56,12 +58,15 @@ async fn run_target_worker(
     let mut runtime = TargetRuntime::from_spec(spec);
     loop {
         if shutdown.is_cancelled() {
+            info!(target = %runtime.name, "shutdown requested, stopping tunnel");
             stop_tunnel(&mut runtime).await;
+            info!(target = %runtime.name, "worker stopped");
             break;
         }
 
         if runtime.ssh.is_some() {
             if !runtime.refresh_tunnel() {
+                info!(target = %runtime.name, "spawning ssh tunnel");
                 if let Err(err) = spawn_tunnel(&mut runtime) {
                     set_status_and_notify(
                         &runtime.name,
@@ -71,12 +76,14 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
+                    warn!(target = %runtime.name, error = %err, "failed to spawn ssh tunnel");
                     tokio::time::sleep(RECONNECT_DELAY).await;
                     continue;
                 }
             }
         }
 
+        info!(target = %runtime.name, "bootstrapping remote broker");
         if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
             set_status_and_notify(
                 &runtime.name,
@@ -86,11 +93,13 @@ async fn run_target_worker(
                 &event_tx,
             )
             .await;
+            warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
             tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         }
 
         let addr = runtime.connect_addr();
+        info!(target = %runtime.name, addr = %addr, "connecting control channel");
         match connect_control(&addr).await {
             Ok(mut framed) => {
                 set_status_and_notify(&runtime.name, TargetStatus::Ready, None, &state, &event_tx)
@@ -104,6 +113,7 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
+                    warn!(target = %runtime.name, error = %err, "failed to subscribe");
                     tokio::time::sleep(RECONNECT_DELAY).await;
                     continue;
                 }
@@ -116,10 +126,12 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
+                    warn!(target = %runtime.name, error = %err, "failed to request snapshot");
                     tokio::time::sleep(RECONNECT_DELAY).await;
                     continue;
                 }
 
+        info!(target = %runtime.name, "control session started");
                 if let Err(err) = session_loop(
                     &mut framed,
                     &runtime.name,
@@ -138,6 +150,7 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
+                    warn!(target = %runtime.name, error = %err, "control session ended");
                 }
             }
             Err(err) => {
@@ -149,6 +162,7 @@ async fn run_target_worker(
                     &event_tx,
                 )
                 .await;
+                warn!(target = %runtime.name, error = %err, "failed to connect control channel");
             }
         }
 

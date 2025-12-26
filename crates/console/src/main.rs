@@ -30,6 +30,7 @@ use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 #[derive(Clone)]
 struct AppState {
@@ -42,6 +43,12 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     init_tracing(args.log_to_stderr)?;
 
+    info!(
+        listen_addr = %args.listen_addr,
+        config = %args.config.display(),
+        broker_bin = %args.broker_bin.display(),
+        "console starting"
+    );
     let config = load_console_config(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
     let state = build_console_state(config)?;
@@ -82,13 +89,16 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(&args.listen_addr)
         .await
         .with_context(|| format!("failed to bind {}", args.listen_addr))?;
+    info!(addr = %args.listen_addr, "console listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown(shutdown.clone()))
         .await?;
+    info!("console shutting down, waiting for workers");
     shutdown.cancel();
     for handle in worker_handles {
         let _ = handle.await;
     }
+    info!("console workers stopped");
     Ok(())
 }
 
@@ -227,5 +237,6 @@ fn init_tracing(log_to_stderr: bool) -> anyhow::Result<()> {
 
 async fn wait_for_shutdown(shutdown: CancellationToken) {
     let _ = tokio::signal::ctrl_c().await;
+    info!("shutdown signal received");
     shutdown.cancel();
 }

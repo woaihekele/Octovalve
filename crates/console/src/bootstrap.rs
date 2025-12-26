@@ -3,6 +3,7 @@ use anyhow::Context;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
+use tracing::info;
 
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const SCP_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
@@ -25,6 +26,7 @@ pub(crate) async fn bootstrap_remote_broker(
     if target.ssh.is_none() {
         return Ok(());
     }
+    info!(target = %target.name, "syncing remote broker");
     if !bootstrap.local_bin.exists() {
         anyhow::bail!(
             "missing local broker bin: {}",
@@ -87,6 +89,7 @@ pub(crate) async fn bootstrap_remote_broker(
         shell_escape(&remote_log),
     );
     run_ssh(target, &start_cmd).await?;
+    info!(target = %target.name, "remote broker ready");
 
     Ok(())
 }
