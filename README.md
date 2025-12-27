@@ -205,7 +205,9 @@ npm run tauri:build:dmg
 
 运行时说明：
 - 应用启动会自动拉起 console（包含 tunnel-daemon/remote-broker sidecar）。
-- 首次启动会在应用配置目录生成 `local-proxy-config.toml` 和 `remote-broker-config.toml`。
+- 首次启动会在 `~/.octovalve/` 生成 `local-proxy-config.toml.example`。
+  - 复制为 `local-proxy-config.toml` 并修改后重启应用。
+- `remote-broker-config.toml` 仍保存在应用配置目录（console 启动时生成）。
   - macOS 默认路径：`~/Library/Application Support/com.octovalve.console/`
 
 ## 密码登录说明
