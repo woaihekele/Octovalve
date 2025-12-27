@@ -22,4 +22,6 @@ pub(crate) struct Args {
     pub(crate) auto_approve: bool,
     #[arg(long, default_value_t = false)]
     pub(crate) log_to_stderr: bool,
+    #[arg(long, default_value_t = 60)]
+    pub(crate) idle_exit_secs: u64,
 }

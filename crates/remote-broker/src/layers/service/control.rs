@@ -1,8 +1,10 @@
+use crate::activity::ActivityTracker;
 use crate::layers::service::events::{ServiceCommand, ServiceEvent};
 use anyhow::Context;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use protocol::control::{ControlRequest, ControlResponse};
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -11,6 +13,7 @@ pub(crate) async fn spawn_control_server(
     addr: String,
     cmd_tx: mpsc::Sender<ServiceCommand>,
     event_tx: broadcast::Sender<ServiceEvent>,
+    activity: Arc<ActivityTracker>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(&addr)
         .await
@@ -21,7 +24,9 @@ pub(crate) async fn spawn_control_server(
                 Ok((stream, _)) => {
                     let cmd_tx = cmd_tx.clone();
                     let event_rx = event_tx.subscribe();
+                    let activity = Arc::clone(&activity);
                     tokio::spawn(async move {
+                        let _guard = activity.track_control();
                         if let Err(err) = handle_control_connection(stream, cmd_tx, event_rx).await
                         {
                             tracing::warn!(error = %err, "control connection failed");

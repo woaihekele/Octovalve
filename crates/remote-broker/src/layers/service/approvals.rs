@@ -1,3 +1,4 @@
+use crate::activity::ActivityTracker;
 use crate::layers::execution::executor::execute_request;
 use crate::layers::policy::config::LimitsConfig;
 use crate::layers::policy::summary::request_summary;
@@ -53,6 +54,7 @@ pub(crate) fn run_tui_service(
     history_limit: usize,
     event_tx: broadcast::Sender<ServiceEvent>,
     cmd_rx: mpsc::Receiver<ServiceCommand>,
+    activity: Arc<ActivityTracker>,
 ) {
     let (server_tx, server_rx) = mpsc::channel::<ServerEvent>(128);
     let (result_tx, result_rx) = mpsc::channel::<ResultSnapshot>(128);
@@ -61,6 +63,7 @@ pub(crate) fn run_tui_service(
         server_tx,
         Arc::clone(&output_dir),
         Arc::clone(&whitelist),
+        activity,
     );
     tokio::spawn(async move {
         service_loop(

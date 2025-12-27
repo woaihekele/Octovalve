@@ -214,6 +214,7 @@ remote-broker：
 - `--auto-approve`（默认：关闭，自动批准并跳过 TUI）
 - `--log-to-stderr`（默认：关闭，TUI 模式建议保持关闭）
 - `--headless`（默认：关闭，关闭 TUI 但保留审批与控制通道）
+- `--idle-exit-secs`（默认：`60`，无控制/数据连接持续该时长后退出，设为 `0` 关闭）
 
 octovalve-proxy：
 - `--config`（默认：`config/local-proxy-config.toml`）

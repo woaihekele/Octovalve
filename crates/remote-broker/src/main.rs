@@ -1,6 +1,8 @@
+mod activity;
 mod cli;
 mod layers;
 
+use crate::activity::{spawn_idle_shutdown, ActivityTracker};
 use crate::cli::Args;
 use crate::layers::policy::config::Config;
 use crate::layers::policy::whitelist::Whitelist;
@@ -32,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
     let limits = Arc::new(config.limits);
     let output_dir = Arc::new(args.audit_dir.join("requests"));
     std::fs::create_dir_all(&*output_dir)?;
+    let activity = Arc::new(ActivityTracker::new());
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
@@ -41,7 +44,10 @@ async fn main() -> anyhow::Result<()> {
         if args.control_addr.is_some() {
             tracing::warn!("control api is disabled in auto-approve mode");
         }
-        run_headless(listener, whitelist, limits, output_dir).await?;
+        if args.idle_exit_secs > 0 {
+            spawn_idle_shutdown(activity.clone(), Duration::from_secs(args.idle_exit_secs));
+        }
+        run_headless(listener, whitelist, limits, output_dir, activity).await?;
         return Ok(());
     }
 
@@ -60,15 +66,25 @@ async fn main() -> anyhow::Result<()> {
         HISTORY_LIMIT,
         event_tx.clone(),
         cmd_rx,
+        activity.clone(),
     );
 
     if let Some(control_addr) = args.control_addr.clone() {
-        spawn_control_server(control_addr, cmd_tx.clone(), event_tx.clone()).await?;
+        spawn_control_server(
+            control_addr,
+            cmd_tx.clone(),
+            event_tx.clone(),
+            activity.clone(),
+        )
+        .await?;
     } else if args.headless {
         tracing::warn!("headless mode without control api will require local approvals");
     }
 
     if args.headless {
+        if args.idle_exit_secs > 0 {
+            spawn_idle_shutdown(activity, Duration::from_secs(args.idle_exit_secs));
+        }
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }

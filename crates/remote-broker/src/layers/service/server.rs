@@ -1,3 +1,4 @@
+use crate::activity::ActivityTracker;
 use crate::layers::execution::executor::execute_request;
 use crate::layers::policy::summary::{deny_message, request_summary};
 use crate::layers::policy::whitelist::Whitelist;
@@ -21,6 +22,7 @@ pub(crate) fn spawn_accept_loop(
     server_tx: mpsc::Sender<ServerEvent>,
     output_dir: Arc<PathBuf>,
     whitelist: Arc<Whitelist>,
+    activity: Arc<ActivityTracker>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -29,7 +31,9 @@ pub(crate) fn spawn_accept_loop(
                     let accept_tx = server_tx.clone();
                     let output_dir = Arc::clone(&output_dir);
                     let whitelist = Arc::clone(&whitelist);
+                    let activity = Arc::clone(&activity);
                     tokio::spawn(async move {
+                        let _guard = activity.track_data();
                         if let Err(err) =
                             handle_connection_tui(stream, addr, accept_tx, output_dir, whitelist)
                                 .await
@@ -51,6 +55,7 @@ pub(crate) async fn run_headless(
     whitelist: Arc<Whitelist>,
     limits: Arc<crate::layers::policy::config::LimitsConfig>,
     output_dir: Arc<PathBuf>,
+    activity: Arc<ActivityTracker>,
 ) -> anyhow::Result<()> {
     tokio::spawn(async move {
         loop {
@@ -59,7 +64,9 @@ pub(crate) async fn run_headless(
                     let whitelist = Arc::clone(&whitelist);
                     let limits = Arc::clone(&limits);
                     let output_dir = Arc::clone(&output_dir);
+                    let activity = Arc::clone(&activity);
                     tokio::spawn(async move {
+                        let _guard = activity.track_data();
                         if let Err(err) =
                             handle_connection_auto(stream, addr, whitelist, limits, output_dir)
                                 .await
