@@ -61,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let config = load_console_config(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
+    let needs_tunnel_daemon = config.targets.iter().any(|target| target.ssh.is_some());
     let state = build_console_state(config)?;
 
     let shutdown = CancellationToken::new();
@@ -89,8 +90,10 @@ async fn main() -> anyhow::Result<()> {
         .with_state(app_state);
 
     let tunnel_client = TunnelClient::new(args.tunnel_daemon_addr.clone(), args.tunnel_client_id);
-    ensure_tunnel_daemon(&tunnel_client, &args.tunnel_daemon_addr, &args.config).await?;
-    spawn_heartbeat_task(tunnel_client.clone(), shutdown.clone());
+    if needs_tunnel_daemon {
+        ensure_tunnel_daemon(&tunnel_client, &args.tunnel_daemon_addr, &args.config).await?;
+        spawn_heartbeat_task(tunnel_client.clone(), shutdown.clone());
+    }
     let worker_handles = spawn_target_workers(
         Arc::clone(&shared_state),
         bootstrap,

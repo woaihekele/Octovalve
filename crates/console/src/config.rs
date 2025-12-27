@@ -3,6 +3,7 @@ pub(crate) use protocol::config::{
     ProxyConfig as ConsoleConfig, ProxyDefaults as ConsoleDefaults, TargetConfig,
 };
 use std::path::PathBuf;
+use tracing::warn;
 
 const DEFAULT_REMOTE_ADDR: &str = "127.0.0.1:19307";
 const DEFAULT_CONTROL_REMOTE_ADDR: &str = "127.0.0.1:19308";
@@ -13,7 +14,7 @@ pub(crate) fn load_console_config(path: &PathBuf) -> anyhow::Result<ConsoleConfi
     let config: ConsoleConfig = toml::from_str(&raw)
         .with_context(|| format!("failed to parse config {}", path.display()))?;
     if config.targets.is_empty() {
-        anyhow::bail!("config must include at least one target");
+        warn!("config has no targets; console will start without workers");
     }
     Ok(config)
 }
