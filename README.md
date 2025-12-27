@@ -199,6 +199,9 @@ npm run tauri dev
 npm run tauri build
 ```
 
+说明：
+- 构建前会自动编译 console/tunnel-daemon/remote-broker 并准备 sidecar。
+
 运行时说明：
 - 应用启动会自动拉起 console（包含 tunnel-daemon/remote-broker sidecar）。
 - 首次启动会在应用配置目录生成 `local-proxy-config.toml` 和 `remote-broker-config.toml`。

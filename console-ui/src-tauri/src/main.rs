@@ -18,7 +18,7 @@ fn main() {
   tauri::Builder::default()
     .manage(ConsoleSidecarState(Mutex::new(None)))
     .setup(|app| {
-      if let Err(err) = start_console(app.handle()) {
+      if let Err(err) = start_console(&app.handle()) {
         eprintln!("failed to start console sidecar: {err}");
       }
       Ok(())
@@ -84,7 +84,8 @@ fn start_console(app: &AppHandle) -> Result<(), String> {
 }
 
 fn stop_console(app: &AppHandle) {
-  let mut guard = app.state::<ConsoleSidecarState>().0.lock().unwrap();
+  let state = app.state::<ConsoleSidecarState>();
+  let mut guard = state.0.lock().unwrap();
   let Some(child) = guard.take() else {
     return;
   };
