@@ -22,8 +22,8 @@ pub(crate) struct Args {
     pub(crate) remote_control_addr: String,
     #[arg(long, default_value = "~/.octovalve/logs")]
     pub(crate) remote_audit_dir: String,
-    #[arg(long)]
-    pub(crate) tunnel_daemon_addr: Option<String>,
+    #[arg(long, default_value = "127.0.0.1:19310")]
+    pub(crate) tunnel_daemon_addr: String,
     #[arg(long, default_value = "console")]
     pub(crate) tunnel_client_id: String,
 }

@@ -24,7 +24,7 @@ use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
-use tunnel::{shutdown_tunnels, spawn_shutdown_handler, spawn_tunnel_manager};
+use tunnel::{shutdown_tunnels, spawn_shutdown_handler};
 use tunnel_client::TunnelClient;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -35,28 +35,15 @@ const TUNNEL_DAEMON_BOOT_DELAY: Duration = Duration::from_millis(200);
 async fn main() -> anyhow::Result<()> {
     init_tracing();
     let args = Args::parse();
-    if args.tunnel_daemon_addr.is_some() && args.config.is_none() {
-        anyhow::bail!("--tunnel-daemon-addr requires --config for strict tunnel allowlist");
-    }
     let (state, defaults) = build_proxy_state(&args)?;
     let state = Arc::new(RwLock::new(state));
     let shutdown = CancellationToken::new();
-    let tunnel_client = if let Some(addr) = args.tunnel_daemon_addr.as_ref() {
-        let client = TunnelClient::new(addr.clone(), args.client_id.clone());
-        if let Some(config) = args.config.as_ref() {
-            ensure_tunnel_daemon(&client, addr, config).await?;
-        }
-        spawn_heartbeat_task(client.clone(), shutdown.clone());
-        Some(client)
-    } else {
-        None
-    };
+    let tunnel_client = TunnelClient::new(args.tunnel_daemon_addr.clone(), args.client_id.clone());
+    ensure_tunnel_daemon(&tunnel_client, &args.tunnel_daemon_addr, &args.config).await?;
+    spawn_heartbeat_task(tunnel_client.clone(), shutdown.clone());
     {
         let mut guard = state.write().await;
-        guard.set_tunnel_client(tunnel_client.clone());
-    }
-    if tunnel_client.is_none() {
-        spawn_tunnel_manager(Arc::clone(&state), shutdown.clone());
+        guard.set_tunnel_client(Some(tunnel_client.clone()));
     }
     spawn_shutdown_handler(Arc::clone(&state), shutdown.clone());
 

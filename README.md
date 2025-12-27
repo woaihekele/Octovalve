@@ -162,14 +162,13 @@ cargo run -p remote-broker -- \
   - `targets_snapshot`：初始全量目标列表
   - `target_updated`：单目标状态更新
 
-## Tunnel Daemon（可选）
+## Tunnel Daemon（必需）
 用于多进程 local-proxy/console 共享 SSH 隧道（严格模式：只允许配置中声明的目标与端口）。
 
-自动拉起：
+自动拉起（默认监听 `127.0.0.1:19310`）：
 ```bash
-# local-proxy/console 在 --tunnel-daemon-addr 下会自动拉起 tunnel-daemon
-cargo run -p local-proxy -- --config config/local-proxy-config.toml --tunnel-daemon-addr 127.0.0.1:19310
-cargo run -p console -- --config config/local-proxy-config.toml --tunnel-daemon-addr 127.0.0.1:19310
+cargo run -p local-proxy -- --config config/local-proxy-config.toml
+cargo run -p console -- --config config/local-proxy-config.toml
 ```
 
 手动启动（调试用）：
@@ -216,12 +215,11 @@ remote-broker：
 - `--headless`（默认：关闭，关闭 TUI 但保留审批与控制通道）
 
 local-proxy：
-- `--config`（读取多目标配置）
-- `--remote-addr`（无配置时使用，默认：`127.0.0.1:19306`，目标名固定为 `default`）
+- `--config`（默认：`config/local-proxy-config.toml`）
 - `--client-id`（默认：`local-proxy`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
-- `--tunnel-daemon-addr`（可选，使用 tunnel-daemon 复用隧道；需同时提供 `--config`）
+- `--tunnel-daemon-addr`（默认：`127.0.0.1:19310`）
 
 console：
 - `--config`（目标配置，沿用 `config/local-proxy-config.toml`）
@@ -232,7 +230,7 @@ console：
 - `--remote-listen-addr`（默认：`127.0.0.1:19307`）
 - `--remote-control-addr`（默认：`127.0.0.1:19308`）
 - `--remote-audit-dir`（默认：`~/.octovalve/logs`）
-- `--tunnel-daemon-addr`（可选，使用 tunnel-daemon 复用隧道）
+- `--tunnel-daemon-addr`（默认：`127.0.0.1:19310`）
 - `--tunnel-client-id`（默认：`console`）
 
 tunnel-daemon：
@@ -255,7 +253,7 @@ tunnel-daemon：
 
 ## 安全说明
 - 无内置认证，请确保远端服务仅监听 `127.0.0.1`，由本地代理通过 SSH 隧道访问。
-- `local-proxy` 使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
+- SSH 连接由 `tunnel-daemon` 管理并使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
 - `--auto-approve` 与 TUI 手动审批均只会硬拒绝 `denied` 列表中的命令。
 - `argv` 模式直接执行可执行文件，不经过 shell；`shell` 模式使用 `/bin/bash -lc`。
 - 建议使用非 root 用户运行并关注审计日志。

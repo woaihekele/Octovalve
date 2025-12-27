@@ -88,14 +88,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .with_state(app_state);
 
-    let tunnel_client = if let Some(addr) = args.tunnel_daemon_addr.as_ref() {
-        let client = TunnelClient::new(addr.clone(), args.tunnel_client_id.clone());
-        ensure_tunnel_daemon(&client, addr, &args.config).await?;
-        spawn_heartbeat_task(client.clone(), shutdown.clone());
-        Some(client)
-    } else {
-        None
-    };
+    let tunnel_client = TunnelClient::new(args.tunnel_daemon_addr.clone(), args.tunnel_client_id);
+    ensure_tunnel_daemon(&tunnel_client, &args.tunnel_daemon_addr, &args.config).await?;
+    spawn_heartbeat_task(tunnel_client.clone(), shutdown.clone());
     let worker_handles = spawn_target_workers(
         Arc::clone(&shared_state),
         bootstrap,

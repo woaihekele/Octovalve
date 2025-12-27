@@ -2,7 +2,7 @@ use crate::bootstrap::{bootstrap_remote_broker, BootstrapConfig};
 use crate::control::{ControlRequest, ControlResponse};
 use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
-use crate::tunnel::{spawn_tunnel, stop_tunnel, TargetRuntime};
+use crate::tunnel::TargetRuntime;
 use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
 use bytes::Bytes;
@@ -24,7 +24,7 @@ pub(crate) async fn spawn_target_workers(
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
-    tunnel_client: Option<TunnelClient>,
+    tunnel_client: TunnelClient,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     let targets = {
@@ -67,59 +67,25 @@ async fn run_target_worker(
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
-    tunnel_client: Option<TunnelClient>,
+    tunnel_client: TunnelClient,
 ) {
-    let mut runtime = TargetRuntime::from_spec(spec);
+    let runtime = TargetRuntime::from_spec(spec);
     let forward_spec = control_forward_spec(&runtime);
     let mut bootstrap_needed = true;
     let mut connect_failures = 0;
     loop {
         if shutdown.is_cancelled() {
-            info!(target = %runtime.name, "shutdown requested, stopping tunnel");
-            if let (Some(client), Some(forward)) = (tunnel_client.as_ref(), forward_spec.as_ref()) {
-                let _ = client.release_forward(forward.clone()).await;
-            } else {
-                stop_tunnel(&mut runtime).await;
+            info!(target = %runtime.name, "shutdown requested, releasing tunnel");
+            if let Some(forward) = forward_spec.as_ref() {
+                let _ = tunnel_client.release_forward(forward.clone()).await;
             }
             info!(target = %runtime.name, "worker stopped");
             break;
         }
 
         if runtime.ssh.is_some() {
-            if let Some(client) = tunnel_client.as_ref() {
-                if let Some(forward) = forward_spec.as_ref() {
-                    if let Err(err) = client.ensure_forward(forward.clone()).await {
-                        set_status_and_notify(
-                            &runtime.name,
-                            TargetStatus::Down,
-                            Some(err.to_string()),
-                            &state,
-                            &event_tx,
-                        )
-                        .await;
-                        warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
-                        if wait_reconnect_or_shutdown(&shutdown).await {
-                            break;
-                        }
-                        continue;
-                    }
-                } else {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some("missing control local bind/port".to_string()),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
-                    if wait_reconnect_or_shutdown(&shutdown).await {
-                        break;
-                    }
-                    continue;
-                }
-            } else if !runtime.refresh_tunnel() {
-                info!(target = %runtime.name, "spawning ssh tunnel");
-                if let Err(err) = spawn_tunnel(&mut runtime) {
+            if let Some(forward) = forward_spec.as_ref() {
+                if let Err(err) = tunnel_client.ensure_forward(forward.clone()).await {
                     set_status_and_notify(
                         &runtime.name,
                         TargetStatus::Down,
@@ -128,12 +94,25 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
-                    warn!(target = %runtime.name, error = %err, "failed to spawn ssh tunnel");
+                    warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
                     if wait_reconnect_or_shutdown(&shutdown).await {
                         break;
                     }
                     continue;
                 }
+            } else {
+                set_status_and_notify(
+                    &runtime.name,
+                    TargetStatus::Down,
+                    Some("missing control local bind/port".to_string()),
+                    &state,
+                    &event_tx,
+                )
+                .await;
+                if wait_reconnect_or_shutdown(&shutdown).await {
+                    break;
+                }
+                continue;
             }
         }
 
@@ -350,8 +329,6 @@ impl TargetRuntime {
             control_local_bind: spec.control_local_bind,
             control_local_port: spec.control_local_port,
             control_local_addr: spec.control_local_addr,
-            tunnel: None,
-            tunnel_pgid: None,
         }
     }
 }
