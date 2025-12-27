@@ -73,16 +73,10 @@ async fn run_target_worker(
     let forward_spec = control_forward_spec(&runtime);
     let mut bootstrap_needed = true;
     let mut connect_failures = 0;
+    let mut shutting_down = false;
     loop {
         if shutdown.is_cancelled() {
-            info!(target = %runtime.name, "shutdown requested, stopping remote broker");
-            if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
-                warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
-            }
-            if let Some(forward) = forward_spec.as_ref() {
-                let _ = tunnel_client.release_forward(forward.clone()).await;
-            }
-            info!(target = %runtime.name, "worker stopped");
+            shutting_down = true;
             break;
         }
 
@@ -219,8 +213,19 @@ async fn run_target_worker(
         }
 
         if wait_reconnect_or_shutdown(&shutdown).await {
+            shutting_down = true;
             break;
         }
+    }
+    if shutting_down {
+        info!(target = %runtime.name, "shutdown requested, stopping remote broker");
+        if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
+            warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
+        }
+        if let Some(forward) = forward_spec.as_ref() {
+            let _ = tunnel_client.release_forward(forward.clone()).await;
+        }
+        info!(target = %runtime.name, "worker stopped");
     }
 }
 
