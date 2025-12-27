@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -43,6 +45,9 @@ fn start_console(app: &AppHandle) -> Result<(), String> {
   let broker_config = config_dir.join("remote-broker-config.toml");
   ensure_file(&proxy_config, DEFAULT_PROXY_CONFIG)?;
   ensure_file(&broker_config, DEFAULT_BROKER_CONFIG)?;
+  let logs_dir = config_dir.join("logs");
+  fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
+  let console_log = logs_dir.join("console.log");
 
   let broker_bin = sidecar_path("remote-broker")?;
   let tunnel_bin = sidecar_path("tunnel-daemon")?;
@@ -61,6 +66,7 @@ fn start_console(app: &AppHandle) -> Result<(), String> {
       broker_bin.to_string_lossy().as_ref(),
       "--broker-config",
       broker_config.to_string_lossy().as_ref(),
+      "--log-to-stderr",
     ])
     .envs(envs)
     .spawn()
@@ -69,11 +75,26 @@ fn start_console(app: &AppHandle) -> Result<(), String> {
   *app.state::<ConsoleSidecarState>().0.lock().unwrap() = Some(child);
 
   tauri::async_runtime::spawn(async move {
+    let mut file = match OpenOptions::new().create(true).append(true).open(&console_log) {
+      Ok(file) => file,
+      Err(err) => {
+        eprintln!("failed to open console log: {err}");
+        return;
+      }
+    };
     while let Some(event) = rx.recv().await {
       match event {
-        CommandEvent::Error(err) => eprintln!("console sidecar error: {err}"),
+        CommandEvent::Stdout(line) => {
+          let _ = writeln!(file, "[stdout] {line}");
+        }
+        CommandEvent::Stderr(line) => {
+          let _ = writeln!(file, "[stderr] {line}");
+        }
+        CommandEvent::Error(err) => {
+          let _ = writeln!(file, "[error] {err}");
+        }
         CommandEvent::Terminated(payload) => {
-          eprintln!("console sidecar terminated: {:?}", payload.code)
+          let _ = writeln!(file, "[exit] {:?}", payload.code);
         }
         _ => {}
       }
