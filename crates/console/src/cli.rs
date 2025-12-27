@@ -12,7 +12,7 @@ pub(crate) struct Args {
     pub(crate) log_to_stderr: bool,
     #[arg(long, default_value = "target/release/remote-broker")]
     pub(crate) broker_bin: PathBuf,
-    #[arg(long)]
+    #[arg(long = "broker-bin-linux-x86_64", alias = "broker-bin-linux-x86-64")]
     pub(crate) broker_bin_linux_x86_64: Option<PathBuf>,
     #[arg(long, default_value = "config/config.toml")]
     pub(crate) broker_config: PathBuf,
