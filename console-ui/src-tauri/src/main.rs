@@ -296,54 +296,100 @@ fn console_http_url(path: &str) -> String {
   }
 }
 
-async fn console_get(path: &str) -> Result<Value, String> {
+async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
   let url = console_http_url(path);
   let response = console_client()?
-    .get(url)
+    .get(&url)
     .send()
     .await
-    .map_err(|err| err.to_string())?;
-  let response = response
-    .error_for_status()
-    .map_err(|err| err.to_string())?;
-  response.json::<Value>().await.map_err(|err| err.to_string())
+    .map_err(|err| {
+      let _ = append_log_line(log_path, &format!("console http GET failed: {err}"));
+      err.to_string()
+    })?;
+  let status = response.status();
+  let body = response.text().await.map_err(|err| err.to_string())?;
+  let _ = append_log_line(
+    log_path,
+    &format!("console http GET {url} status={}", status.as_u16()),
+  );
+  let _ = append_log_line(log_path, &format!("console http GET body: {body}"));
+  if !status.is_success() {
+    return Err(format!(
+      "console http GET status {} for {}",
+      status.as_u16(),
+      path
+    ));
+  }
+  serde_json::from_str(&body).map_err(|err| {
+    let _ = append_log_line(log_path, &format!("console http GET parse error: {err}"));
+    err.to_string()
+  })
 }
 
-async fn console_post(path: &str, payload: Value) -> Result<(), String> {
+async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(), String> {
   let url = console_http_url(path);
   let response = console_client()?
-    .post(url)
+    .post(&url)
     .json(&payload)
     .send()
     .await
-    .map_err(|err| err.to_string())?;
-  response
-    .error_for_status()
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| {
+      let _ = append_log_line(log_path, &format!("console http POST failed: {err}"));
+      err.to_string()
+    })?;
+  let status = response.status();
+  let body = response.text().await.map_err(|err| err.to_string())?;
+  let _ = append_log_line(
+    log_path,
+    &format!("console http POST {url} status={}", status.as_u16()),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!("console http POST payload: {}", payload.to_string()),
+  );
+  let _ = append_log_line(log_path, &format!("console http POST body: {body}"));
+  if !status.is_success() {
+    return Err(format!(
+      "console http POST status {} for {}",
+      status.as_u16(),
+      path
+    ));
+  }
   Ok(())
 }
 
 #[tauri::command]
-async fn proxy_fetch_targets() -> Result<Value, String> {
-  console_get("/targets").await
+async fn proxy_fetch_targets(log_state: State<'_, AppLogState>) -> Result<Value, String> {
+  console_get("/targets", &log_state.app_log).await
 }
 
 #[tauri::command]
-async fn proxy_fetch_snapshot(name: String) -> Result<Value, String> {
+async fn proxy_fetch_snapshot(
+  name: String,
+  log_state: State<'_, AppLogState>,
+) -> Result<Value, String> {
   let path = format!("/targets/{name}/snapshot");
-  console_get(&path).await
+  console_get(&path, &log_state.app_log).await
 }
 
 #[tauri::command]
-async fn proxy_approve(name: String, id: String) -> Result<(), String> {
+async fn proxy_approve(
+  name: String,
+  id: String,
+  log_state: State<'_, AppLogState>,
+) -> Result<(), String> {
   let path = format!("/targets/{name}/approve");
-  console_post(&path, json!({ "id": id })).await
+  console_post(&path, json!({ "id": id }), &log_state.app_log).await
 }
 
 #[tauri::command]
-async fn proxy_deny(name: String, id: String) -> Result<(), String> {
+async fn proxy_deny(
+  name: String,
+  id: String,
+  log_state: State<'_, AppLogState>,
+) -> Result<(), String> {
   let path = format!("/targets/{name}/deny");
-  console_post(&path, json!({ "id": id })).await
+  console_post(&path, json!({ "id": id }), &log_state.app_log).await
 }
 
 fn emit_ws_status(app: &AppHandle, log_path: &Path, status: &str) {
