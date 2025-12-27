@@ -60,7 +60,7 @@ impl ProxyHandler {
         let mut target_schema = json!({
             "type": "string",
             "enum": targets,
-            "description": "Target name defined in local-proxy config."
+            "description": "Target name defined in octovalve-proxy config."
         });
         if let Some(default) = default_target {
             target_schema["default"] = json!(default);
@@ -167,7 +167,7 @@ impl ProxyHandler {
         let input_schema = ToolInputSchema::new(Vec::new(), Some(HashMap::new()));
         Tool {
             name: "list_targets".to_string(),
-            description: Some("List available targets configured in local-proxy.".to_string()),
+            description: Some("List available targets configured in octovalve-proxy.".to_string()),
             input_schema,
             output_schema: None,
             meta: None,

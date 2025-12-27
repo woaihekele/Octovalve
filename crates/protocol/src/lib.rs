@@ -112,7 +112,7 @@ mod tests {
     fn command_request_roundtrip() {
         let request = CommandRequest {
             id: "req-1".to_string(),
-            client: "local-proxy".to_string(),
+            client: "octovalve-proxy".to_string(),
             target: "default".to_string(),
             intent: "list files".to_string(),
             mode: CommandMode::Shell,

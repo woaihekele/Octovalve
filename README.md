@@ -5,10 +5,10 @@
 自动引导远端 `remote-broker` 并聚合多目标状态（为后续前端 UI 做准备）。
 
 ## 组件
-- local-proxy：MCP stdio server，提供 `run_command` 工具并转发请求。
+- octovalve-proxy：MCP stdio server，提供 `run_command` 工具并转发请求。
 - remote-broker：TUI 审批服务，人工确认后执行命令并返回结果。
 - console：本地控制服务，自动启动/同步远端 `remote-broker`，提供 HTTP 控制接口。
-- tunnel-daemon：本地 SSH 隧道复用服务，供多进程 local-proxy/console 共享连接。
+- tunnel-daemon：本地 SSH 隧道复用服务，供多进程 octovalve-proxy/console 共享连接。
 - protocol：本地与远端共享的请求/响应结构体。
 
 ## 环境要求
@@ -60,7 +60,7 @@ zig version
 cargo zigbuild -p remote-broker --release --target x86_64-unknown-linux-musl
 ```
 
-3) 在本地准备 `local-proxy` 配置（示例见 `config/local-proxy-config.toml`）：
+3) 在本地准备 `octovalve-proxy` 配置（示例见 `config/local-proxy-config.toml`）：
 
 ```toml
 default_target = "example-target"
@@ -109,10 +109,10 @@ console 默认监听 `127.0.0.1:19309`，并将远端部署到 `~/.octovalve`：
 5) 启动本地代理（自动建立并维持隧道）：
 
 ```bash
-cargo run -p local-proxy -- --config config/local-proxy-config.toml
+cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
 ```
 
-6) 将 MCP 客户端配置指向 `local-proxy`（stdio 模式）。
+6) 将 MCP 客户端配置指向 `octovalve-proxy`（stdio 模式）。
 
 ## 手动启动 remote-broker（不使用 console）
 在远端运行：
@@ -128,7 +128,7 @@ cargo run -p remote-broker -- \
 ## run_command 参数
 - `command`：命令字符串。
 - `intent`：必填，说明为什么要执行该命令（用于审计）。
-- `target`：必填，目标名称（在 `local-proxy` 配置中定义）。
+- `target`：必填，目标名称（在 `octovalve-proxy` 配置中定义）。
 - `mode`：`shell` 或 `argv`，默认 `shell`（`shell` 使用 `/bin/bash -lc` 执行）。
 - 其他可选参数：`cwd`、`timeout_ms`、`max_output_bytes`、`env`。
 
@@ -163,11 +163,11 @@ cargo run -p remote-broker -- \
   - `target_updated`：单目标状态更新
 
 ## Tunnel Daemon（必需）
-用于多进程 local-proxy/console 共享 SSH 隧道（严格模式：只允许配置中声明的目标与端口）。
+用于多进程 octovalve-proxy/console 共享 SSH 隧道（严格模式：只允许配置中声明的目标与端口）。
 
 自动拉起（默认监听 `127.0.0.1:19310`）：
 ```bash
-cargo run -p local-proxy -- --config config/local-proxy-config.toml
+cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
 cargo run -p console -- --config config/local-proxy-config.toml
 ```
 
@@ -177,8 +177,8 @@ cargo run -p tunnel-daemon -- --config config/local-proxy-config.toml --listen-a
 ```
 
 注意：
-- tunnel-daemon 使用 local-proxy/console 的配置文件作为 allowlist。
-- 多进程请设置不同的 `--client-id`（local-proxy）或 `--tunnel-client-id`（console）。
+- tunnel-daemon 使用 octovalve-proxy/console 的配置文件作为 allowlist。
+- 多进程请设置不同的 `--client-id`（octovalve-proxy）或 `--tunnel-client-id`（console）。
 
 ## Console UI（Tauri）
 可选的本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
@@ -214,9 +214,9 @@ remote-broker：
 - `--log-to-stderr`（默认：关闭，TUI 模式建议保持关闭）
 - `--headless`（默认：关闭，关闭 TUI 但保留审批与控制通道）
 
-local-proxy：
+octovalve-proxy：
 - `--config`（默认：`config/local-proxy-config.toml`）
-- `--client-id`（默认：`local-proxy`）
+- `--client-id`（默认：`octovalve-proxy`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
 - `--tunnel-daemon-addr`（默认：`127.0.0.1:19310`）
@@ -234,7 +234,7 @@ console：
 - `--tunnel-client-id`（默认：`console`）
 
 tunnel-daemon：
-- `--config`（使用 local-proxy/console 的配置，默认 `config/local-proxy-config.toml`）
+- `--config`（使用 octovalve-proxy/console 的配置，默认 `config/local-proxy-config.toml`）
 - `--listen-addr`（默认：`127.0.0.1:19310`）
 - `--control-dir`（默认：`~/.octovalve/tunnel-control`）
 

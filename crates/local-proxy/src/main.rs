@@ -49,9 +49,9 @@ async fn main() -> anyhow::Result<()> {
 
     let server_details = InitializeResult {
         server_info: Implementation {
-            name: "octovalve_local_proxy".to_string(),
+            name: "octovalve_proxy".to_string(),
             version: "0.1.0".to_string(),
-            title: Some("Remote Command Local Proxy".to_string()),
+            title: Some("Octovalve Proxy".to_string()),
         },
         capabilities: ServerCapabilities {
             tools: Some(ServerCapabilitiesTools { list_changed: None }),
