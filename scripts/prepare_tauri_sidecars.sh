@@ -65,4 +65,3 @@ prepare_linux_broker() {
 }
 
 prepare_linux_broker "x86_64-unknown-linux-musl" "linux-x86_64" "OCTOVALVE_LINUX_BROKER_X86_64"
-prepare_linux_broker "aarch64-unknown-linux-musl" "linux-aarch64" "OCTOVALVE_LINUX_BROKER_AARCH64"

@@ -202,10 +202,9 @@ npm run tauri:build:dmg
 说明：
 - `tauri.bundle.active` 默认关闭，打包需使用 `tauri:build:dmg`。
 - 构建前会自动编译 console/tunnel-daemon/remote-broker 并准备 sidecar。
-- DMG 构建会额外准备 Linux 版 `remote-broker`（x86_64/aarch64），用于同步到远端。
+- DMG 构建会额外准备 Linux x86_64 版 `remote-broker`，用于同步到远端。
   - 需要安装 `cargo-zigbuild` 与 `zig`，或设置：
     - `OCTOVALVE_LINUX_BROKER_X86_64=/path/to/remote-broker`
-    - `OCTOVALVE_LINUX_BROKER_AARCH64=/path/to/remote-broker`
 
 运行时说明：
 - 应用启动会自动拉起 console（包含 tunnel-daemon/remote-broker sidecar）。
@@ -241,7 +240,6 @@ console：
 - `--listen-addr`（默认：`127.0.0.1:19309`）
 - `--broker-bin`（要同步到远端的 `remote-broker` 路径）
 - `--broker-bin-linux-x86_64`（远端为 Linux x86_64 时使用的 `remote-broker` 路径）
-- `--broker-bin-linux-aarch64`（远端为 Linux aarch64 时使用的 `remote-broker` 路径）
 - `--broker-config`（要同步到远端的配置，默认 `config/config.toml`）
 - `--remote-dir`（远端目录，默认 `~/.octovalve`）
 - `--remote-listen-addr`（默认：`127.0.0.1:19307`）

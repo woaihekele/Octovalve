@@ -58,7 +58,6 @@ async fn main() -> anyhow::Result<()> {
         config = %args.config.display(),
         broker_bin = %args.broker_bin.display(),
         broker_bin_linux_x86_64 = ?args.broker_bin_linux_x86_64,
-        broker_bin_linux_aarch64 = ?args.broker_bin_linux_aarch64,
         "console starting"
     );
     let config = load_console_config(&args.config)
@@ -70,7 +69,6 @@ async fn main() -> anyhow::Result<()> {
     let bootstrap = BootstrapConfig {
         local_bin: args.broker_bin.clone(),
         local_bin_linux_x86_64: args.broker_bin_linux_x86_64.clone(),
-        local_bin_linux_aarch64: args.broker_bin_linux_aarch64.clone(),
         local_config: args.broker_config.clone(),
         remote_dir: args.remote_dir.clone(),
         remote_listen_addr: args.remote_listen_addr.clone(),

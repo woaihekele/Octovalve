@@ -1,5 +1,6 @@
 use crate::tunnel::TargetRuntime;
 use anyhow::Context;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
@@ -14,13 +15,30 @@ const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub(crate) struct BootstrapConfig {
     pub(crate) local_bin: PathBuf,
     pub(crate) local_bin_linux_x86_64: Option<PathBuf>,
-    pub(crate) local_bin_linux_aarch64: Option<PathBuf>,
     pub(crate) local_config: PathBuf,
     pub(crate) remote_dir: String,
     pub(crate) remote_listen_addr: String,
     pub(crate) remote_control_addr: String,
     pub(crate) remote_audit_dir: String,
 }
+
+#[derive(Debug)]
+pub(crate) struct UnsupportedRemotePlatform {
+    pub(crate) os: String,
+    pub(crate) arch: String,
+}
+
+impl fmt::Display for UnsupportedRemotePlatform {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "unsupported remote platform: {} {}; only linux x86_64 is supported",
+            self.os, self.arch
+        )
+    }
+}
+
+impl std::error::Error for UnsupportedRemotePlatform {}
 
 pub(crate) async fn bootstrap_remote_broker(
     target: &TargetRuntime,
@@ -203,48 +221,28 @@ async fn remote_home(target: &TargetRuntime) -> anyhow::Result<String> {
     Ok(home)
 }
 
-#[derive(Debug, Clone, Copy)]
-enum RemotePlatform {
-    LinuxX86_64,
-    LinuxAarch64,
-    Other,
-}
-
 async fn select_local_bin(
     target: &TargetRuntime,
     bootstrap: &BootstrapConfig,
 ) -> anyhow::Result<PathBuf> {
-    let platform = detect_remote_platform(target).await?;
-    match platform {
-        RemotePlatform::LinuxX86_64 => {
-            if let Some(path) = bootstrap.local_bin_linux_x86_64.as_ref() {
-                Ok(path.clone())
-            } else {
-                anyhow::bail!("missing linux x86_64 broker bin; use --broker-bin-linux-x86_64")
-            }
+    let (os, arch) = detect_remote_platform(target).await?;
+    if os == "linux" && (arch == "x86_64" || arch == "amd64") {
+        if let Some(path) = bootstrap.local_bin_linux_x86_64.as_ref() {
+            Ok(path.clone())
+        } else {
+            anyhow::bail!("missing linux x86_64 broker bin; use --broker-bin-linux-x86_64")
         }
-        RemotePlatform::LinuxAarch64 => {
-            if let Some(path) = bootstrap.local_bin_linux_aarch64.as_ref() {
-                Ok(path.clone())
-            } else {
-                anyhow::bail!("missing linux aarch64 broker bin; use --broker-bin-linux-aarch64")
-            }
-        }
-        RemotePlatform::Other => Ok(bootstrap.local_bin.clone()),
+    } else {
+        Err(UnsupportedRemotePlatform { os, arch }.into())
     }
 }
 
-async fn detect_remote_platform(target: &TargetRuntime) -> anyhow::Result<RemotePlatform> {
+async fn detect_remote_platform(target: &TargetRuntime) -> anyhow::Result<(String, String)> {
     let output = run_ssh_capture(target, "uname -s && uname -m").await?;
     let mut lines = output.lines();
-    let os = lines.next().unwrap_or("").trim().to_lowercase();
-    let arch = lines.next().unwrap_or("").trim().to_lowercase();
-    let platform = match (os.as_str(), arch.as_str()) {
-        ("linux", "x86_64") | ("linux", "amd64") => RemotePlatform::LinuxX86_64,
-        ("linux", "aarch64") | ("linux", "arm64") => RemotePlatform::LinuxAarch64,
-        _ => RemotePlatform::Other,
-    };
-    Ok(platform)
+    let os = lines.next().unwrap_or("unknown").trim().to_lowercase();
+    let arch = lines.next().unwrap_or("unknown").trim().to_lowercase();
+    Ok((os, arch))
 }
 
 fn build_ssh_base(target: &TargetRuntime, command: &str) -> anyhow::Result<Command> {

@@ -112,11 +112,6 @@ fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
     "remote-broker-linux-x86_64",
     "remote-broker/linux-x86_64/remote-broker",
   );
-  let broker_bin_linux_aarch64 = resolve_linux_broker(
-    app,
-    "remote-broker-linux-aarch64",
-    "remote-broker/linux-aarch64/remote-broker",
-  );
   let tunnel_bin = sidecar_path("tunnel-daemon")?;
   let mut envs = HashMap::new();
   envs.insert(
@@ -136,10 +131,6 @@ fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
   ];
   if let Some(path) = broker_bin_linux_x86_64 {
     console_args.push("--broker-bin-linux-x86_64".to_string());
-    console_args.push(path.to_string_lossy().to_string());
-  }
-  if let Some(path) = broker_bin_linux_aarch64 {
-    console_args.push("--broker-bin-linux-aarch64".to_string());
     console_args.push(path.to_string_lossy().to_string());
   }
 

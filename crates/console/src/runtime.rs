@@ -1,4 +1,6 @@
-use crate::bootstrap::{bootstrap_remote_broker, stop_remote_broker, BootstrapConfig};
+use crate::bootstrap::{
+    bootstrap_remote_broker, stop_remote_broker, BootstrapConfig, UnsupportedRemotePlatform,
+};
 use crate::control::{ControlRequest, ControlResponse};
 use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
@@ -123,6 +125,16 @@ async fn run_target_worker(
                 )
                 .await;
                 warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
+                if err.downcast_ref::<UnsupportedRemotePlatform>().is_some() {
+                    info!(
+                        target = %runtime.name,
+                        "unsupported remote platform, stopping worker"
+                    );
+                    if let Some(forward) = forward_spec.as_ref() {
+                        let _ = tunnel_client.release_forward(forward.clone()).await;
+                    }
+                    break false;
+                }
                 if wait_reconnect_or_shutdown(&shutdown).await {
                     break true;
                 }
