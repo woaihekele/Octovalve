@@ -6,7 +6,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -415,10 +415,7 @@ fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
     .append(true)
     .open(path)
     .map_err(|err| err.to_string())?;
-  let ts = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .unwrap_or_default()
-    .as_secs();
+  let ts = humantime::format_rfc3339(SystemTime::now()).to_string();
   writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
   Ok(())
 }
