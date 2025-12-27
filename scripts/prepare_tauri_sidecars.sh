@@ -30,3 +30,39 @@ for bin in console tunnel-daemon remote-broker; do
   fi
   install -m 0755 "${src}" "${dst}"
 done
+
+prepare_linux_broker() {
+  local target_triple="$1"
+  local arch_label="$2"
+  local env_var="$3"
+  local res_dir="${REPO_ROOT}/console-ui/src-tauri/resources/remote-broker/${arch_label}"
+  local res_path="${res_dir}/remote-broker"
+
+  if [[ -n "${!env_var:-}" ]]; then
+    mkdir -p "${res_dir}"
+    install -m 0755 "${!env_var}" "${res_path}"
+    return
+  fi
+
+  if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+    echo "cargo-zigbuild is required to build ${arch_label} broker. Install it or set ${env_var}."
+    exit 1
+  fi
+  if ! command -v zig >/dev/null 2>&1; then
+    echo "zig is required to build ${arch_label} broker. Install it or set ${env_var}."
+    exit 1
+  fi
+
+  cargo zigbuild --release --manifest-path "${REPO_ROOT}/Cargo.toml" \
+    -p remote-broker --target "${target_triple}"
+  local built="${REPO_ROOT}/target/${target_triple}/release/remote-broker${EXT}"
+  if [[ ! -f "${built}" ]]; then
+    echo "Missing built broker: ${built}"
+    exit 1
+  fi
+  mkdir -p "${res_dir}"
+  install -m 0755 "${built}" "${res_path}"
+}
+
+prepare_linux_broker "x86_64-unknown-linux-musl" "linux-x86_64" "OCTOVALVE_LINUX_BROKER_X86_64"
+prepare_linux_broker "aarch64-unknown-linux-musl" "linux-aarch64" "OCTOVALVE_LINUX_BROKER_AARCH64"
