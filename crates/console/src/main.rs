@@ -36,7 +36,7 @@ use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 struct AppState {
@@ -91,7 +91,14 @@ async fn main() -> anyhow::Result<()> {
 
     let tunnel_client = TunnelClient::new(args.tunnel_daemon_addr.clone(), args.tunnel_client_id);
     if needs_tunnel_daemon {
-        ensure_tunnel_daemon(&tunnel_client, &args.tunnel_daemon_addr, &args.config).await?;
+        let daemon_client = tunnel_client.clone();
+        let addr = args.tunnel_daemon_addr.clone();
+        let config_path = args.config.clone();
+        tokio::spawn(async move {
+            if let Err(err) = ensure_tunnel_daemon(&daemon_client, &addr, &config_path).await {
+                warn!(error = %err, "tunnel-daemon not ready, continuing without tunnels");
+            }
+        });
         spawn_heartbeat_task(tunnel_client.clone(), shutdown.clone());
     }
     let worker_handles = spawn_target_workers(
