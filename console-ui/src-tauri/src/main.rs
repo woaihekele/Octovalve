@@ -113,6 +113,7 @@ fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
     "OCTOVALVE_TUNNEL_DAEMON_BIN".to_string(),
     tunnel_bin.to_string_lossy().to_string(),
   );
+  envs.insert("PATH".to_string(), build_console_path());
 
   let (mut rx, child) = Command::new_sidecar("console")
     .map_err(|err| err.to_string())?
@@ -201,6 +202,15 @@ fn sidecar_path(name: &str) -> Result<PathBuf, String> {
   #[cfg(not(windows))]
   {
     return Ok(dir.join(name));
+  }
+}
+
+fn build_console_path() -> String {
+  let base = std::env::var("PATH").unwrap_or_default();
+  if base.is_empty() {
+    "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string()
+  } else {
+    format!("/usr/local/bin:/opt/homebrew/bin:{base}")
   }
 }
 
