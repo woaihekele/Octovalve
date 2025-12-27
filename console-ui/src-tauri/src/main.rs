@@ -80,8 +80,15 @@ fn main() {
     .build(tauri::generate_context!())
     .expect("error while running tauri application")
     .run(|app_handle, event| {
-      if let RunEvent::ExitRequested { .. } = event {
-        stop_console(app_handle);
+      match event {
+        RunEvent::ExitRequested { .. } => {
+          stop_console(app_handle);
+        }
+        RunEvent::Exit => {
+          stop_console(app_handle);
+          tauri::api::process::kill_children();
+        }
+        _ => {}
       }
     });
 }
