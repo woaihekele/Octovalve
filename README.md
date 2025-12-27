@@ -215,10 +215,8 @@ npm run tauri:build:dmg
   - macOS 默认路径：`~/Library/Application Support/com.octovalve.console/`
 
 ## 密码登录说明
-如果必须使用密码登录，请在目标中配置 `ssh_password`，并确保本机安装 `sshpass`：
-- macOS：`brew install sshpass`
-- Debian/Ubuntu：`apt install sshpass`
-- RHEL/CentOS：`yum install sshpass`
+如果必须使用密码登录，请在目标中配置 `ssh_password`。
+console/tunnel-daemon 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh-askpass.sh`）注入密码，无需安装 `sshpass`。
 
 ## CLI 选项
 remote-broker：
