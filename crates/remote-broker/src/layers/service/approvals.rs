@@ -3,7 +3,7 @@ use crate::layers::policy::config::LimitsConfig;
 use crate::layers::policy::summary::request_summary;
 use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
-use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot, ServiceSnapshot};
+use protocol::control::{RequestSnapshot, ResultSnapshot, ServiceSnapshot};
 use protocol::CommandResponse;
 use std::path::PathBuf;
 use std::sync::Arc;

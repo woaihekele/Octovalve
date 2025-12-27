@@ -4,9 +4,9 @@ pub(crate) mod theme;
 
 use crate::layers::policy::summary::{format_mode, format_pipeline};
 use crate::layers::service::events::ServiceCommand;
-use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
 use app::{ListView, ViewMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use protocol::control::{RequestSnapshot, ResultSnapshot};
 use protocol::{CommandMode, CommandStatus};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span, Text};

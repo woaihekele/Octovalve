@@ -1,30 +1,11 @@
 use crate::layers::service::events::{ServiceCommand, ServiceEvent};
-use crate::shared::snapshot::ServiceSnapshot;
 use anyhow::Context;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
+use protocol::control::{ControlRequest, ControlResponse};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum ControlRequest {
-    Snapshot,
-    Approve { id: String },
-    Deny { id: String },
-    Subscribe,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum ControlResponse {
-    Snapshot { snapshot: ServiceSnapshot },
-    Ack { message: String },
-    Error { message: String },
-    Event { event: ServiceEvent },
-}
 
 pub(crate) async fn spawn_control_server(
     addr: String,

@@ -1,4 +1,4 @@
-use crate::shared::snapshot::ResultSnapshot;
+use protocol::control::ResultSnapshot;
 use protocol::{CommandMode, CommandStage, CommandStatus};
 use serde::Deserialize;
 use std::collections::HashMap;

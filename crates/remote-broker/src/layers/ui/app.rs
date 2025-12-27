@@ -1,5 +1,5 @@
 use crate::layers::service::events::ServiceEvent;
-use crate::shared::snapshot::{RequestSnapshot, ResultSnapshot};
+use protocol::control::{RequestSnapshot, ResultSnapshot};
 use ratatui::widgets::ListState;
 
 pub(crate) const HISTORY_LIMIT: usize = 50;

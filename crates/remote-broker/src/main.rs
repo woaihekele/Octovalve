@@ -1,6 +1,5 @@
 mod cli;
 mod layers;
-mod shared;
 
 use crate::cli::Args;
 use crate::layers::policy::config::Config;
