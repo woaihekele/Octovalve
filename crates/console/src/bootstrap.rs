@@ -13,6 +13,8 @@ const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
 #[derive(Clone, Debug)]
 pub(crate) struct BootstrapConfig {
     pub(crate) local_bin: PathBuf,
+    pub(crate) local_bin_linux_x86_64: Option<PathBuf>,
+    pub(crate) local_bin_linux_aarch64: Option<PathBuf>,
     pub(crate) local_config: PathBuf,
     pub(crate) remote_dir: String,
     pub(crate) remote_listen_addr: String,
@@ -28,11 +30,14 @@ pub(crate) async fn bootstrap_remote_broker(
         return Ok(());
     }
     info!(target = %target.name, "syncing remote broker");
-    if !bootstrap.local_bin.exists() {
-        anyhow::bail!(
-            "missing local broker bin: {}",
-            bootstrap.local_bin.display()
-        );
+    let local_bin = select_local_bin(target, bootstrap).await?;
+    info!(
+        target = %target.name,
+        broker_bin = %local_bin.display(),
+        "selected remote broker binary"
+    );
+    if !local_bin.exists() {
+        anyhow::bail!("missing local broker bin: {}", local_bin.display());
     }
     if !bootstrap.local_config.exists() {
         anyhow::bail!(
@@ -59,7 +64,7 @@ pub(crate) async fn bootstrap_remote_broker(
     )
     .await?;
 
-    run_scp(target, &bootstrap.local_bin, &remote_bin_tmp).await?;
+    run_scp(target, &local_bin, &remote_bin_tmp).await?;
     run_scp(target, &bootstrap.local_config, &remote_config_tmp).await?;
     run_ssh(
         target,
@@ -196,6 +201,50 @@ async fn remote_home(target: &TargetRuntime) -> anyhow::Result<String> {
         anyhow::bail!("unable to resolve remote home directory");
     }
     Ok(home)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RemotePlatform {
+    LinuxX86_64,
+    LinuxAarch64,
+    Other,
+}
+
+async fn select_local_bin(
+    target: &TargetRuntime,
+    bootstrap: &BootstrapConfig,
+) -> anyhow::Result<PathBuf> {
+    let platform = detect_remote_platform(target).await?;
+    match platform {
+        RemotePlatform::LinuxX86_64 => {
+            if let Some(path) = bootstrap.local_bin_linux_x86_64.as_ref() {
+                Ok(path.clone())
+            } else {
+                anyhow::bail!("missing linux x86_64 broker bin; use --broker-bin-linux-x86_64")
+            }
+        }
+        RemotePlatform::LinuxAarch64 => {
+            if let Some(path) = bootstrap.local_bin_linux_aarch64.as_ref() {
+                Ok(path.clone())
+            } else {
+                anyhow::bail!("missing linux aarch64 broker bin; use --broker-bin-linux-aarch64")
+            }
+        }
+        RemotePlatform::Other => Ok(bootstrap.local_bin.clone()),
+    }
+}
+
+async fn detect_remote_platform(target: &TargetRuntime) -> anyhow::Result<RemotePlatform> {
+    let output = run_ssh_capture(target, "uname -s && uname -m").await?;
+    let mut lines = output.lines();
+    let os = lines.next().unwrap_or("").trim().to_lowercase();
+    let arch = lines.next().unwrap_or("").trim().to_lowercase();
+    let platform = match (os.as_str(), arch.as_str()) {
+        ("linux", "x86_64") | ("linux", "amd64") => RemotePlatform::LinuxX86_64,
+        ("linux", "aarch64") | ("linux", "arm64") => RemotePlatform::LinuxAarch64,
+        _ => RemotePlatform::Other,
+    };
+    Ok(platform)
 }
 
 fn build_ssh_base(target: &TargetRuntime, command: &str) -> anyhow::Result<Command> {
