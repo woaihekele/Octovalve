@@ -491,6 +491,10 @@ fn log_ws_event(log_path: &Path, payload: &Value) {
         log_path,
         &format!("ws event targets_snapshot count={count}"),
       );
+      let _ = append_log_line(
+        log_path,
+        &format!("ws event targets_snapshot payload={}", payload.to_string()),
+      );
     }
     "target_updated" => {
       let name = payload
@@ -511,6 +515,10 @@ fn log_ws_event(log_path: &Path, payload: &Value) {
       let _ = append_log_line(
         log_path,
         &format!("ws event target_updated name={name} status={status} pending={pending}"),
+      );
+      let _ = append_log_line(
+        log_path,
+        &format!("ws event target_updated payload={}", payload.to_string()),
       );
     }
     _ => {}
