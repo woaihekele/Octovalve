@@ -313,18 +313,33 @@ fn build_state_from_config(
         if targets.contains_key(&target.name) {
             anyhow::bail!("duplicate target name: {}", target.name);
         }
-        if target.ssh.trim().is_empty() {
-            anyhow::bail!("target {} ssh cannot be empty", target.name);
-        }
-        if target.ssh.split_whitespace().count() > 1 {
-            anyhow::bail!(
-                "target {} ssh must be a single destination; use ssh_args for options",
-                target.name
-            );
+        if let Some(ssh) = target.ssh.as_deref() {
+            if ssh.trim().is_empty() {
+                anyhow::bail!("target {} ssh cannot be empty", target.name);
+            }
+            if ssh.split_whitespace().count() > 1 {
+                anyhow::bail!(
+                    "target {} ssh must be a single destination; use ssh_args for options",
+                    target.name
+                );
+            }
         }
         let remote_addr = target.remote_addr.unwrap_or_else(|| default_remote.clone());
         let local_bind = target.local_bind.unwrap_or_else(|| default_bind.clone());
-        let local_addr = format!("{local_bind}:{}", target.local_port);
+        let local_port = if target.ssh.is_some() {
+            Some(
+                target
+                    .local_port
+                    .ok_or_else(|| anyhow::anyhow!("target {} missing local_port", target.name))?,
+            )
+        } else {
+            None
+        };
+        let local_addr = if let Some(port) = local_port {
+            format!("{local_bind}:{port}")
+        } else {
+            remote_addr.clone()
+        };
 
         let mut ssh_args = default_ssh_args.clone();
         if let Some(extra) = target.ssh_args {
@@ -335,12 +350,12 @@ fn build_state_from_config(
         let mut runtime = TargetRuntime {
             name: target.name.clone(),
             desc: target.desc,
-            ssh: Some(target.ssh),
+            ssh: target.ssh,
             ssh_args,
             ssh_password,
             remote_addr,
-            local_bind: Some(local_bind),
-            local_port: Some(target.local_port),
+            local_bind: local_port.map(|_| local_bind),
+            local_port,
             local_addr,
             status: TargetStatus::Down,
             last_seen: None,
@@ -350,9 +365,13 @@ fn build_state_from_config(
         };
 
         if !use_tunnel_daemon {
-            if let Err(err) = spawn_tunnel(&mut runtime) {
-                runtime.status = TargetStatus::Down;
-                runtime.last_error = Some(err.to_string());
+            if runtime.ssh.is_some() {
+                if let Err(err) = spawn_tunnel(&mut runtime) {
+                    runtime.status = TargetStatus::Down;
+                    runtime.last_error = Some(err.to_string());
+                }
+            } else {
+                runtime.status = TargetStatus::Ready;
             }
         }
 

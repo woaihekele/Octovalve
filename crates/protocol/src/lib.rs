@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod config;
 pub mod control;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
