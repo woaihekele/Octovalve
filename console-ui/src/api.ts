@@ -1,13 +1,19 @@
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/tauri';
 import type { ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
 
-const HTTP_BASE = (import.meta.env.VITE_CONSOLE_HTTP as string | undefined) || DEFAULT_HTTP;
-const WS_BASE = (import.meta.env.VITE_CONSOLE_WS as string | undefined) || DEFAULT_WS;
 const TAURI_AVAILABLE =
   typeof window !== 'undefined' && typeof (window as { __TAURI__?: unknown }).__TAURI__ !== 'undefined';
+const RAW_HTTP = (import.meta.env.VITE_CONSOLE_HTTP as string | undefined) || DEFAULT_HTTP;
+const RAW_WS = (import.meta.env.VITE_CONSOLE_WS as string | undefined) || DEFAULT_WS;
+const HTTP_BASE = TAURI_AVAILABLE && RAW_HTTP.startsWith('/') ? DEFAULT_HTTP : RAW_HTTP;
+const WS_BASE = TAURI_AVAILABLE && RAW_WS.startsWith('/') ? DEFAULT_WS : RAW_WS;
+
+export type ConsoleConnectionStatus = 'connected' | 'connecting' | 'disconnected';
+export type ConsoleStreamHandle = { close: () => void };
 
 function joinUrl(base: string, path: string) {
   const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
@@ -33,6 +39,9 @@ function resolveWsUrl(base: string) {
 }
 
 export async function fetchTargets(): Promise<TargetInfo[]> {
+  if (TAURI_AVAILABLE) {
+    return invoke<TargetInfo[]>('proxy_fetch_targets');
+  }
   const response = await fetch(joinUrl(HTTP_BASE, '/targets'));
   if (!response.ok) {
     throw new Error(`failed to fetch targets: ${response.status}`);
@@ -41,6 +50,9 @@ export async function fetchTargets(): Promise<TargetInfo[]> {
 }
 
 export async function fetchSnapshot(name: string): Promise<ServiceSnapshot> {
+  if (TAURI_AVAILABLE) {
+    return invoke<ServiceSnapshot>('proxy_fetch_snapshot', { name });
+  }
   const response = await fetch(joinUrl(HTTP_BASE, `/targets/${encodeURIComponent(name)}/snapshot`));
   if (!response.ok) {
     throw new Error(`failed to fetch snapshot: ${response.status}`);
@@ -49,6 +61,10 @@ export async function fetchSnapshot(name: string): Promise<ServiceSnapshot> {
 }
 
 export async function approveCommand(name: string, id: string) {
+  if (TAURI_AVAILABLE) {
+    await invoke('proxy_approve', { name, id });
+    return;
+  }
   const response = await fetch(joinUrl(HTTP_BASE, `/targets/${encodeURIComponent(name)}/approve`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -60,6 +76,10 @@ export async function approveCommand(name: string, id: string) {
 }
 
 export async function denyCommand(name: string, id: string) {
+  if (TAURI_AVAILABLE) {
+    await invoke('proxy_deny', { name, id });
+    return;
+  }
   const response = await fetch(joinUrl(HTTP_BASE, `/targets/${encodeURIComponent(name)}/deny`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -70,19 +90,77 @@ export async function denyCommand(name: string, id: string) {
   }
 }
 
-export function openConsoleSocket(onEvent: (event: ConsoleEvent) => void) {
-  const ws = new WebSocket(resolveWsUrl(WS_BASE));
-  ws.onmessage = (message) => {
-    try {
-      const parsed = JSON.parse(message.data) as ConsoleEvent;
-      if (parsed && typeof parsed.type === 'string') {
-        onEvent(parsed);
+export async function openConsoleStream(
+  onEvent: (event: ConsoleEvent) => void,
+  onStatus?: (status: ConsoleConnectionStatus) => void
+): Promise<ConsoleStreamHandle> {
+  if (TAURI_AVAILABLE) {
+    const unlistenEvent = await listen<ConsoleEvent>('console_event', (event) => {
+      onEvent(event.payload);
+    });
+    const unlistenStatus = await listen<ConsoleConnectionStatus>('console_ws_status', (event) => {
+      onStatus?.(event.payload);
+    });
+    await invoke('start_console_stream');
+    return {
+      close: () => {
+        unlistenEvent();
+        unlistenStatus();
+      },
+    };
+  }
+
+  let ws: WebSocket | null = null;
+  let reconnectTimer: number | null = null;
+
+  const connect = () => {
+    onStatus?.('connecting');
+    ws = new WebSocket(resolveWsUrl(WS_BASE));
+    ws.onmessage = (message) => {
+      try {
+        const parsed = JSON.parse(message.data) as ConsoleEvent;
+        if (parsed && typeof parsed.type === 'string') {
+          onEvent(parsed);
+        }
+      } catch (err) {
+        console.warn('failed to parse websocket event', err);
       }
-    } catch (err) {
-      console.warn('failed to parse websocket event', err);
-    }
+    };
+    ws.onopen = () => {
+      onStatus?.('connected');
+    };
+    ws.onclose = () => {
+      onStatus?.('disconnected');
+      scheduleReconnect();
+    };
+    ws.onerror = () => {
+      onStatus?.('disconnected');
+      scheduleReconnect();
+    };
   };
-  return ws;
+
+  const scheduleReconnect = () => {
+    if (reconnectTimer) {
+      return;
+    }
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, 3000);
+  };
+
+  connect();
+
+  return {
+    close: () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+    },
+  };
 }
 
 export async function logUiEvent(message: string) {

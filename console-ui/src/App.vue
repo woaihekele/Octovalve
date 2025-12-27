@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { approveCommand, denyCommand, fetchSnapshot, fetchTargets, logUiEvent, openConsoleSocket } from './api';
+import {
+  approveCommand,
+  denyCommand,
+  fetchSnapshot,
+  fetchTargets,
+  logUiEvent,
+  openConsoleStream,
+  type ConsoleConnectionStatus,
+  type ConsoleStreamHandle,
+} from './api';
 import Sidebar from './components/Sidebar.vue';
 import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
@@ -17,8 +26,7 @@ const notification = ref<{ message: string; count?: number } | null>(null);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
 
-let ws: WebSocket | null = null;
-let reconnectTimer: number | null = null;
+let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
@@ -90,37 +98,25 @@ function handleEvent(event: ConsoleEvent) {
   }
 }
 
-function connectWebSocket() {
-  if (ws) {
-    ws.close();
+async function connectWebSocket() {
+  if (streamHandle) {
+    streamHandle.close();
   }
   connectionState.value = 'connecting';
   void logUiEvent('ws connecting');
-  ws = openConsoleSocket(handleEvent);
-  ws.onopen = () => {
-    connectionState.value = 'connected';
-    void logUiEvent('ws connected');
-  };
-  ws.onclose = (event) => {
+  try {
+    streamHandle = await openConsoleStream(handleEvent, (status: ConsoleConnectionStatus) => {
+      connectionState.value = status;
+      if (status === 'connected') {
+        void logUiEvent('ws connected');
+      } else if (status === 'disconnected') {
+        void logUiEvent('ws closed');
+      }
+    });
+  } catch (err) {
     connectionState.value = 'disconnected';
-    void logUiEvent(`ws closed code=${event.code} reason=${event.reason || 'none'}`);
-    scheduleReconnect();
-  };
-  ws.onerror = () => {
-    connectionState.value = 'disconnected';
-    void logUiEvent('ws error');
-    scheduleReconnect();
-  };
-}
-
-function scheduleReconnect() {
-  if (reconnectTimer) {
-    return;
+    void logUiEvent(`ws start failed: ${String(err)}`);
   }
-  reconnectTimer = window.setTimeout(() => {
-    reconnectTimer = null;
-    connectWebSocket();
-  }, 3000);
 }
 
 async function refreshTargets() {
@@ -191,16 +187,14 @@ function handleGlobalKey(event: KeyboardEvent) {
 
 onMounted(async () => {
   await refreshTargets();
-  connectWebSocket();
+  void connectWebSocket();
+  void logUiEvent(`origin=${window.location.origin} secure=${window.isSecureContext}`);
   window.addEventListener('keydown', handleGlobalKey);
 });
 
 onBeforeUnmount(() => {
-  if (ws) {
-    ws.close();
-  }
-  if (reconnectTimer) {
-    window.clearTimeout(reconnectTimer);
+  if (streamHandle) {
+    streamHandle.close();
   }
   window.removeEventListener('keydown', handleGlobalKey);
 });
