@@ -28,6 +28,11 @@
     "bundle": {
       "active": false,
       "identifier": "com.octovalve.console",
+      "externalBin": [
+        "../../target/release/console",
+        "../../target/release/tunnel-daemon",
+        "../../target/release/remote-broker"
+      ],
       "icon": [
         "icons/icon.icns",
         "icons/icon.png"

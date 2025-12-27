@@ -199,6 +199,11 @@ npm run tauri dev
 npm run tauri build
 ```
 
+运行时说明：
+- 应用启动会自动拉起 console（包含 tunnel-daemon/remote-broker sidecar）。
+- 首次启动会在应用配置目录生成 `local-proxy-config.toml` 和 `remote-broker-config.toml`。
+  - macOS 默认路径：`~/Library/Application Support/com.octovalve.console/`
+
 ## 密码登录说明
 如果必须使用密码登录，请在目标中配置 `ssh_password`，并确保本机安装 `sshpass`：
 - macOS：`brew install sshpass`
