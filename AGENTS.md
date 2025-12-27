@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 - Workspace layout lives under `crates/`:
   - `crates/remote-broker`: TUI approval server (UI, service, policy, execution layers).
-  - `crates/local-proxy`: MCP stdio server that forwards `run_command` to remote brokers.
+  - `crates/local-proxy` (bin: `octovalve-proxy`): MCP stdio server that forwards `run_command` to remote brokers.
   - `crates/protocol`: shared request/response types.
 - Docs and plans live in `docs/` (design notes).
 - Config files live in `config/`.
@@ -15,11 +15,11 @@
 - Format (required before commit): `cargo fmt`
 - Run services locally:
   - `cargo run -p remote-broker -- --listen-addr 127.0.0.1:19307 --config config/config.toml --audit-dir logs`
-  - `cargo run -p local-proxy -- --config /path/to/config/local-proxy-config.toml`
+  - `cargo run -p octovalve-proxy -- --config /path/to/config/local-proxy-config.toml`
 
 ## Coding Style & Naming Conventions
 - Rust 2021 edition; format with `cargo fmt` before every commit.
-- Keep modules layered in `remote-broker` (`ui/`, `service/`, `policy/`, `execution/`, `shared/`).
+- Keep modules layered in `remote-broker` (`ui/`, `service/`, `policy/`, `execution/`).
 - Prefer descriptive names; avoid abbreviations in public structs/functions.
 
 ## Testing Guidelines

@@ -63,7 +63,7 @@ cargo build --release
 
 mkdir -p "$OUTPUT_DIR"
 install -m 0755 target/release/remote-broker "$OUTPUT_DIR/remote-broker"
-install -m 0755 target/release/local-proxy "$OUTPUT_DIR/local-proxy"
+install -m 0755 target/release/octovalve-proxy "$OUTPUT_DIR/octovalve-proxy"
 
 if [[ "$COPY_CONFIG" -eq 1 ]]; then
   if [[ -f config/config.toml ]]; then
