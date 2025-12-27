@@ -8,21 +8,38 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use futures_util::StreamExt;
+use reqwest::Client;
+use serde_json::{json, Value};
 use tauri::api::process::{Command, CommandChild, CommandEvent};
 use tauri::{AppHandle, Manager, RunEvent, State};
+use tokio_tungstenite::tungstenite::Message;
 
 const DEFAULT_PROXY_CONFIG: &str = include_str!("../resources/local-proxy-config.toml");
 const DEFAULT_BROKER_CONFIG: &str = include_str!("../../../config/config.toml");
 
 struct ConsoleSidecarState(Mutex<Option<CommandChild>>);
+struct ConsoleStreamState(Mutex<bool>);
 struct AppLogState {
   app_log: PathBuf,
 }
 
+const CONSOLE_HTTP_BASE: &str = "http://127.0.0.1:19309";
+const CONSOLE_WS_URL: &str = "ws://127.0.0.1:19309/ws";
+const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
+
 fn main() {
   tauri::Builder::default()
     .manage(ConsoleSidecarState(Mutex::new(None)))
-    .invoke_handler(tauri::generate_handler![log_ui_event])
+    .manage(ConsoleStreamState(Mutex::new(false)))
+    .invoke_handler(tauri::generate_handler![
+      log_ui_event,
+      proxy_fetch_targets,
+      proxy_fetch_snapshot,
+      proxy_approve,
+      proxy_deny,
+      start_console_stream
+    ])
     .setup(|app| {
       let config_dir = app
         .path_resolver()
@@ -159,6 +176,122 @@ fn sidecar_path(name: &str) -> Result<PathBuf, String> {
   {
     return Ok(dir.join(name));
   }
+}
+
+fn console_http_url(path: &str) -> String {
+  if path.starts_with('/') {
+    format!("{CONSOLE_HTTP_BASE}{path}")
+  } else {
+    format!("{CONSOLE_HTTP_BASE}/{path}")
+  }
+}
+
+async fn console_get(path: &str) -> Result<Value, String> {
+  let url = console_http_url(path);
+  let response = Client::new()
+    .get(url)
+    .send()
+    .await
+    .map_err(|err| err.to_string())?;
+  let response = response
+    .error_for_status()
+    .map_err(|err| err.to_string())?;
+  response.json::<Value>().await.map_err(|err| err.to_string())
+}
+
+async fn console_post(path: &str, payload: Value) -> Result<(), String> {
+  let url = console_http_url(path);
+  let response = Client::new()
+    .post(url)
+    .json(&payload)
+    .send()
+    .await
+    .map_err(|err| err.to_string())?;
+  response
+    .error_for_status()
+    .map_err(|err| err.to_string())?;
+  Ok(())
+}
+
+#[tauri::command]
+async fn proxy_fetch_targets() -> Result<Value, String> {
+  console_get("/targets").await
+}
+
+#[tauri::command]
+async fn proxy_fetch_snapshot(name: String) -> Result<Value, String> {
+  let path = format!("/targets/{name}/snapshot");
+  console_get(&path).await
+}
+
+#[tauri::command]
+async fn proxy_approve(name: String, id: String) -> Result<(), String> {
+  let path = format!("/targets/{name}/approve");
+  console_post(&path, json!({ "id": id })).await
+}
+
+#[tauri::command]
+async fn proxy_deny(name: String, id: String) -> Result<(), String> {
+  let path = format!("/targets/{name}/deny");
+  console_post(&path, json!({ "id": id })).await
+}
+
+fn emit_ws_status(app: &AppHandle, log_path: &Path, status: &str) {
+  let _ = app.emit_all("console_ws_status", status.to_string());
+  let _ = append_log_line(log_path, &format!("ws {status}"));
+}
+
+#[tauri::command]
+async fn start_console_stream(
+  app: AppHandle,
+  stream_state: State<'_, ConsoleStreamState>,
+  log_state: State<'_, AppLogState>,
+) -> Result<(), String> {
+  let mut running = stream_state.0.lock().unwrap();
+  if *running {
+    return Ok(());
+  }
+  *running = true;
+
+  let app_handle = app.clone();
+  let log_path = log_state.app_log.clone();
+  tauri::async_runtime::spawn(async move {
+    loop {
+      emit_ws_status(&app_handle, &log_path, "connecting");
+      match tokio_tungstenite::connect_async(CONSOLE_WS_URL).await {
+        Ok((mut stream, _)) => {
+          emit_ws_status(&app_handle, &log_path, "connected");
+          while let Some(message) = stream.next().await {
+            match message {
+              Ok(Message::Text(text)) => match serde_json::from_str::<Value>(&text) {
+                Ok(payload) => {
+                  let _ = app_handle.emit_all("console_event", payload);
+                }
+                Err(err) => {
+                  let _ = append_log_line(&log_path, &format!("ws parse error: {err}"));
+                }
+              },
+              Ok(Message::Close(_)) => break,
+              Ok(Message::Binary(_))
+              | Ok(Message::Ping(_))
+              | Ok(Message::Pong(_))
+              | Ok(Message::Frame(_)) => {}
+              Err(err) => {
+                let _ = append_log_line(&log_path, &format!("ws stream error: {err}"));
+                break;
+              }
+            }
+          }
+        }
+        Err(err) => {
+          let _ = append_log_line(&log_path, &format!("ws connect failed: {err}"));
+        }
+      }
+      emit_ws_status(&app_handle, &log_path, "disconnected");
+      tokio::time::sleep(WS_RECONNECT_DELAY).await;
+    }
+  });
+  Ok(())
 }
 
 #[tauri::command]
