@@ -240,6 +240,8 @@ console：
 - `--config`（目标配置，沿用 `config/local-proxy-config.toml`）
 - `--listen-addr`（默认：`127.0.0.1:19309`）
 - `--broker-bin`（要同步到远端的 `remote-broker` 路径）
+- `--broker-bin-linux-x86_64`（远端为 Linux x86_64 时使用的 `remote-broker` 路径）
+- `--broker-bin-linux-aarch64`（远端为 Linux aarch64 时使用的 `remote-broker` 路径）
 - `--broker-config`（要同步到远端的配置，默认 `config/config.toml`）
 - `--remote-dir`（远端目录，默认 `~/.octovalve`）
 - `--remote-listen-addr`（默认：`127.0.0.1:19307`）
