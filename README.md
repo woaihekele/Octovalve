@@ -202,6 +202,10 @@ npm run tauri:build:dmg
 说明：
 - `tauri.bundle.active` 默认关闭，打包需使用 `tauri:build:dmg`。
 - 构建前会自动编译 console/tunnel-daemon/remote-broker 并准备 sidecar。
+- DMG 构建会额外准备 Linux 版 `remote-broker`（x86_64/aarch64），用于同步到远端。
+  - 需要安装 `cargo-zigbuild` 与 `zig`，或设置：
+    - `OCTOVALVE_LINUX_BROKER_X86_64=/path/to/remote-broker`
+    - `OCTOVALVE_LINUX_BROKER_AARCH64=/path/to/remote-broker`
 
 运行时说明：
 - 应用启动会自动拉起 console（包含 tunnel-daemon/remote-broker sidecar）。
