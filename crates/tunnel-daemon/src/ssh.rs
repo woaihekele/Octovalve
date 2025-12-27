@@ -1,5 +1,5 @@
 use anyhow::Context;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout, Duration};
@@ -15,7 +15,7 @@ pub(crate) struct SshTarget {
 }
 
 pub(crate) async fn spawn_master(target: &SshTarget, control_path: &Path) -> anyhow::Result<Child> {
-    let mut cmd = build_ssh_base(target, true);
+    let mut cmd = build_ssh_base(target, true)?;
     cmd.arg("-N")
         .arg("-T")
         .arg("-o")
@@ -42,13 +42,7 @@ pub(crate) async fn spawn_master(target: &SshTarget, control_path: &Path) -> any
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let child = cmd.spawn().map_err(|err| {
-        if target.ssh_password.is_some() && err.kind() == std::io::ErrorKind::NotFound {
-            anyhow::anyhow!("sshpass not found; install sshpass or remove ssh_password")
-        } else {
-            anyhow::anyhow!(err)
-        }
-    })?;
+    let child = cmd.spawn().map_err(|err| anyhow::anyhow!(err))?;
     Ok(child)
 }
 
@@ -123,17 +117,42 @@ pub(crate) async fn exit_master(target: &SshTarget, control_path: &Path) -> anyh
     run_ssh_command(&mut cmd, "ssh -O exit").await
 }
 
-fn build_ssh_base(target: &SshTarget, allow_password: bool) -> Command {
+fn build_ssh_base(target: &SshTarget, allow_password: bool) -> anyhow::Result<Command> {
+    let mut cmd = Command::new("ssh");
     if allow_password {
         if let Some(password) = target.ssh_password.as_ref() {
-            let mut cmd = Command::new("sshpass");
-            cmd.arg("-e");
-            cmd.env("SSHPASS", password);
-            cmd.arg("ssh");
-            return cmd;
+            configure_askpass(&mut cmd, password)?;
         }
     }
-    Command::new("ssh")
+    Ok(cmd)
+}
+
+fn configure_askpass(cmd: &mut Command, password: &str) -> anyhow::Result<()> {
+    let script = ensure_askpass_script()?;
+    cmd.env("OCTOVALVE_SSH_PASS", password);
+    cmd.env("SSH_ASKPASS", script);
+    cmd.env("SSH_ASKPASS_REQUIRE", "force");
+    cmd.env("DISPLAY", "1");
+    Ok(())
+}
+
+fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
+    let home = std::env::var("HOME").context("failed to resolve HOME for askpass")?;
+    let dir = PathBuf::from(home).join(".octovalve");
+    std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
+    let path = dir.join("ssh-askpass.sh");
+    if !path.exists() {
+        std::fs::write(&path, "#!/bin/sh\nprintf '%s' \"$OCTOVALVE_SSH_PASS\"\n")
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path)?.permissions();
+            perms.set_mode(0o700);
+            std::fs::set_permissions(&path, perms)?;
+        }
+    }
+    Ok(path)
 }
 
 async fn run_ssh_command(cmd: &mut Command, label: &str) -> anyhow::Result<()> {
