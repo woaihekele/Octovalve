@@ -6,20 +6,34 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::api::process::{Command, CommandChild, CommandEvent};
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent, State};
 
 const DEFAULT_PROXY_CONFIG: &str = include_str!("../resources/local-proxy-config.toml");
 const DEFAULT_BROKER_CONFIG: &str = include_str!("../../../config/config.toml");
 
 struct ConsoleSidecarState(Mutex<Option<CommandChild>>);
+struct AppLogState {
+  app_log: PathBuf,
+}
 
 fn main() {
   tauri::Builder::default()
     .manage(ConsoleSidecarState(Mutex::new(None)))
+    .invoke_handler(tauri::generate_handler![log_ui_event])
     .setup(|app| {
+      let config_dir = app
+        .path_resolver()
+        .app_config_dir()
+        .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+      fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
+      let logs_dir = config_dir.join("logs");
+      fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
+      app.manage(AppLogState {
+        app_log: logs_dir.join("app.log"),
+      });
       if let Err(err) = start_console(&app.handle()) {
         eprintln!("failed to start console sidecar: {err}");
       }
@@ -145,4 +159,23 @@ fn sidecar_path(name: &str) -> Result<PathBuf, String> {
   {
     return Ok(dir.join(name));
   }
+}
+
+#[tauri::command]
+fn log_ui_event(message: String, state: State<AppLogState>) -> Result<(), String> {
+  append_log_line(&state.app_log, &message)
+}
+
+fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
+  let mut file = OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(path)
+    .map_err(|err| err.to_string())?;
+  let ts = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_secs();
+  writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
+  Ok(())
 }

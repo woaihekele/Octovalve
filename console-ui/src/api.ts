@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/tauri';
 import type { ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
@@ -5,6 +6,8 @@ const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
 
 const HTTP_BASE = (import.meta.env.VITE_CONSOLE_HTTP as string | undefined) || DEFAULT_HTTP;
 const WS_BASE = (import.meta.env.VITE_CONSOLE_WS as string | undefined) || DEFAULT_WS;
+const TAURI_AVAILABLE =
+  typeof window !== 'undefined' && typeof (window as { __TAURI__?: unknown }).__TAURI__ !== 'undefined';
 
 function joinUrl(base: string, path: string) {
   const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
@@ -80,4 +83,15 @@ export function openConsoleSocket(onEvent: (event: ConsoleEvent) => void) {
     }
   };
   return ws;
+}
+
+export async function logUiEvent(message: string) {
+  if (!TAURI_AVAILABLE) {
+    return;
+  }
+  try {
+    await invoke('log_ui_event', { message });
+  } catch {
+    // ignore logging failures
+  }
 }

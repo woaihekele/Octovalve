@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { approveCommand, denyCommand, fetchSnapshot, fetchTargets, openConsoleSocket } from './api';
+import { approveCommand, denyCommand, fetchSnapshot, fetchTargets, logUiEvent, openConsoleSocket } from './api';
 import Sidebar from './components/Sidebar.vue';
 import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
@@ -95,16 +95,20 @@ function connectWebSocket() {
     ws.close();
   }
   connectionState.value = 'connecting';
+  void logUiEvent('ws connecting');
   ws = openConsoleSocket(handleEvent);
   ws.onopen = () => {
     connectionState.value = 'connected';
+    void logUiEvent('ws connected');
   };
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     connectionState.value = 'disconnected';
+    void logUiEvent(`ws closed code=${event.code} reason=${event.reason || 'none'}`);
     scheduleReconnect();
   };
   ws.onerror = () => {
     connectionState.value = 'disconnected';
+    void logUiEvent('ws error');
     scheduleReconnect();
   };
 }
@@ -125,6 +129,7 @@ async function refreshTargets() {
     updateTargets(list);
   } catch (err) {
     connectionState.value = 'disconnected';
+    void logUiEvent(`fetch targets failed: ${String(err)}`);
   }
 }
 
@@ -138,6 +143,7 @@ async function refreshSnapshot(name: string) {
     snapshots.value = { ...snapshots.value, [name]: snapshot };
     lastPendingCounts.value[name] = snapshot.queue.length;
   } catch {
+    void logUiEvent(`fetch snapshot failed target=${name}`);
     // ignore fetch errors; connection status handled by websocket
   } finally {
     snapshotLoading.value[name] = false;
