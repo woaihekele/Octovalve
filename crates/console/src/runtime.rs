@@ -73,11 +73,9 @@ async fn run_target_worker(
     let forward_spec = control_forward_spec(&runtime);
     let mut bootstrap_needed = true;
     let mut connect_failures = 0;
-    let mut shutting_down = false;
-    loop {
+    let shutdown_requested = loop {
         if shutdown.is_cancelled() {
-            shutting_down = true;
-            break;
+            break true;
         }
 
         if runtime.ssh.is_some() {
@@ -93,7 +91,7 @@ async fn run_target_worker(
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
                     if wait_reconnect_or_shutdown(&shutdown).await {
-                        break;
+                        break true;
                     }
                     continue;
                 }
@@ -107,7 +105,7 @@ async fn run_target_worker(
                 )
                 .await;
                 if wait_reconnect_or_shutdown(&shutdown).await {
-                    break;
+                    break true;
                 }
                 continue;
             }
@@ -126,7 +124,7 @@ async fn run_target_worker(
                 .await;
                 warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
                 if wait_reconnect_or_shutdown(&shutdown).await {
-                    break;
+                    break true;
                 }
                 continue;
             }
@@ -152,7 +150,7 @@ async fn run_target_worker(
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to subscribe");
                     if wait_reconnect_or_shutdown(&shutdown).await {
-                        break;
+                        break true;
                     }
                     continue;
                 }
@@ -167,7 +165,7 @@ async fn run_target_worker(
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to request snapshot");
                     if wait_reconnect_or_shutdown(&shutdown).await {
-                        break;
+                        break true;
                     }
                     continue;
                 }
@@ -213,11 +211,10 @@ async fn run_target_worker(
         }
 
         if wait_reconnect_or_shutdown(&shutdown).await {
-            shutting_down = true;
-            break;
+            break true;
         }
-    }
-    if shutting_down {
+    };
+    if shutdown_requested {
         info!(target = %runtime.name, "shutdown requested, stopping remote broker");
         if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
             warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
