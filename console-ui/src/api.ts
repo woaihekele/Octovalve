@@ -14,6 +14,11 @@ const WS_BASE = TAURI_AVAILABLE && RAW_WS.startsWith('/') ? DEFAULT_WS : RAW_WS;
 
 export type ConsoleConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 export type ConsoleStreamHandle = { close: () => void };
+export type ProxyConfigStatus = {
+  present: boolean;
+  path: string;
+  example_path: string;
+};
 
 function joinUrl(base: string, path: string) {
   const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
@@ -88,6 +93,13 @@ export async function denyCommand(name: string, id: string) {
   if (!response.ok) {
     throw new Error(`deny failed: ${response.status}`);
   }
+}
+
+export async function getProxyConfigStatus(): Promise<ProxyConfigStatus> {
+  if (TAURI_AVAILABLE) {
+    return invoke<ProxyConfigStatus>('get_proxy_config_status');
+  }
+  return { present: true, path: '', example_path: '' };
 }
 
 export async function openConsoleStream(

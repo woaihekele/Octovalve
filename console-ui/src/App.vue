@@ -5,6 +5,7 @@ import {
   denyCommand,
   fetchSnapshot,
   fetchTargets,
+  getProxyConfigStatus,
   logUiEvent,
   openConsoleStream,
   type ConsoleConnectionStatus,
@@ -186,6 +187,17 @@ function handleGlobalKey(event: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  try {
+    const status = await getProxyConfigStatus();
+    if (!status.present) {
+      connectionState.value = 'disconnected';
+      showNotification(`未找到 ${status.path}，请参考 ${status.example_path} 创建并修改后重启应用`);
+      void logUiEvent(`proxy config missing: ${status.path}`);
+      return;
+    }
+  } catch (err) {
+    void logUiEvent(`proxy config check failed: ${String(err)}`);
+  }
   await refreshTargets();
   void connectWebSocket();
   void logUiEvent(`origin=${window.location.origin} secure=${window.isSecureContext}`);

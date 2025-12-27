@@ -11,17 +11,26 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{json, Value};
+use tauri::api::path::home_dir;
 use tauri::api::process::{Command, CommandChild, CommandEvent};
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tokio_tungstenite::tungstenite::Message;
 
-const DEFAULT_PROXY_CONFIG: &str = include_str!("../resources/local-proxy-config.toml");
+const DEFAULT_PROXY_EXAMPLE: &str = include_str!("../resources/local-proxy-config.toml.example");
 const DEFAULT_BROKER_CONFIG: &str = include_str!("../../../config/config.toml");
 
 struct ConsoleSidecarState(Mutex<Option<CommandChild>>);
 struct ConsoleStreamState(Mutex<bool>);
+struct ProxyConfigState(ProxyConfigStatus);
 struct AppLogState {
   app_log: PathBuf,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ProxyConfigStatus {
+  present: bool,
+  path: String,
+  example_path: String,
 }
 
 const CONSOLE_HTTP_BASE: &str = "http://127.0.0.1:19309";
@@ -33,6 +42,7 @@ fn main() {
     .manage(ConsoleSidecarState(Mutex::new(None)))
     .manage(ConsoleStreamState(Mutex::new(false)))
     .invoke_handler(tauri::generate_handler![
+      get_proxy_config_status,
       log_ui_event,
       proxy_fetch_targets,
       proxy_fetch_snapshot,
@@ -48,11 +58,22 @@ fn main() {
       fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
       let logs_dir = config_dir.join("logs");
       fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
+      let app_log = logs_dir.join("app.log");
       app.manage(AppLogState {
-        app_log: logs_dir.join("app.log"),
+        app_log: app_log.clone(),
       });
-      if let Err(err) = start_console(&app.handle()) {
-        eprintln!("failed to start console sidecar: {err}");
+      let (proxy_status, proxy_path) = prepare_proxy_config(&app_log)?;
+      app.manage(ProxyConfigState(proxy_status.clone()));
+      if proxy_status.present {
+        if let Err(err) = start_console(&app.handle(), &proxy_path) {
+          eprintln!("failed to start console sidecar: {err}");
+          let _ = append_log_line(&app_log, &format!("console start failed: {err}"));
+        }
+      } else {
+        let _ = append_log_line(
+          &app_log,
+          "proxy config missing; waiting for user to create local-proxy-config.toml",
+        );
       }
       Ok(())
     })
@@ -65,16 +86,14 @@ fn main() {
     });
 }
 
-fn start_console(app: &AppHandle) -> Result<(), String> {
+fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
   let config_dir = app
     .path_resolver()
     .app_config_dir()
     .ok_or_else(|| "failed to resolve app config dir".to_string())?;
   fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
 
-  let proxy_config = config_dir.join("local-proxy-config.toml");
   let broker_config = config_dir.join("remote-broker-config.toml");
-  ensure_file(&proxy_config, DEFAULT_PROXY_CONFIG)?;
   ensure_file(&broker_config, DEFAULT_BROKER_CONFIG)?;
   let logs_dir = config_dir.join("logs");
   fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
@@ -176,6 +195,42 @@ fn sidecar_path(name: &str) -> Result<PathBuf, String> {
   {
     return Ok(dir.join(name));
   }
+}
+
+fn octovalve_dir() -> Result<PathBuf, String> {
+  let home = home_dir().ok_or_else(|| "failed to resolve home dir".to_string())?;
+  Ok(home.join(".octovalve"))
+}
+
+fn prepare_proxy_config(log_path: &Path) -> Result<(ProxyConfigStatus, PathBuf), String> {
+  let config_dir = octovalve_dir()?;
+  fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
+  let config_path = config_dir.join("local-proxy-config.toml");
+  let example_path = config_dir.join("local-proxy-config.toml.example");
+  ensure_file(&example_path, DEFAULT_PROXY_EXAMPLE)?;
+
+  let present = config_path.exists();
+  let status = ProxyConfigStatus {
+    present,
+    path: config_path.to_string_lossy().to_string(),
+    example_path: example_path.to_string_lossy().to_string(),
+  };
+  if !present {
+    let _ = append_log_line(
+      log_path,
+      &format!("proxy config missing at {}", status.path),
+    );
+    let _ = append_log_line(
+      log_path,
+      &format!("proxy config example at {}", status.example_path),
+    );
+  }
+  Ok((status, config_path))
+}
+
+#[tauri::command]
+fn get_proxy_config_status(state: State<ProxyConfigState>) -> ProxyConfigStatus {
+  state.0.clone()
 }
 
 fn console_http_url(path: &str) -> String {
