@@ -207,7 +207,7 @@ npm run tauri:build:dmg
     - `OCTOVALVE_LINUX_BROKER_X86_64=/path/to/remote-broker`
 
 运行时说明：
-- 应用启动会自动拉起 console（包含 tunnel-daemon/remote-broker sidecar）。
+- 应用启动会自动拉起 console（包含 tunnel-daemon sidecar，Linux 版 remote-broker 作为资源打包）。
 - 首次启动会在 `~/.octovalve/` 生成 `local-proxy-config.toml.example`。
   - 复制为 `local-proxy-config.toml` 并修改后重启应用。
 - `remote-broker-config.toml` 仍保存在应用配置目录（console 启动时生成）。
