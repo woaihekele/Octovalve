@@ -196,10 +196,11 @@ npm install
 npm run tauri dev
 
 # 产出桌面应用
-npm run tauri build
+npm run tauri:build:dmg
 ```
 
 说明：
+- `tauri.bundle.active` 默认关闭，打包需使用 `tauri:build:dmg`。
 - 构建前会自动编译 console/tunnel-daemon/remote-broker 并准备 sidecar。
 
 运行时说明：

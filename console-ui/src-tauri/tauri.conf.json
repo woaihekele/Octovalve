@@ -26,7 +26,7 @@
       }
     ],
     "bundle": {
-      "active": true,
+      "active": false,
       "identifier": "com.octovalve.console",
       "externalBin": [
         "../../target/release/console",
