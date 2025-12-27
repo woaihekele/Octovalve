@@ -1,6 +1,7 @@
 use crate::tunnel::TargetRuntime;
 use anyhow::Context;
 use std::fmt;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
@@ -82,14 +83,30 @@ pub(crate) async fn bootstrap_remote_broker(
     )
     .await?;
 
-    run_scp(target, &local_bin, &remote_bin_tmp).await?;
+    let skip_bin_upload = match remote_md5_hex(target, &remote_bin).await? {
+        Some(remote_md5) if remote_md5 == local_md5_hex(&local_bin)? => {
+            info!(target = %target.name, "remote broker binary up to date, skipping upload");
+            true
+        }
+        _ => false,
+    };
+    if !skip_bin_upload {
+        run_scp(target, &local_bin, &remote_bin_tmp).await?;
+        run_ssh(
+            target,
+            &format!(
+                "mv -f {} {}",
+                shell_escape(&remote_bin_tmp),
+                shell_escape(&remote_bin)
+            ),
+        )
+        .await?;
+    }
     run_scp(target, &bootstrap.local_config, &remote_config_tmp).await?;
     run_ssh(
         target,
         &format!(
-            "mv -f {} {} && mv -f {} {}",
-            shell_escape(&remote_bin_tmp),
-            shell_escape(&remote_bin),
+            "mv -f {} {}",
             shell_escape(&remote_config_tmp),
             shell_escape(&remote_config)
         ),
@@ -200,6 +217,40 @@ async fn run_ssh_capture(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Re
         anyhow::bail!("ssh failed: {}{}", stdout, stderr);
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn local_md5_hex(path: &Path) -> anyhow::Result<String> {
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("failed to open {}", path.display()))?;
+    let mut context = md5::Context::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        context.consume(&buffer[..read]);
+    }
+    Ok(format!("{:x}", context.compute()))
+}
+
+async fn remote_md5_hex(
+    target: &TargetRuntime,
+    remote_path: &str,
+) -> anyhow::Result<Option<String>> {
+    let escaped = shell_escape(remote_path);
+    let remote_cmd = format!(
+        "if command -v md5sum >/dev/null 2>&1 && [ -f {escaped} ]; then md5sum {escaped}; fi; true"
+    );
+    let output = match run_ssh_capture(target, &remote_cmd).await {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
+    let hash = output.split_whitespace().next().unwrap_or("");
+    if hash.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(hash.to_string()))
 }
 
 async fn resolve_remote_path(target: &TargetRuntime, path: &str) -> anyhow::Result<String> {
