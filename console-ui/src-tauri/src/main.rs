@@ -107,6 +107,16 @@ fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
   let console_log = logs_dir.join("console.log");
 
   let broker_bin = sidecar_path("remote-broker")?;
+  let broker_bin_linux_x86_64 = resolve_linux_broker(
+    app,
+    "remote-broker-linux-x86_64",
+    "remote-broker/linux-x86_64/remote-broker",
+  );
+  let broker_bin_linux_aarch64 = resolve_linux_broker(
+    app,
+    "remote-broker-linux-aarch64",
+    "remote-broker/linux-aarch64/remote-broker",
+  );
   let tunnel_bin = sidecar_path("tunnel-daemon")?;
   let mut envs = HashMap::new();
   envs.insert(
@@ -115,17 +125,27 @@ fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
   );
   envs.insert("PATH".to_string(), build_console_path());
 
+  let mut console_args = vec![
+    "--config".to_string(),
+    proxy_config.to_string_lossy().to_string(),
+    "--broker-bin".to_string(),
+    broker_bin.to_string_lossy().to_string(),
+    "--broker-config".to_string(),
+    broker_config.to_string_lossy().to_string(),
+    "--log-to-stderr".to_string(),
+  ];
+  if let Some(path) = broker_bin_linux_x86_64 {
+    console_args.push("--broker-bin-linux-x86_64".to_string());
+    console_args.push(path.to_string_lossy().to_string());
+  }
+  if let Some(path) = broker_bin_linux_aarch64 {
+    console_args.push("--broker-bin-linux-aarch64".to_string());
+    console_args.push(path.to_string_lossy().to_string());
+  }
+
   let (mut rx, child) = Command::new_sidecar("console")
     .map_err(|err| err.to_string())?
-    .args([
-      "--config",
-      proxy_config.to_string_lossy().as_ref(),
-      "--broker-bin",
-      broker_bin.to_string_lossy().as_ref(),
-      "--broker-config",
-      broker_config.to_string_lossy().as_ref(),
-      "--log-to-stderr",
-    ])
+    .args(console_args)
     .envs(envs)
     .spawn()
     .map_err(|err| err.to_string())?;
@@ -203,6 +223,16 @@ fn sidecar_path(name: &str) -> Result<PathBuf, String> {
   {
     return Ok(dir.join(name));
   }
+}
+
+fn resolve_linux_broker(app: &AppHandle, override_name: &str, resource_path: &str) -> Option<PathBuf> {
+  if let Ok(dir) = octovalve_dir() {
+    let candidate = dir.join(override_name);
+    if candidate.exists() {
+      return Some(candidate);
+    }
+  }
+  app.path_resolver().resolve_resource(resource_path)
 }
 
 fn build_console_path() -> String {

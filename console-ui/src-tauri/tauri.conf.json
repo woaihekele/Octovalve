@@ -28,6 +28,9 @@
     "bundle": {
       "active": false,
       "identifier": "com.octovalve.console",
+      "resources": [
+        "resources/remote-broker/**"
+      ],
       "externalBin": [
         "../../target/release/console",
         "../../target/release/tunnel-daemon",
