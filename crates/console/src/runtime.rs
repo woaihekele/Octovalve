@@ -1,4 +1,4 @@
-use crate::bootstrap::{bootstrap_remote_broker, BootstrapConfig};
+use crate::bootstrap::{bootstrap_remote_broker, stop_remote_broker, BootstrapConfig};
 use crate::control::{ControlRequest, ControlResponse};
 use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
@@ -75,7 +75,10 @@ async fn run_target_worker(
     let mut connect_failures = 0;
     loop {
         if shutdown.is_cancelled() {
-            info!(target = %runtime.name, "shutdown requested, releasing tunnel");
+            info!(target = %runtime.name, "shutdown requested, stopping remote broker");
+            if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
+                warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
+            }
             if let Some(forward) = forward_spec.as_ref() {
                 let _ = tunnel_client.release_forward(forward.clone()).await;
             }

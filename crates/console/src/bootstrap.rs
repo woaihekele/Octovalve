@@ -7,6 +7,7 @@ use tracing::info;
 
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const SCP_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const REMOTE_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone, Debug)]
@@ -94,7 +95,31 @@ pub(crate) async fn bootstrap_remote_broker(
     Ok(())
 }
 
+pub(crate) async fn stop_remote_broker(
+    target: &TargetRuntime,
+    bootstrap: &BootstrapConfig,
+) -> anyhow::Result<()> {
+    if target.ssh.is_none() {
+        return Ok(());
+    }
+    let pgrep_pattern = shell_escape(&format!(
+        "[r]emote-broker.*--control-addr {}",
+        bootstrap.remote_control_addr
+    ));
+    let stop_cmd = format!("pkill -f {} >/dev/null 2>&1 || true", pgrep_pattern);
+    run_ssh_with_timeout(target, &stop_cmd, REMOTE_STOP_TIMEOUT).await?;
+    Ok(())
+}
+
 async fn run_ssh(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Result<()> {
+    run_ssh_with_timeout(target, remote_cmd, SSH_COMMAND_TIMEOUT).await
+}
+
+async fn run_ssh_with_timeout(
+    target: &TargetRuntime,
+    remote_cmd: &str,
+    timeout: Duration,
+) -> anyhow::Result<()> {
     let ssh = target
         .ssh
         .as_ref()
@@ -105,7 +130,7 @@ async fn run_ssh(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Result<()>
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
     cmd.arg(remote_cmd);
-    let output = run_command_with_timeout(&mut cmd, SSH_COMMAND_TIMEOUT, "ssh").await?;
+    let output = run_command_with_timeout(&mut cmd, timeout, "ssh").await?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);

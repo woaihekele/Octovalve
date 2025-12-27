@@ -105,6 +105,7 @@ console 默认监听 `127.0.0.1:19309`，并将远端部署到 `~/.octovalve`：
 - 远端配置：`~/.octovalve/config.toml`
 - 远端日志：`~/.octovalve/remote-broker.log`
 - 审计目录：`~/.octovalve/logs`
+- console 退出时会尝试停止对应远端 `remote-broker`。
 
 5) 启动本地代理（自动建立并维持隧道）：
 
