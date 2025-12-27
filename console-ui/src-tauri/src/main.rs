@@ -38,13 +38,16 @@ const CONSOLE_WS_URL: &str = "ws://127.0.0.1:19309/ws";
 const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
 
 fn console_client() -> Result<&'static Client, String> {
-  static CLIENT: OnceLock<Client> = OnceLock::new();
-  CLIENT.get_or_try_init(|| {
+  static CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
+  match CLIENT.get_or_init(|| {
     Client::builder()
       .no_proxy()
       .build()
       .map_err(|err| err.to_string())
-  })
+  }) {
+    Ok(client) => Ok(client),
+    Err(err) => Err(err.clone()),
+  }
 }
 
 fn main() {
