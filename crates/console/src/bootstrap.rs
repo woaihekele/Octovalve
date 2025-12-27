@@ -227,11 +227,11 @@ async fn select_local_bin(
 ) -> anyhow::Result<PathBuf> {
     let (os, arch) = detect_remote_platform(target).await?;
     if os == "linux" && (arch == "x86_64" || arch == "amd64") {
-        if let Some(path) = bootstrap.local_bin_linux_x86_64.as_ref() {
-            Ok(path.clone())
-        } else {
-            anyhow::bail!("missing linux x86_64 broker bin; use --broker-bin-linux-x86_64")
-        }
+        Ok(bootstrap
+            .local_bin_linux_x86_64
+            .as_ref()
+            .unwrap_or(&bootstrap.local_bin)
+            .clone())
     } else {
         Err(UnsupportedRemotePlatform { os, arch }.into())
     }
