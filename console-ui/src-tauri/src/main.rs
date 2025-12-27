@@ -5,7 +5,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::StreamExt;
@@ -36,6 +36,16 @@ struct ProxyConfigStatus {
 const CONSOLE_HTTP_BASE: &str = "http://127.0.0.1:19309";
 const CONSOLE_WS_URL: &str = "ws://127.0.0.1:19309/ws";
 const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
+
+fn console_client() -> Result<&'static Client, String> {
+  static CLIENT: OnceLock<Client> = OnceLock::new();
+  CLIENT.get_or_try_init(|| {
+    Client::builder()
+      .no_proxy()
+      .build()
+      .map_err(|err| err.to_string())
+  })
+}
 
 fn main() {
   tauri::Builder::default()
@@ -285,7 +295,7 @@ fn console_http_url(path: &str) -> String {
 
 async fn console_get(path: &str) -> Result<Value, String> {
   let url = console_http_url(path);
-  let response = Client::new()
+  let response = console_client()?
     .get(url)
     .send()
     .await
@@ -298,7 +308,7 @@ async fn console_get(path: &str) -> Result<Value, String> {
 
 async fn console_post(path: &str, payload: Value) -> Result<(), String> {
   let url = console_http_url(path);
-  let response = Client::new()
+  let response = console_client()?
     .post(url)
     .json(&payload)
     .send()
