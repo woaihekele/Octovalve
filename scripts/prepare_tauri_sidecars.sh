@@ -35,7 +35,7 @@ prepare_linux_broker() {
   local target_triple="$1"
   local arch_label="$2"
   local env_var="$3"
-  local res_dir="${REPO_ROOT}/console-ui/src-tauri/resources/remote-broker/${arch_label}"
+  local res_dir="${REPO_ROOT}/console-ui/src-tauri/remote-broker/${arch_label}"
   local res_path="${res_dir}/remote-broker"
 
   if [[ -n "${!env_var:-}" ]]; then

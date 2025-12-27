@@ -29,7 +29,7 @@
       "active": false,
       "identifier": "com.octovalve.console",
       "resources": [
-        "resources/remote-broker/**"
+        "remote-broker/**"
       ],
       "externalBin": [
         "../../target/release/console",
