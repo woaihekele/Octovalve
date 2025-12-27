@@ -27,7 +27,11 @@
     ],
     "bundle": {
       "active": false,
-      "identifier": "com.octovalve.console"
+      "identifier": "com.octovalve.console",
+      "icon": [
+        "icons/icon.icns",
+        "icons/icon.png"
+      ]
     }
   }
 }
