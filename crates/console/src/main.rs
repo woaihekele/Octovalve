@@ -287,11 +287,13 @@ async fn ensure_tunnel_daemon(
     config: &FsPath,
 ) -> anyhow::Result<()> {
     if client.list_forwards().await.is_ok() {
+        let _ = client.heartbeat().await;
         return Ok(());
     }
     spawn_tunnel_daemon(addr, config)?;
     for _ in 0..TUNNEL_DAEMON_BOOT_RETRIES {
         if client.list_forwards().await.is_ok() {
+            let _ = client.heartbeat().await;
             return Ok(());
         }
         sleep(TUNNEL_DAEMON_BOOT_DELAY).await;
