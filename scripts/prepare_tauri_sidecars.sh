@@ -32,7 +32,7 @@ for bin in console tunnel-daemon; do
 done
 
 rm -f "${BIN_DIR}/remote-broker${EXT}" "${BIN_DIR}/remote-broker-${SUFFIX}${EXT}"
-rm -f "${REPO_ROOT}/console-ui/src-tauri/target/release/remote-broker"
+rm -rf "${REPO_ROOT}/console-ui/src-tauri/target/release/remote-broker"
 
 prepare_linux_broker() {
   local target_triple="$1"
