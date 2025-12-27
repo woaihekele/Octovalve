@@ -17,11 +17,15 @@ use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, ControlCommand, TargetInfo};
 use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
+use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use axum::extract::State;
+use axum::http::Request;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::response::Response;
+use axum::middleware::{self, Next};
 use axum::routing::get;
 use axum::routing::post;
 use axum::{Json, Router};
@@ -89,7 +93,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
         .route("/ws", get(ws_handler))
-        .with_state(app_state);
+        .with_state(app_state)
+        .layer(middleware::from_fn(log_http_request));
 
     let tunnel_client = TunnelClient::new(args.tunnel_daemon_addr.clone(), args.tunnel_client_id);
     if needs_tunnel_daemon {
@@ -130,6 +135,27 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn log_http_request(req: Request<Body>, next: Next) -> Response {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("-")
+        .to_string();
+    let response = next.run(req).await;
+    let status = response.status();
+    tracing::info!(
+        method = %method,
+        uri = %uri,
+        host = %host,
+        status = %status,
+        "http request"
+    );
+    response
 }
 
 async fn list_targets(State(state): State<AppState>) -> Json<Vec<TargetInfo>> {
