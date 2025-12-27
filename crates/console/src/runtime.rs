@@ -14,8 +14,8 @@ use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
-use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 use tracing::{info, warn};
+use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -44,7 +44,16 @@ pub(crate) async fn spawn_target_workers(
         let event_tx = event_tx.clone();
         let tunnel_client = tunnel_client.clone();
         let handle = tokio::spawn(async move {
-            run_target_worker(spec, state, rx, bootstrap, shutdown, event_tx, tunnel_client).await;
+            run_target_worker(
+                spec,
+                state,
+                rx,
+                bootstrap,
+                shutdown,
+                event_tx,
+                tunnel_client,
+            )
+            .await;
         });
         handles.push(handle);
     }

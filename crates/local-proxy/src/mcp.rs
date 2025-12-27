@@ -220,17 +220,12 @@ impl ServerHandler for ProxyHandler {
                     let forward = {
                         let state = self.state.read().await;
                         state.forward_spec(&args.target).map_err(|err| {
-                            CallToolError::invalid_arguments(
-                                "run_command",
-                                Some(err.to_string()),
-                            )
+                            CallToolError::invalid_arguments("run_command", Some(err.to_string()))
                         })?
                     };
                     if let Some(forward) = forward {
-                        let local_addr = tunnel_client
-                            .ensure_forward(forward)
-                            .await
-                            .map_err(|err| {
+                        let local_addr =
+                            tunnel_client.ensure_forward(forward).await.map_err(|err| {
                                 CallToolError::invalid_arguments(
                                     "run_command",
                                     Some(err.to_string()),
@@ -244,10 +239,7 @@ impl ServerHandler for ProxyHandler {
                     } else {
                         let mut state = self.state.write().await;
                         state.ensure_tunnel(&args.target).map_err(|err| {
-                            CallToolError::invalid_arguments(
-                                "run_command",
-                                Some(err.to_string()),
-                            )
+                            CallToolError::invalid_arguments("run_command", Some(err.to_string()))
                         })?
                     }
                 } else {

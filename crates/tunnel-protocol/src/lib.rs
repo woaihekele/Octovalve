@@ -27,9 +27,17 @@ impl ForwardSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TunnelRequest {
-    EnsureForward { client_id: String, forward: ForwardSpec },
-    ReleaseForward { client_id: String, forward: ForwardSpec },
-    Heartbeat { client_id: String },
+    EnsureForward {
+        client_id: String,
+        forward: ForwardSpec,
+    },
+    ReleaseForward {
+        client_id: String,
+        forward: ForwardSpec,
+    },
+    Heartbeat {
+        client_id: String,
+    },
     ListForwards,
 }
 

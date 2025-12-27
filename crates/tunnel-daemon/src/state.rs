@@ -62,7 +62,10 @@ impl DaemonState {
 
             let control_path = control_path_for(&control_dir, &resolved.name);
             let mut allowed_forwards = HashSet::new();
-            for forward in [resolved.data_forward.clone(), resolved.control_forward.clone()] {
+            for forward in [
+                resolved.data_forward.clone(),
+                resolved.control_forward.clone(),
+            ] {
                 let local_addr = forward.local_addr();
                 if local_addr_used.contains(&local_addr) {
                     anyhow::bail!("duplicate local addr: {local_addr}");
@@ -135,11 +138,7 @@ impl DaemonState {
         let now = SystemTime::now();
         let mut expired = HashSet::new();
         for (client, last_seen) in &self.clients_last_seen {
-            if now
-                .duration_since(*last_seen)
-                .unwrap_or(Duration::ZERO)
-                > ttl
-            {
+            if now.duration_since(*last_seen).unwrap_or(Duration::ZERO) > ttl {
                 expired.insert(client.clone());
             }
         }
