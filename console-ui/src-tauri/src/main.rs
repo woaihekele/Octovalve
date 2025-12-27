@@ -5,6 +5,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
@@ -36,6 +37,7 @@ struct ProxyConfigStatus {
 const CONSOLE_HTTP_BASE: &str = "http://127.0.0.1:19309";
 const CONSOLE_WS_URL: &str = "ws://127.0.0.1:19309/ws";
 const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
+static HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 fn console_client() -> Result<&'static Client, String> {
   static CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
@@ -298,21 +300,58 @@ fn console_http_url(path: &str) -> String {
 
 async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
   let url = console_http_url(path);
+  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+  let _ = append_log_line(
+    log_path,
+    &format!("console http GET#{request_id} start {url}"),
+  );
   let response = console_client()?
     .get(&url)
     .send()
     .await
     .map_err(|err| {
-      let _ = append_log_line(log_path, &format!("console http GET failed: {err}"));
+      let _ = append_log_line(
+        log_path,
+        &format!("console http GET#{request_id} failed: {err}"),
+      );
       err.to_string()
     })?;
   let status = response.status();
-  let body = response.text().await.map_err(|err| err.to_string())?;
+  let content_type = response
+    .headers()
+    .get("content-type")
+    .and_then(|value| value.to_str().ok())
+    .unwrap_or("unknown")
+    .to_string();
+  let body = response.text().await.map_err(|err| {
+    let _ = append_log_line(
+      log_path,
+      &format!("console http GET#{request_id} body read failed: {err}"),
+    );
+    err.to_string()
+  })?;
   let _ = append_log_line(
     log_path,
-    &format!("console http GET {url} status={}", status.as_u16()),
+    &format!(
+      "console http GET#{request_id} status={} content-type={}",
+      status.as_u16(),
+      content_type
+    ),
   );
-  let _ = append_log_line(log_path, &format!("console http GET body: {body}"));
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http GET#{request_id} body_len={}",
+      body.len()
+    ),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http GET#{request_id} body: {}",
+      escape_log_body(&body)
+    ),
+  );
   if !status.is_success() {
     return Err(format!(
       "console http GET status {} for {}",
@@ -328,26 +367,66 @@ async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
 
 async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(), String> {
   let url = console_http_url(path);
+  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+  let _ = append_log_line(
+    log_path,
+    &format!("console http POST#{request_id} start {url}"),
+  );
   let response = console_client()?
     .post(&url)
     .json(&payload)
     .send()
     .await
     .map_err(|err| {
-      let _ = append_log_line(log_path, &format!("console http POST failed: {err}"));
+      let _ = append_log_line(
+        log_path,
+        &format!("console http POST#{request_id} failed: {err}"),
+      );
       err.to_string()
     })?;
   let status = response.status();
-  let body = response.text().await.map_err(|err| err.to_string())?;
+  let content_type = response
+    .headers()
+    .get("content-type")
+    .and_then(|value| value.to_str().ok())
+    .unwrap_or("unknown")
+    .to_string();
+  let body = response.text().await.map_err(|err| {
+    let _ = append_log_line(
+      log_path,
+      &format!("console http POST#{request_id} body read failed: {err}"),
+    );
+    err.to_string()
+  })?;
   let _ = append_log_line(
     log_path,
-    &format!("console http POST {url} status={}", status.as_u16()),
+    &format!(
+      "console http POST#{request_id} status={} content-type={}",
+      status.as_u16(),
+      content_type
+    ),
   );
   let _ = append_log_line(
     log_path,
-    &format!("console http POST payload: {}", payload.to_string()),
+    &format!(
+      "console http POST#{request_id} payload: {}",
+      payload.to_string()
+    ),
   );
-  let _ = append_log_line(log_path, &format!("console http POST body: {body}"));
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http POST#{request_id} body_len={}",
+      body.len()
+    ),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http POST#{request_id} body: {}",
+      escape_log_body(&body)
+    ),
+  );
   if !status.is_success() {
     return Err(format!(
       "console http POST status {} for {}",
@@ -397,6 +476,47 @@ fn emit_ws_status(app: &AppHandle, log_path: &Path, status: &str) {
   let _ = append_log_line(log_path, &format!("ws {status}"));
 }
 
+fn log_ws_event(log_path: &Path, payload: &Value) {
+  let Some(kind) = payload.get("type").and_then(|value| value.as_str()) else {
+    return;
+  };
+  match kind {
+    "targets_snapshot" => {
+      let count = payload
+        .get("targets")
+        .and_then(|value| value.as_array())
+        .map(|value| value.len())
+        .unwrap_or(0);
+      let _ = append_log_line(
+        log_path,
+        &format!("ws event targets_snapshot count={count}"),
+      );
+    }
+    "target_updated" => {
+      let name = payload
+        .get("target")
+        .and_then(|value| value.get("name"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+      let status = payload
+        .get("target")
+        .and_then(|value| value.get("status"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+      let pending = payload
+        .get("target")
+        .and_then(|value| value.get("pending_count"))
+        .and_then(|value| value.as_i64())
+        .unwrap_or(-1);
+      let _ = append_log_line(
+        log_path,
+        &format!("ws event target_updated name={name} status={status} pending={pending}"),
+      );
+    }
+    _ => {}
+  }
+}
+
 #[tauri::command]
 async fn start_console_stream(
   app: AppHandle,
@@ -421,6 +541,7 @@ async fn start_console_stream(
             match message {
               Ok(Message::Text(text)) => match serde_json::from_str::<Value>(&text) {
                 Ok(payload) => {
+                  log_ws_event(&log_path, &payload);
                   let _ = app_handle.emit_all("console_event", payload);
                 }
                 Err(err) => {
@@ -464,4 +585,11 @@ fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
   let ts = humantime::format_rfc3339(SystemTime::now()).to_string();
   writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
   Ok(())
+}
+
+fn escape_log_body(body: &str) -> String {
+  if body.is_empty() {
+    return "<empty>".to_string();
+  }
+  body.replace('\n', "\\n").replace('\r', "\\r")
 }
