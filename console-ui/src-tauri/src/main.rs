@@ -106,12 +106,16 @@ fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
   fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
   let console_log = logs_dir.join("console.log");
 
-  let broker_bin = sidecar_path("remote-broker")?;
   let broker_bin_linux_x86_64 = resolve_linux_broker(
     app,
     "remote-broker-linux-x86_64",
     "remote-broker/linux-x86_64/remote-broker",
   );
+  let broker_bin = if let Some(path) = broker_bin_linux_x86_64.clone() {
+    path
+  } else {
+    sidecar_path("remote-broker")?
+  };
   let tunnel_bin = sidecar_path("tunnel-daemon")?;
   let mut envs = HashMap::new();
   envs.insert(

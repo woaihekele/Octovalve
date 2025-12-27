@@ -12,7 +12,7 @@ fi
 
 cd "${REPO_ROOT}"
 cargo build --release --manifest-path "${REPO_ROOT}/Cargo.toml" \
-  -p console -p tunnel-daemon -p remote-broker
+  -p console -p tunnel-daemon
 
 BIN_DIR="${REPO_ROOT}/target/release"
 SUFFIX="-${TARGET_TRIPLE}"
@@ -21,7 +21,7 @@ if [[ "${TARGET_TRIPLE}" == *windows* ]]; then
   EXT=".exe"
 fi
 
-for bin in console tunnel-daemon remote-broker; do
+for bin in console tunnel-daemon; do
   src="${BIN_DIR}/${bin}${EXT}"
   dst="${BIN_DIR}/${bin}${SUFFIX}${EXT}"
   if [[ ! -f "${src}" ]]; then
@@ -30,6 +30,9 @@ for bin in console tunnel-daemon remote-broker; do
   fi
   install -m 0755 "${src}" "${dst}"
 done
+
+rm -f "${BIN_DIR}/remote-broker${EXT}" "${BIN_DIR}/remote-broker-${SUFFIX}${EXT}"
+rm -f "${REPO_ROOT}/console-ui/src-tauri/target/release/remote-broker"
 
 prepare_linux_broker() {
   local target_triple="$1"

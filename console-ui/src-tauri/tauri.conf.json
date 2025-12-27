@@ -29,12 +29,11 @@
       "active": false,
       "identifier": "com.octovalve.console",
       "resources": [
-        "remote-broker/**"
+        "remote-broker/linux-x86_64"
       ],
       "externalBin": [
         "../../target/release/console",
-        "../../target/release/tunnel-daemon",
-        "../../target/release/remote-broker"
+        "../../target/release/tunnel-daemon"
       ],
       "icon": [
         "icons/icon.icns",
