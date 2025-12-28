@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { AppSettings } from '../types';
@@ -47,6 +47,11 @@ function save() {
 }
 
 function captureShortcut(field: ShortcutField, event: KeyboardEvent) {
+  if (event.code === 'Escape') {
+    activeShortcut.value = null;
+    emit('close');
+    return;
+  }
   const shortcut = eventToShortcut(event);
   if (!shortcut) {
     return;
@@ -103,6 +108,24 @@ function deactivateShortcut(field: ShortcutField) {
     activeShortcut.value = null;
   }
 }
+
+function handleEscape(event: KeyboardEvent) {
+  if (!hasOpen.value) {
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    emit('close');
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEscape);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleEscape);
+});
 </script>
 
 <template>
