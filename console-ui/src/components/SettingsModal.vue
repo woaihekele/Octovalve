@@ -111,7 +111,17 @@ function deactivateShortcut(field: ShortcutField) {
     <div class="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-6">
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-lg font-semibold">设置</h2>
-        <button class="text-slate-400 hover:text-slate-200" @click="emit('close')">关闭</button>
+        <button
+          class="text-slate-400 hover:text-slate-200 p-1 rounded hover:bg-slate-800 transition-colors"
+          @click="emit('close')"
+          aria-label="关闭"
+          title="关闭"
+        >
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       </div>
 
       <div class="space-y-4">
