@@ -24,8 +24,6 @@ pub(crate) async fn spawn_master(target: &SshTarget, control_path: &Path) -> any
         .arg("-o")
         .arg(format!("ControlPath={}", control_path.display()))
         .arg("-o")
-        .arg("ControlPersist=yes")
-        .arg("-o")
         .arg("StrictHostKeyChecking=accept-new")
         .arg("-o")
         .arg(format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT_SECS))
