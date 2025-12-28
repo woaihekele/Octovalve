@@ -161,17 +161,18 @@ impl TargetState {
         client_id: &str,
         forward: &ForwardSpec,
     ) -> anyhow::Result<bool> {
-        let Some(active) = self.active_forwards.get_mut(forward) else {
-            return Ok(false);
+        let removed = if let Some(active) = self.active_forwards.get_mut(forward) {
+            let removed = active.clients.remove(client_id);
+            if active.clients.is_empty() {
+                let _ = forward_cancel(&self.ssh, &self.control_path, forward).await;
+                self.active_forwards.remove(forward);
+            }
+            removed
+        } else {
+            false
         };
-        let removed = active.clients.remove(client_id);
-        if active.clients.is_empty() {
-            let _ = forward_cancel(&self.ssh, &self.control_path, forward).await;
-            self.active_forwards.remove(forward);
-        }
         if self.active_forwards.is_empty() {
-            let _ = exit_master(&self.ssh, &self.control_path).await;
-            self.master = None;
+            self.shutdown_master().await;
         }
         Ok(removed)
     }
@@ -182,8 +183,7 @@ impl TargetState {
             let _ = forward_cancel(&self.ssh, &self.control_path, &forward).await;
             self.active_forwards.remove(&forward);
         }
-        let _ = exit_master(&self.ssh, &self.control_path).await;
-        self.master = None;
+        self.shutdown_master().await;
     }
 
     async fn ensure_master(&mut self) -> anyhow::Result<()> {
@@ -211,6 +211,19 @@ impl TargetState {
         }
         self.master = Some(SshMaster { child });
         Ok(())
+    }
+
+    async fn shutdown_master(&mut self) {
+        let _ = exit_master(&self.ssh, &self.control_path).await;
+        if let Some(mut master) = self.master.take() {
+            match master.child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) | Err(_) => {
+                    let _ = master.child.kill().await;
+                    let _ = master.child.wait().await;
+                }
+            }
+        }
     }
 }
 
