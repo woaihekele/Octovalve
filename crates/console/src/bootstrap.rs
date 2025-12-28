@@ -5,8 +5,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Instant;
-use tokio::process::Command;
 use tokio::io::AsyncReadExt;
+use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 
@@ -92,17 +92,16 @@ pub(crate) async fn bootstrap_remote_broker(
     );
     run_bootstrap_step(target, "mkdir_remote_dirs", || run_ssh(target, &mkdir_cmd)).await?;
 
-    let skip_bin_upload = match run_bootstrap_step(target, "remote_md5", || {
-        remote_md5_hex(target, &remote_bin)
-    })
-    .await?
-    {
-        Some(remote_md5) if remote_md5 == local_md5_hex(&local_bin)? => {
-            info!(target = %target.name, "remote broker binary up to date, skipping upload");
-            true
-        }
-        _ => false,
-    };
+    let skip_bin_upload =
+        match run_bootstrap_step(target, "remote_md5", || remote_md5_hex(target, &remote_bin))
+            .await?
+        {
+            Some(remote_md5) if remote_md5 == local_md5_hex(&local_bin)? => {
+                info!(target = %target.name, "remote broker binary up to date, skipping upload");
+                true
+            }
+            _ => false,
+        };
     if !skip_bin_upload {
         run_bootstrap_step(target, "upload_bin_scp", || {
             run_scp(target, &local_bin, &remote_bin_tmp)
@@ -124,7 +123,10 @@ pub(crate) async fn bootstrap_remote_broker(
         shell_escape(&remote_config_tmp),
         shell_escape(&remote_config)
     );
-    run_bootstrap_step(target, "upload_config_mv", || run_ssh(target, &config_move_cmd)).await?;
+    run_bootstrap_step(target, "upload_config_mv", || {
+        run_ssh(target, &config_move_cmd)
+    })
+    .await?;
 
     let chmod_cmd = format!("chmod +x {}", shell_escape(&remote_bin));
     run_bootstrap_step(target, "chmod_remote_bin", || run_ssh(target, &chmod_cmd)).await?;
@@ -144,7 +146,7 @@ pub(crate) async fn bootstrap_remote_broker(
     .await?;
     if check_output.trim() != "running" {
         let start_cmd = format!(
-            "setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} </dev/null > {} 2>&1 &",
+            "setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} --log-to-stderr </dev/null > {} 2>&1 &",
             shell_escape(&remote_bin),
             shell_escape(&bootstrap.remote_listen_addr),
             shell_escape(&bootstrap.remote_control_addr),
@@ -152,7 +154,10 @@ pub(crate) async fn bootstrap_remote_broker(
             shell_escape(&remote_audit_dir),
             shell_escape(&remote_log),
         );
-        run_bootstrap_step(target, "start_remote_broker", || run_ssh(target, &start_cmd)).await?;
+        run_bootstrap_step(target, "start_remote_broker", || {
+            run_ssh(target, &start_cmd)
+        })
+        .await?;
     } else {
         info!(
             event = "bootstrap.skip_start",
@@ -291,8 +296,8 @@ async fn run_ssh_capture(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Re
 }
 
 fn local_md5_hex(path: &Path) -> anyhow::Result<String> {
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("failed to open {}", path.display()))?;
+    let mut file =
+        std::fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let mut context = md5::Context::new();
     let mut buffer = [0u8; 8192];
     loop {
@@ -469,8 +474,8 @@ fn regex_escape(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for ch in value.chars() {
         match ch {
-            '.' | '+' | '*' | '?' | '(' | ')' | '|' | '{' | '}' | '[' | ']' | '^' | '$'
-            | '\\' | '-' => {
+            '.' | '+' | '*' | '?' | '(' | ')' | '|' | '{' | '}' | '[' | ']' | '^' | '$' | '\\'
+            | '-' => {
                 escaped.push('\\');
                 escaped.push(ch);
             }
