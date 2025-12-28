@@ -1,6 +1,7 @@
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout, Duration};
 use tunnel_protocol::ForwardSpec;
@@ -160,19 +161,30 @@ async fn run_ssh_command(cmd: &mut Command, label: &str) -> anyhow::Result<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|err| anyhow::anyhow!(err))?;
-    let output = match timeout(SSH_COMMAND_TIMEOUT, child.wait_with_output()).await {
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let status = match timeout(SSH_COMMAND_TIMEOUT, child.wait()).await {
         Ok(result) => result.with_context(|| format!("{label} failed"))?,
         Err(_) => {
             let _ = child.kill().await;
+            let _ = child.wait().await;
             return Err(anyhow::anyhow!(
                 "{label} timed out after {}s",
                 SSH_COMMAND_TIMEOUT.as_secs()
             ));
         }
     };
-    if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut stdout = Vec::new();
+    if let Some(mut pipe) = stdout_pipe.take() {
+        let _ = pipe.read_to_end(&mut stdout).await;
+    }
+    let mut stderr = Vec::new();
+    if let Some(mut pipe) = stderr_pipe.take() {
+        let _ = pipe.read_to_end(&mut stderr).await;
+    }
+    if !status.success() {
+        let stdout = String::from_utf8_lossy(&stdout);
+        let stderr = String::from_utf8_lossy(&stderr);
         anyhow::bail!("{label} failed: {}{}", stdout, stderr);
     }
     Ok(())
