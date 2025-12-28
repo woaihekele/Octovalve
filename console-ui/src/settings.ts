@@ -26,7 +26,7 @@ export function loadSettings(): AppSettings {
       return DEFAULT_SETTINGS;
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    const parsedShortcuts = parsed.shortcuts ?? {};
+    const parsedShortcuts: Partial<AppSettings['shortcuts']> = parsed.shortcuts ?? {};
     const normalizeWithFallback = (value: unknown, fallback: string) => {
       if (value === '') {
         return '';
