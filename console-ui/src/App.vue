@@ -39,18 +39,6 @@ const selectedSnapshot = computed(() => {
   return snapshots.value[selectedTargetName.value] ?? null;
 });
 
-const connectionLabel = computed(() => {
-  if (connectionState.value === 'connected') return '已连接';
-  if (connectionState.value === 'connecting') return '连接中';
-  return '连接中断';
-});
-
-const connectionBadgeClass = computed(() => {
-  if (connectionState.value === 'connected') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-  if (connectionState.value === 'connecting') return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-  return 'bg-rose-500/20 text-rose-300 border-rose-500/30';
-});
-
 function showNotification(message: string, count?: number) {
   notification.value = { message, count };
   window.setTimeout(() => {
@@ -244,7 +232,12 @@ watch(
 
     <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
       <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
-        <span class="text-xs px-2 py-1 rounded border" :class="connectionBadgeClass">{{ connectionLabel }}</span>
+        <span
+          v-if="connectionState === 'disconnected'"
+          class="text-xs px-2 py-1 rounded border bg-rose-500/20 text-rose-300 border-rose-500/30"
+        >
+          console 异常，请重启
+        </span>
         <button
           class="p-2 text-slate-400 hover:text-white bg-slate-900/60 hover:bg-slate-800 rounded-full transition-colors border border-slate-800"
           @click="isSettingsOpen = true"
