@@ -129,21 +129,33 @@ pub(crate) async fn bootstrap_remote_broker(
     let chmod_cmd = format!("chmod +x {}", shell_escape(&remote_bin));
     run_bootstrap_step(target, "chmod_remote_bin", || run_ssh(target, &chmod_cmd)).await?;
 
-    let pgrep_pattern = shell_escape(&format!(
-        "[r]emote-broker.*--control-addr {}",
-        bootstrap.remote_control_addr
-    ));
-    let start_cmd = format!(
-        "pgrep -f {} >/dev/null 2>&1 || setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} </dev/null > {} 2>&1 &",
-        pgrep_pattern,
-        shell_escape(&remote_bin),
-        shell_escape(&bootstrap.remote_listen_addr),
-        shell_escape(&bootstrap.remote_control_addr),
-        shell_escape(&remote_config),
-        shell_escape(&remote_audit_dir),
-        shell_escape(&remote_log),
+    let pgrep_pattern = format!(
+        "^{}.*--control-addr {}",
+        regex_escape(&remote_bin),
+        regex_escape(&bootstrap.remote_control_addr)
     );
-    run_bootstrap_step(target, "start_remote_broker", || run_ssh(target, &start_cmd)).await?;
+    let check_cmd = format!(
+        "pgrep -f {} >/dev/null 2>&1 && echo running || true",
+        shell_escape(&pgrep_pattern)
+    );
+    let check_output = run_bootstrap_step(target, "check_remote_broker", || {
+        run_ssh_capture(target, &check_cmd)
+    })
+    .await?;
+    if check_output.trim() != "running" {
+        let start_cmd = format!(
+            "setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} </dev/null > {} 2>&1 &",
+            shell_escape(&remote_bin),
+            shell_escape(&bootstrap.remote_listen_addr),
+            shell_escape(&bootstrap.remote_control_addr),
+            shell_escape(&remote_config),
+            shell_escape(&remote_audit_dir),
+            shell_escape(&remote_log),
+        );
+        run_bootstrap_step(target, "start_remote_broker", || run_ssh(target, &start_cmd)).await?;
+    } else {
+        info!(target = %target.name, "remote broker already running");
+    }
     info!(target = %target.name, "remote broker ready");
 
     Ok(())
@@ -440,4 +452,19 @@ fn join_remote(dir: &str, name: &str) -> String {
 fn shell_escape(value: &str) -> String {
     let escaped = value.replace('\'', "'\\''");
     format!("'{}'", escaped)
+}
+
+fn regex_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '.' | '+' | '*' | '?' | '(' | ')' | '|' | '{' | '}' | '[' | ']' | '^' | '$'
+            | '\\' | '-' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
