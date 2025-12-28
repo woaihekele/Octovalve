@@ -1,22 +1,44 @@
 <script setup lang="ts">
 import type { TargetInfo } from '../types';
 
+type ConnectionState = 'connected' | 'connecting' | 'disconnected';
+
 const props = defineProps<{
   targets: TargetInfo[];
   selectedTargetName: string | null;
   pendingTotal: number;
+  connectionState: ConnectionState;
 }>();
 
 const emit = defineEmits<{
   (e: 'select', name: string): void;
 }>();
 
-function statusLabel(status: TargetInfo['status']) {
-  return status === 'ready' ? 'ready' : 'down';
+function resolveStatus(target: TargetInfo) {
+  if (target.status === 'ready') {
+    return 'ready';
+  }
+  if (props.connectionState === 'connecting') {
+    return 'connecting';
+  }
+  if (!target.last_seen && !target.last_error) {
+    return 'connecting';
+  }
+  return 'down';
 }
 
-function statusClass(status: TargetInfo['status']) {
-  return status === 'ready' ? 'bg-emerald-400' : 'bg-rose-400';
+function statusLabel(target: TargetInfo) {
+  const status = resolveStatus(target);
+  if (status === 'ready') return 'ready';
+  if (status === 'connecting') return '连接中';
+  return 'down';
+}
+
+function statusClass(target: TargetInfo) {
+  const status = resolveStatus(target);
+  if (status === 'ready') return 'bg-emerald-400';
+  if (status === 'connecting') return 'bg-amber-400';
+  return 'bg-rose-400';
 }
 </script>
 
@@ -48,8 +70,8 @@ function statusClass(status: TargetInfo['status']) {
           </div>
           <div class="flex items-center gap-2 mt-1 text-xs text-slate-500">
             <span class="inline-flex items-center gap-1">
-              <span class="h-2 w-2 rounded-full" :class="statusClass(target.status)"></span>
-              <span class="capitalize">{{ statusLabel(target.status) }}</span>
+              <span class="h-2 w-2 rounded-full" :class="statusClass(target)"></span>
+              <span class="capitalize">{{ statusLabel(target) }}</span>
             </span>
           </div>
         </div>

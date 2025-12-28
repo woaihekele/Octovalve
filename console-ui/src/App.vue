@@ -238,6 +238,7 @@ watch(
       :targets="targets"
       :selected-target-name="selectedTargetName"
       :pending-total="pendingTotal"
+      :connection-state="connectionState"
       @select="selectedTargetName = $event"
     />
 
