@@ -44,6 +44,7 @@ fn console_client() -> Result<&'static Client, String> {
   match CLIENT.get_or_init(|| {
     Client::builder()
       .no_proxy()
+      .http1_only()
       .build()
       .map_err(|err| err.to_string())
   }) {
@@ -317,6 +318,7 @@ async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
       err.to_string()
     })?;
   let status = response.status();
+  let version = format!("{:?}", response.version());
   let content_type = response
     .headers()
     .get("content-type")
@@ -333,8 +335,9 @@ async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
   let _ = append_log_line(
     log_path,
     &format!(
-      "console http GET#{request_id} status={} content-type={}",
+      "console http GET#{request_id} status={} version={} content-type={}",
       status.as_u16(),
+      version,
       content_type
     ),
   );
@@ -385,6 +388,7 @@ async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(),
       err.to_string()
     })?;
   let status = response.status();
+  let version = format!("{:?}", response.version());
   let content_type = response
     .headers()
     .get("content-type")
@@ -401,8 +405,9 @@ async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(),
   let _ = append_log_line(
     log_path,
     &format!(
-      "console http POST#{request_id} status={} content-type={}",
+      "console http POST#{request_id} status={} version={} content-type={}",
       status.as_u16(),
+      version,
       content_type
     ),
   );
