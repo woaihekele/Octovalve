@@ -1719,23 +1719,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tunnel-daemon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "futures-util",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "tracing-subscriber",
- "tunnel-protocol",
-]
-
-[[package]]
 name = "tunnel-manager"
 version = "0.1.0"
 dependencies = [
