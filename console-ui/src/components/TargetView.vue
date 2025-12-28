@@ -146,8 +146,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
       </div>
     </div>
 
-    <div class="flex-1 flex overflow-hidden">
-      <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-slate-800 flex flex-col bg-slate-900/20">
+    <div class="flex-1 flex overflow-hidden min-h-0">
+      <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-slate-800 flex flex-col bg-slate-900/20 min-h-0">
         <div class="flex border-b border-slate-800">
           <button
             class="flex-1 py-3 text-sm font-medium transition-colors"
@@ -165,7 +165,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto">
+        <div class="flex-1 overflow-y-auto min-h-0">
           <div v-if="currentList.length === 0" class="p-8 text-center text-slate-600 text-sm">
             暂无 {{ activeTab === 'pending' ? 'Pending' : 'History' }} 记录。
           </div>
