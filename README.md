@@ -220,8 +220,9 @@ npm run tauri:build:dmg
   - macOS 默认路径：`~/Library/Application Support/com.octovalve.console/`
 
 ## 密码登录说明
-如果必须使用密码登录，请在目标中配置 `ssh_password`。
+优先使用 SSH key。必须使用密码时，请在目标中配置 `ssh_password`。
 console/octovalve-proxy 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh-askpass.sh`）注入密码，无需安装 sshpass。
+如果服务器要求 keyboard-interactive/2FA，SSH_ASKPASS 无法完成交互认证，请改用 SSH key 或调整认证方式。
 
 ## CLI 选项
 remote-broker：
