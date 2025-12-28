@@ -4,11 +4,12 @@ use std::process::{Output, Stdio};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout, Duration};
-use tunnel_protocol::ForwardSpec;
 use tracing::info;
+use tunnel_protocol::ForwardSpec;
 
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
+const ASKPASS_SCRIPT: &str = "#!/bin/sh\nprintf '%s' \"$OCTOVALVE_SSH_PASS\"\n";
 
 pub(crate) struct SshTarget {
     pub(crate) ssh: String,
@@ -161,7 +162,10 @@ fn build_ssh_base(target: &SshTarget, allow_password: bool) -> anyhow::Result<Co
 
 fn configure_askpass(cmd: &mut Command, password: &str) -> anyhow::Result<()> {
     let script = ensure_askpass_script()?;
-    info!(event = "ssh.auth.askpass", "using SSH_ASKPASS for password auth");
+    info!(
+        event = "ssh.auth.askpass",
+        "using SSH_ASKPASS for password auth"
+    );
     cmd.env("OCTOVALVE_SSH_PASS", password);
     cmd.env("SSH_ASKPASS", script);
     cmd.env("SSH_ASKPASS_REQUIRE", "force");
@@ -174,16 +178,22 @@ fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
     let dir = PathBuf::from(home).join(".octovalve");
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let path = dir.join("ssh-askpass.sh");
-    if !path.exists() {
-        std::fs::write(&path, "#!/bin/sh\nprintf '%s' \"$OCTOVALVE_SSH_PASS\"\n")
-            .with_context(|| format!("failed to write {}", path.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&path)?.permissions();
-            perms.set_mode(0o700);
-            std::fs::set_permissions(&path, perms)?;
+    let mut needs_write = true;
+    if let Ok(existing) = std::fs::read(&path) {
+        if existing == ASKPASS_SCRIPT.as_bytes() {
+            needs_write = false;
         }
+    }
+    if needs_write {
+        std::fs::write(&path, ASKPASS_SCRIPT)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)?.permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&path, perms)?;
     }
     Ok(path)
 }
