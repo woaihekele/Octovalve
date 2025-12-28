@@ -268,8 +268,39 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
               <button
                 class="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors"
                 @click="isFullScreen = !isFullScreen"
+                :aria-label="isFullScreen ? '退出全屏' : '全屏'"
+                :title="isFullScreen ? '退出全屏' : '全屏'"
               >
-                {{ isFullScreen ? '退出全屏' : '全屏' }}
+                <svg
+                  v-if="!isFullScreen"
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+                <svg
+                  v-else
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="21 15 21 21 15 21" />
+                  <polyline points="3 9 3 3 9 3" />
+                  <line x1="21" y1="21" x2="14" y2="14" />
+                  <line x1="3" y1="3" x2="10" y2="10" />
+                </svg>
               </button>
             </div>
             <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-slate-200 whitespace-pre-wrap bg-black/40">
