@@ -6,17 +6,17 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use futures_util::StreamExt;
-use reqwest::Client;
 use serde_json::{json, Value};
 use tauri::api::path::home_dir;
 use tauri::api::process::{Command, CommandChild, CommandEvent};
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 const DEFAULT_PROXY_EXAMPLE: &str = include_str!("../resources/local-proxy-config.toml.example");
@@ -36,25 +36,12 @@ struct ProxyConfigStatus {
   example_path: String,
 }
 
-const CONSOLE_HTTP_BASE: &str = "http://127.0.0.1:19309";
 const CONSOLE_HTTP_HOST: &str = "127.0.0.1:19309";
 const CONSOLE_WS_URL: &str = "ws://127.0.0.1:19309/ws";
 const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const HTTP_IO_TIMEOUT: Duration = Duration::from_secs(5);
 static HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
-
-fn console_client() -> Result<&'static Client, String> {
-  static CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
-  match CLIENT.get_or_init(|| {
-    Client::builder()
-      .no_proxy()
-      .http1_only()
-      .build()
-      .map_err(|err| err.to_string())
-  }) {
-    Ok(client) => Ok(client),
-    Err(err) => Err(err.clone()),
-  }
-}
 
 fn main() {
   tauri::Builder::default()
@@ -84,7 +71,7 @@ fn main() {
       let (proxy_status, proxy_path) = prepare_proxy_config(&app_log)?;
       app.manage(ProxyConfigState(proxy_status.clone()));
       if proxy_status.present {
-        if let Err(err) = start_console(&app.handle(), &proxy_path) {
+        if let Err(err) = start_console(&app.handle(), &proxy_path, &app_log) {
           eprintln!("failed to start console sidecar: {err}");
           let _ = append_log_line(&app_log, &format!("console start failed: {err}"));
         }
@@ -112,7 +99,7 @@ fn main() {
     });
 }
 
-fn start_console(app: &AppHandle, proxy_config: &Path) -> Result<(), String> {
+fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result<(), String> {
   let config_dir = app
     .path_resolver()
     .app_config_dir()
@@ -294,27 +281,18 @@ fn get_proxy_config_status(state: State<ProxyConfigState>) -> ProxyConfigStatus 
   state.0.clone()
 }
 
-fn console_http_url(path: &str) -> String {
-  if path.starts_with('/') {
-    format!("{CONSOLE_HTTP_BASE}{path}")
-  } else {
-    format!("{CONSOLE_HTTP_BASE}/{path}")
-  }
+struct HttpResponse {
+  status: u16,
+  headers: HashMap<String, String>,
+  body: String,
 }
 
 async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
-  let (status, body, _version, _content_type) = console_get_reqwest(path, log_path).await?;
-  if status == 400 && body.is_empty() {
-    let _ = append_log_line(
-      log_path,
-      &format!("console http GET retrying with raw tcp for {path}"),
-    );
-    return console_get_raw(path, log_path).await;
+  let response = console_http_request("GET", path, None, log_path).await?;
+  if response.status / 100 != 2 {
+    return Err(format!("console http GET status {} for {}", response.status, path));
   }
-  if status / 100 != 2 {
-    return Err(format!("console http GET status {} for {}", status, path));
-  }
-  serde_json::from_str(&body).map_err(|err| {
+  serde_json::from_str(&response.body).map_err(|err| {
     let _ = append_log_line(
       log_path,
       &format!("console http GET parse error: {err}"),
@@ -323,195 +301,164 @@ async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
   })
 }
 
-async fn console_get_reqwest(
-  path: &str,
-  log_path: &Path,
-) -> Result<(u16, String, String, String), String> {
-  let url = console_http_url(path);
-  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-  let _ = append_log_line(
-    log_path,
-    &format!("console http GET#{request_id} start {url}"),
-  );
-  let response = console_client()?
-    .get(&url)
-    .send()
-    .await
-    .map_err(|err| {
-      let _ = append_log_line(
-        log_path,
-        &format!("console http GET#{request_id} failed: {err}"),
-      );
-      err.to_string()
-    })?;
-  let status = response.status();
-  let version = format!("{:?}", response.version());
-  let content_type = response
-    .headers()
-    .get("content-type")
-    .and_then(|value| value.to_str().ok())
-    .unwrap_or("unknown")
-    .to_string();
-  let body = response.text().await.map_err(|err| {
-    let _ = append_log_line(
-      log_path,
-      &format!("console http GET#{request_id} body read failed: {err}"),
-    );
-    err.to_string()
-  })?;
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http GET#{request_id} status={} version={} content-type={}",
-      status.as_u16(),
-      version,
-      content_type
-    ),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http GET#{request_id} body_len={}",
-      body.len()
-    ),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http GET#{request_id} body: {}",
-      escape_log_body(&body)
-    ),
-  );
-  Ok((status.as_u16(), body, version, content_type))
-}
-
-async fn console_get_raw(path: &str, log_path: &Path) -> Result<Value, String> {
-  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-  let _ = append_log_line(
-    log_path,
-    &format!("console raw GET#{request_id} start path={path}"),
-  );
-  let mut stream = TcpStream::connect(CONSOLE_HTTP_HOST)
-    .await
-    .map_err(|err| err.to_string())?;
-  let request = format!(
-    "GET {path} HTTP/1.1\r\nHost: {CONSOLE_HTTP_HOST}\r\nConnection: close\r\n\r\n"
-  );
-  stream
-    .write_all(request.as_bytes())
-    .await
-    .map_err(|err| err.to_string())?;
-  let mut buffer = Vec::new();
-  stream
-    .read_to_end(&mut buffer)
-    .await
-    .map_err(|err| err.to_string())?;
-  let response = String::from_utf8_lossy(&buffer);
-  let (head, body) = response
-    .split_once("\r\n\r\n")
-    .ok_or_else(|| "raw http response missing header".to_string())?;
-  let status = head
-    .lines()
-    .next()
-    .and_then(|line| line.split_whitespace().nth(1))
-    .and_then(|code| code.parse::<u16>().ok())
-    .unwrap_or(0);
-  let _ = append_log_line(
-    log_path,
-    &format!("console raw GET#{request_id} status={status}"),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!("console raw GET#{request_id} body_len={}", body.len()),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console raw GET#{request_id} body: {}",
-      escape_log_body(body)
-    ),
-  );
-  if status / 100 != 2 {
-    return Err(format!("console raw GET status {} for {}", status, path));
-  }
-  serde_json::from_str(body).map_err(|err| {
-    let _ = append_log_line(log_path, &format!("console raw GET parse error: {err}"));
-    err.to_string()
-  })
-}
-
 async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(), String> {
-  let url = console_http_url(path);
-  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+  let payload = payload.to_string();
   let _ = append_log_line(
     log_path,
-    &format!("console http POST#{request_id} start {url}"),
+    &format!("console http POST payload: {}", payload),
   );
-  let response = console_client()?
-    .post(&url)
-    .json(&payload)
-    .send()
-    .await
-    .map_err(|err| {
-      let _ = append_log_line(
-        log_path,
-        &format!("console http POST#{request_id} failed: {err}"),
-      );
-      err.to_string()
-    })?;
-  let status = response.status();
-  let version = format!("{:?}", response.version());
-  let content_type = response
-    .headers()
-    .get("content-type")
-    .and_then(|value| value.to_str().ok())
-    .unwrap_or("unknown")
-    .to_string();
-  let body = response.text().await.map_err(|err| {
-    let _ = append_log_line(
-      log_path,
-      &format!("console http POST#{request_id} body read failed: {err}"),
-    );
-    err.to_string()
-  })?;
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http POST#{request_id} status={} version={} content-type={}",
-      status.as_u16(),
-      version,
-      content_type
-    ),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http POST#{request_id} payload: {}",
-      payload.to_string()
-    ),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http POST#{request_id} body_len={}",
-      body.len()
-    ),
-  );
-  let _ = append_log_line(
-    log_path,
-    &format!(
-      "console http POST#{request_id} body: {}",
-      escape_log_body(&body)
-    ),
-  );
-  if !status.is_success() {
+  let response =
+    console_http_request("POST", path, Some(&payload), log_path).await?;
+  if response.status / 100 != 2 {
     return Err(format!(
       "console http POST status {} for {}",
-      status.as_u16(),
+      response.status,
       path
     ));
   }
   Ok(())
+}
+
+async fn console_http_request(
+  method: &str,
+  path: &str,
+  body: Option<&str>,
+  log_path: &Path,
+) -> Result<HttpResponse, String> {
+  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+  let body_len = body.map(|value| value.len()).unwrap_or(0);
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http {method}#{request_id} start path={path} body_len={body_len}"
+    ),
+  );
+  let mut stream = timeout(HTTP_CONNECT_TIMEOUT, TcpStream::connect(CONSOLE_HTTP_HOST))
+    .await
+    .map_err(|_| "console http connect timed out".to_string())?
+    .map_err(|err| err.to_string())?;
+  let mut request = format!(
+    "{method} {path} HTTP/1.1\r\nHost: {CONSOLE_HTTP_HOST}\r\nAccept: application/json\r\nConnection: close\r\n"
+  );
+  if let Some(body) = body {
+    request.push_str("Content-Type: application/json\r\n");
+    request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    request.push_str("\r\n");
+    request.push_str(body);
+  } else {
+    request.push_str("\r\n");
+  }
+  timeout(HTTP_IO_TIMEOUT, stream.write_all(request.as_bytes()))
+    .await
+    .map_err(|_| "console http write timed out".to_string())?
+    .map_err(|err| err.to_string())?;
+  let mut buffer = Vec::new();
+  timeout(HTTP_IO_TIMEOUT, stream.read_to_end(&mut buffer))
+    .await
+    .map_err(|_| "console http read timed out".to_string())?
+    .map_err(|err| err.to_string())?;
+  let (status, headers, body) = parse_http_response(&buffer)?;
+  let content_type = headers
+    .get("content-type")
+    .cloned()
+    .unwrap_or_else(|| "unknown".to_string());
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http {method}#{request_id} status={} content-type={}",
+      status, content_type
+    ),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http {method}#{request_id} body_len={}",
+      body.len()
+    ),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console http {method}#{request_id} body: {}",
+      escape_log_body(&body)
+    ),
+  );
+  Ok(HttpResponse {
+    status,
+    headers,
+    body,
+  })
+}
+
+fn parse_http_response(
+  bytes: &[u8],
+) -> Result<(u16, HashMap<String, String>, String), String> {
+  let header_end = bytes
+    .windows(4)
+    .position(|window| window == b"\r\n\r\n")
+    .ok_or_else(|| "console http response missing header".to_string())?;
+  let head = String::from_utf8_lossy(&bytes[..header_end]);
+  let body_bytes = &bytes[(header_end + 4)..];
+  let mut lines = head.lines();
+  let status = lines
+    .next()
+    .and_then(|line| line.split_whitespace().nth(1))
+    .and_then(|code| code.parse::<u16>().ok())
+    .unwrap_or(0);
+  let mut headers = HashMap::new();
+  for line in lines {
+    if let Some((name, value)) = line.split_once(':') {
+      headers.insert(name.trim().to_lowercase(), value.trim().to_string());
+    }
+  }
+  let body = if headers
+    .get("transfer-encoding")
+    .map(|value| value.to_lowercase().contains("chunked"))
+    .unwrap_or(false)
+  {
+    decode_chunked_body(body_bytes)?
+  } else {
+    body_bytes.to_vec()
+  };
+  Ok((
+    status,
+    headers,
+    String::from_utf8_lossy(&body).to_string(),
+  ))
+}
+
+fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>, String> {
+  let mut output = Vec::new();
+  let mut index = 0usize;
+  while index < body.len() {
+    let line_end = find_crlf(body, index)
+      .ok_or_else(|| "console http chunked response missing size line".to_string())?;
+    let line = String::from_utf8_lossy(&body[index..line_end]);
+    let size_str = line.split(';').next().unwrap_or("").trim();
+    let size = usize::from_str_radix(size_str, 16)
+      .map_err(|_| "console http chunked size parse failed".to_string())?;
+    index = line_end + 2;
+    if size == 0 {
+      break;
+    }
+    if index + size > body.len() {
+      return Err("console http chunked body truncated".to_string());
+    }
+    output.extend_from_slice(&body[index..index + size]);
+    index += size;
+    if index + 2 > body.len() || &body[index..index + 2] != b"\r\n" {
+      return Err("console http chunked body missing terminator".to_string());
+    }
+    index += 2;
+  }
+  Ok(output)
+}
+
+fn find_crlf(body: &[u8], start: usize) -> Option<usize> {
+  body[start..]
+    .windows(2)
+    .position(|window| window == b"\r\n")
+    .map(|offset| start + offset)
 }
 
 #[tauri::command]
