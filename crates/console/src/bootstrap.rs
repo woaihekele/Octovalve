@@ -134,7 +134,7 @@ pub(crate) async fn bootstrap_remote_broker(
         bootstrap.remote_control_addr
     ));
     let start_cmd = format!(
-        "pgrep -f {} >/dev/null 2>&1 || nohup {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} > {} 2>&1 &",
+        "pgrep -f {} >/dev/null 2>&1 || nohup {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} </dev/null > {} 2>&1 &",
         pgrep_pattern,
         shell_escape(&remote_bin),
         shell_escape(&bootstrap.remote_listen_addr),
