@@ -249,9 +249,13 @@ async fn run_ssh_with_timeout(
     cmd.arg(remote_cmd);
     let output = run_command_with_timeout(&mut cmd, timeout, "ssh").await?;
     if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("ssh failed: {}{}", stdout, stderr);
+        let message = format_ssh_failure(
+            "ssh",
+            &output.stdout,
+            &output.stderr,
+            target.ssh_password.is_some(),
+        );
+        anyhow::bail!(message);
     }
     Ok(())
 }
@@ -269,9 +273,13 @@ async fn run_scp(target: &TargetRuntime, local: &Path, remote_path: &str) -> any
     cmd.arg(remote);
     let output = run_command_with_timeout(&mut cmd, SCP_COMMAND_TIMEOUT, "scp").await?;
     if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("scp failed: {}{}", stdout, stderr);
+        let message = format_ssh_failure(
+            "scp",
+            &output.stdout,
+            &output.stderr,
+            target.ssh_password.is_some(),
+        );
+        anyhow::bail!(message);
     }
     Ok(())
 }
@@ -289,11 +297,58 @@ async fn run_ssh_capture(target: &TargetRuntime, remote_cmd: &str) -> anyhow::Re
     cmd.arg(remote_cmd);
     let output = run_command_with_timeout(&mut cmd, SSH_COMMAND_TIMEOUT, "ssh").await?;
     if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("ssh failed: {}{}", stdout, stderr);
+        let message = format_ssh_failure(
+            "ssh",
+            &output.stdout,
+            &output.stderr,
+            target.ssh_password.is_some(),
+        );
+        anyhow::bail!(message);
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn format_ssh_failure(label: &str, stdout: &[u8], stderr: &[u8], has_password: bool) -> String {
+    let stdout = String::from_utf8_lossy(stdout);
+    let stderr = String::from_utf8_lossy(stderr);
+    let detail = format!("{}{}", stdout, stderr).trim().to_string();
+    let mut message = if detail.is_empty() {
+        format!("{label} failed")
+    } else {
+        format!("{label} failed: {detail}")
+    };
+    if let Some(hint) = ssh_auth_hint(&detail, has_password) {
+        message.push('\n');
+        message.push_str(hint);
+    }
+    message
+}
+
+fn ssh_auth_hint(detail: &str, has_password: bool) -> Option<&'static str> {
+    let detail = detail.to_lowercase();
+    if detail.contains("keyboard-interactive")
+        || detail.contains("verification code")
+        || detail.contains("two-factor")
+    {
+        return Some(
+            "ssh requires keyboard-interactive/2FA; SSH_ASKPASS cannot handle it. Use SSH key auth or adjust server auth settings.",
+        );
+    }
+    if detail.contains("permission denied")
+        || detail.contains("authentication failed")
+        || detail.contains("no supported authentication methods available")
+        || detail.contains("too many authentication failures")
+    {
+        if has_password {
+            return Some(
+                "ssh password auth failed. Check ssh_password; if 2FA/keyboard-interactive is required, use SSH keys instead.",
+            );
+        }
+        return Some(
+            "ssh authentication failed. Configure SSH keys (preferred) or set ssh_password if password login is allowed.",
+        );
+    }
+    None
 }
 
 fn local_md5_hex(path: &Path) -> anyhow::Result<String> {
