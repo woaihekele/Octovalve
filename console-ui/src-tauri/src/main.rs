@@ -291,7 +291,6 @@ fn get_proxy_config_status(state: State<ProxyConfigState>) -> ProxyConfigStatus 
 
 struct HttpResponse {
   status: u16,
-  headers: HashMap<String, String>,
   body: String,
 }
 
@@ -391,11 +390,7 @@ async fn console_http_request(
       escape_log_body(&body)
     ),
   );
-  Ok(HttpResponse {
-    status,
-    headers,
-    body,
-  })
+  Ok(HttpResponse { status, body })
 }
 
 fn parse_http_response(
