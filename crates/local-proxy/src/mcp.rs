@@ -1,5 +1,4 @@
 use crate::state::{ProxyRuntimeDefaults, ProxyState, TargetListEntry};
-use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -15,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use tunnel_manager::TunnelManager;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
@@ -26,7 +26,7 @@ pub(crate) struct ProxyHandler {
     client_id: String,
     default_timeout_ms: u64,
     default_max_output_bytes: u64,
-    tunnel_client: TunnelClient,
+    tunnel_manager: Option<Arc<TunnelManager>>,
 }
 
 impl ProxyHandler {
@@ -34,14 +34,14 @@ impl ProxyHandler {
         state: Arc<RwLock<ProxyState>>,
         client_id: String,
         defaults: ProxyRuntimeDefaults,
-        tunnel_client: TunnelClient,
+        tunnel_manager: Option<Arc<TunnelManager>>,
     ) -> Self {
         Self {
             state,
             client_id,
             default_timeout_ms: defaults.timeout_ms,
             default_max_output_bytes: defaults.max_output_bytes,
-            tunnel_client,
+            tunnel_manager,
         }
     }
 
@@ -223,16 +223,21 @@ impl ServerHandler for ProxyHandler {
                     })?
                 };
                 let addr = if let Some(forward) = forward {
-                    let local_addr =
-                        self.tunnel_client
-                            .ensure_forward(forward)
-                            .await
-                            .map_err(|err| {
-                                CallToolError::invalid_arguments(
-                                    "run_command",
-                                    Some(err.to_string()),
-                                )
-                            })?;
+                    let manager = self.tunnel_manager.as_ref().ok_or_else(|| {
+                        CallToolError::invalid_arguments(
+                            "run_command",
+                            Some("tunnel manager not available".to_string()),
+                        )
+                    })?;
+                    let local_addr = manager
+                        .ensure_forward(&self.client_id, &forward)
+                        .await
+                        .map_err(|err| {
+                            CallToolError::invalid_arguments(
+                                "run_command",
+                                Some(err.to_string()),
+                            )
+                        })?;
                     {
                         let mut state = self.state.write().await;
                         state.note_tunnel_ready(&args.target);

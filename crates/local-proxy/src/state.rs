@@ -1,6 +1,7 @@
 use crate::cli::Args;
 use crate::config::{load_proxy_config, ProxyConfig};
-use crate::tunnel_client::TunnelClient;
+use std::sync::Arc;
+use tunnel_manager::{TunnelManager, TunnelTargetSpec};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -24,6 +25,8 @@ pub(crate) struct TargetRuntime {
     pub(crate) name: String,
     pub(crate) desc: String,
     pub(crate) ssh: Option<String>,
+    pub(crate) ssh_args: Vec<String>,
+    pub(crate) ssh_password: Option<String>,
     pub(crate) remote_addr: String,
     pub(crate) local_bind: Option<String>,
     pub(crate) local_port: Option<u16>,
@@ -37,7 +40,7 @@ pub(crate) struct ProxyState {
     targets: HashMap<String, TargetRuntime>,
     target_order: Vec<String>,
     default_target: Option<String>,
-    tunnel_client: Option<TunnelClient>,
+    tunnel_manager: Option<Arc<TunnelManager>>,
 }
 
 #[derive(Serialize)]
@@ -55,12 +58,12 @@ impl ProxyState {
         self.target_order.clone()
     }
 
-    pub(crate) fn set_tunnel_client(&mut self, client: Option<TunnelClient>) {
-        self.tunnel_client = client;
+    pub(crate) fn set_tunnel_manager(&mut self, manager: Option<Arc<TunnelManager>>) {
+        self.tunnel_manager = manager;
     }
 
-    pub(crate) fn tunnel_client(&self) -> Option<TunnelClient> {
-        self.tunnel_client.clone()
+    pub(crate) fn tunnel_manager(&self) -> Option<Arc<TunnelManager>> {
+        self.tunnel_manager.clone()
     }
 
     pub(crate) fn default_target(&self) -> Option<String> {
@@ -133,6 +136,37 @@ impl ProxyState {
                     local_bind: bind,
                     local_port: port,
                     remote_addr: target.remote_addr.clone(),
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn tunnel_targets(&self) -> Vec<TunnelTargetSpec> {
+        self.target_order
+            .iter()
+            .filter_map(|name| self.targets.get(name))
+            .filter_map(|target| {
+                let ssh = target.ssh.clone()?;
+                let Some(local_port) = target.local_port else {
+                    return None;
+                };
+                let local_bind = target
+                    .local_bind
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
+                let forward = ForwardSpec {
+                    target: target.name.clone(),
+                    purpose: ForwardPurpose::Data,
+                    local_bind,
+                    local_port,
+                    remote_addr: target.remote_addr.clone(),
+                };
+                Some(TunnelTargetSpec {
+                    name: target.name.clone(),
+                    ssh,
+                    ssh_args: target.ssh_args.clone(),
+                    ssh_password: target.ssh_password.clone(),
+                    allowed_forwards: vec![forward],
                 })
             })
             .collect()
@@ -223,10 +257,20 @@ fn build_state_from_config(
             remote_addr.clone()
         };
 
+        let mut ssh_args = defaults.ssh_args.clone().unwrap_or_default();
+        if let Some(extra) = target.ssh_args {
+            ssh_args.extend(extra);
+        }
+        let ssh_password = target
+            .ssh_password
+            .or_else(|| defaults.ssh_password.clone());
+
         let mut runtime = TargetRuntime {
             name: target.name.clone(),
             desc: target.desc,
             ssh: target.ssh,
+            ssh_args,
+            ssh_password,
             remote_addr,
             local_bind: local_port.map(|_| local_bind),
             local_port,
@@ -254,7 +298,7 @@ fn build_state_from_config(
         targets,
         target_order: order,
         default_target: config.default_target,
-        tunnel_client: None,
+        tunnel_manager: None,
     };
 
     let defaults = ProxyRuntimeDefaults {

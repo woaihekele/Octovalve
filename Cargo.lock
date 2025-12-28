@@ -879,6 +879,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "tunnel-manager",
  "tunnel-protocol",
  "uuid",
 ]
