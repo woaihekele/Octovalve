@@ -287,6 +287,12 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
     let ssh_password = target
         .ssh_password
         .or_else(|| defaults.ssh_password.clone());
+    if ssh_password.is_some() {
+        tracing::warn!(
+            target = %target.name,
+            "ssh_password is set; prefer SSH key auth (keyboard-interactive/2FA is not supported)"
+        );
+    }
 
     let ssh_host = target
         .ssh

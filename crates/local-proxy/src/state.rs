@@ -240,6 +240,12 @@ fn build_state_from_config(
         let ssh_password = target
             .ssh_password
             .or_else(|| defaults.ssh_password.clone());
+        if ssh_password.is_some() {
+            tracing::warn!(
+                target = %target.name,
+                "ssh_password is set; prefer SSH key auth (keyboard-interactive/2FA is not supported)"
+            );
+        }
 
         let mut runtime = TargetRuntime {
             name: target.name.clone(),
