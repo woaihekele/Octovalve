@@ -1,6 +1,6 @@
 use anyhow::Context;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Output, Stdio};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout, Duration};
@@ -13,6 +13,11 @@ pub(crate) struct SshTarget {
     pub(crate) ssh: String,
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
+}
+
+pub(crate) struct MasterCheck {
+    pub(crate) running: bool,
+    pub(crate) detail: String,
 }
 
 pub(crate) async fn spawn_master(target: &SshTarget, control_path: &Path) -> anyhow::Result<Child> {
@@ -43,6 +48,33 @@ pub(crate) async fn spawn_master(target: &SshTarget, control_path: &Path) -> any
         .stderr(Stdio::null());
     let child = cmd.spawn().map_err(|err| anyhow::anyhow!(err))?;
     Ok(child)
+}
+
+pub(crate) async fn check_master(
+    target: &SshTarget,
+    control_path: &Path,
+) -> anyhow::Result<MasterCheck> {
+    let mut cmd = Command::new("ssh");
+    cmd.arg("-S")
+        .arg(control_path)
+        .arg("-O")
+        .arg("check")
+        .arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT_SECS))
+        .arg(&target.ssh);
+    if !target.ssh_args.is_empty() {
+        cmd.args(&target.ssh_args);
+    }
+    let output = run_ssh_command_output(&mut cmd, "ssh -O check").await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let detail = format!("{}{}", stdout, stderr).trim().to_string();
+    Ok(MasterCheck {
+        running: output.status.success(),
+        detail,
+    })
 }
 
 pub(crate) async fn forward_add(
@@ -155,6 +187,19 @@ fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
 }
 
 async fn run_ssh_command(cmd: &mut Command, label: &str) -> anyhow::Result<()> {
+    let output = run_ssh_command_output(cmd, label).await?;
+    let status = output.status;
+    let stdout = output.stdout;
+    let stderr = output.stderr;
+    if !status.success() {
+        let stdout = String::from_utf8_lossy(&stdout);
+        let stderr = String::from_utf8_lossy(&stderr);
+        anyhow::bail!("{label} failed: {}{}", stdout, stderr);
+    }
+    Ok(())
+}
+
+async fn run_ssh_command_output(cmd: &mut Command, label: &str) -> anyhow::Result<Output> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -180,12 +225,11 @@ async fn run_ssh_command(cmd: &mut Command, label: &str) -> anyhow::Result<()> {
     if let Some(mut pipe) = stderr_pipe.take() {
         let _ = pipe.read_to_end(&mut stderr).await;
     }
-    if !status.success() {
-        let stdout = String::from_utf8_lossy(&stdout);
-        let stderr = String::from_utf8_lossy(&stderr);
-        anyhow::bail!("{label} failed: {}{}", stdout, stderr);
-    }
-    Ok(())
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn parse_host_port(addr: &str) -> anyhow::Result<(String, u16)> {

@@ -1,4 +1,6 @@
-use crate::ssh::{exit_master, forward_add, forward_cancel, spawn_master, SshTarget};
+use crate::ssh::{
+    check_master, exit_master, forward_add, forward_cancel, spawn_master, MasterCheck, SshTarget,
+};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -39,8 +41,9 @@ struct ActiveForward {
     clients: HashSet<String>,
 }
 
-struct SshMaster {
-    child: Child,
+enum SshMaster {
+    Child(Child),
+    External,
 }
 
 impl TunnelManager {
@@ -218,28 +221,83 @@ impl TargetState {
 
     async fn ensure_master(&mut self, target_name: &str) -> anyhow::Result<()> {
         if let Some(master) = self.master.as_mut() {
-            match master.child.try_wait() {
-                Ok(None) => return Ok(()),
-                Ok(Some(status)) => {
-                    self.master = None;
-                    self.active_forwards.clear();
-                    warn!(
-                        event = "tunnel.master.exit",
-                        target = %target_name,
-                        error = %status,
-                        "ssh master exited, restarting"
-                    );
+            match master {
+                SshMaster::Child(child) => match child.try_wait() {
+                    Ok(None) => return Ok(()),
+                    Ok(Some(status)) => {
+                        self.master = None;
+                        self.active_forwards.clear();
+                        warn!(
+                            event = "tunnel.master.exit",
+                            target = %target_name,
+                            error = %status,
+                            "ssh master exited, restarting"
+                        );
+                    }
+                    Err(err) => {
+                        self.master = None;
+                        self.active_forwards.clear();
+                        warn!(
+                            event = "tunnel.master.status_failed",
+                            target = %target_name,
+                            error = %err,
+                            "ssh master status check failed, restarting"
+                        );
+                    }
+                },
+                SshMaster::External => match check_master(&self.ssh, &self.control_path).await {
+                    Ok(check) if check.running => {
+                        log_master_reuse(target_name, &self.control_path, &check);
+                        return Ok(());
+                    }
+                    Ok(check) => {
+                        self.master = None;
+                        self.active_forwards.clear();
+                        log_master_stale(target_name, &self.control_path, &check);
+                    }
+                    Err(err) => {
+                        self.master = None;
+                        self.active_forwards.clear();
+                        warn!(
+                            event = "tunnel.master.check_failed",
+                            target = %target_name,
+                            control_path = %self.control_path.display(),
+                            error = %err,
+                            "failed to check existing ssh master"
+                        );
+                    }
+                },
+            }
+        }
+
+        if self.control_path.exists() {
+            match check_master(&self.ssh, &self.control_path).await {
+                Ok(check) if check.running => {
+                    log_master_reuse(target_name, &self.control_path, &check);
+                    self.master = Some(SshMaster::External);
+                    return Ok(());
+                }
+                Ok(check) => {
+                    log_master_stale(target_name, &self.control_path, &check);
                 }
                 Err(err) => {
-                    self.master = None;
-                    self.active_forwards.clear();
                     warn!(
-                        event = "tunnel.master.status_failed",
+                        event = "tunnel.master.check_failed",
                         target = %target_name,
+                        control_path = %self.control_path.display(),
                         error = %err,
-                        "ssh master status check failed, restarting"
+                        "failed to check existing ssh master"
                     );
                 }
+            }
+            if let Err(err) = std::fs::remove_file(&self.control_path) {
+                warn!(
+                    event = "tunnel.master.cleanup_failed",
+                    target = %target_name,
+                    control_path = %self.control_path.display(),
+                    error = %err,
+                    "failed to remove stale control socket"
+                );
             }
         }
 
@@ -262,11 +320,14 @@ impl TargetState {
             pid = ?child.id(),
             "ssh master ready"
         );
-        self.master = Some(SshMaster { child });
+        self.master = Some(SshMaster::Child(child));
         Ok(())
     }
 
     async fn shutdown_master(&mut self, target_name: &str) {
+        if self.master.is_none() {
+            return;
+        }
         info!(
             event = "tunnel.master.shutdown",
             target = %target_name,
@@ -274,12 +335,14 @@ impl TargetState {
             "shutting down ssh master"
         );
         let _ = exit_master(&self.ssh, &self.control_path).await;
-        if let Some(mut master) = self.master.take() {
-            match master.child.try_wait() {
-                Ok(Some(_)) => {}
-                Ok(None) | Err(_) => {
-                    let _ = master.child.kill().await;
-                    let _ = master.child.wait().await;
+        if let Some(master) = self.master.take() {
+            if let SshMaster::Child(mut child) = master {
+                match child.try_wait() {
+                    Ok(Some(_)) => {}
+                    Ok(None) | Err(_) => {
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+                    }
                 }
             }
         }
@@ -299,6 +362,44 @@ async fn wait_for_control_socket(control_path: &Path) -> anyhow::Result<()> {
             );
         }
         tokio::time::sleep(CONTROL_SOCKET_WAIT_INTERVAL).await;
+    }
+}
+
+fn log_master_reuse(target_name: &str, control_path: &Path, check: &MasterCheck) {
+    if check.detail.is_empty() {
+        info!(
+            event = "tunnel.master.reuse",
+            target = %target_name,
+            control_path = %control_path.display(),
+            "reusing existing ssh master"
+        );
+    } else {
+        info!(
+            event = "tunnel.master.reuse",
+            target = %target_name,
+            control_path = %control_path.display(),
+            detail = %check.detail,
+            "reusing existing ssh master"
+        );
+    }
+}
+
+fn log_master_stale(target_name: &str, control_path: &Path, check: &MasterCheck) {
+    if check.detail.is_empty() {
+        info!(
+            event = "tunnel.master.stale",
+            target = %target_name,
+            control_path = %control_path.display(),
+            "stale ssh control socket detected"
+        );
+    } else {
+        info!(
+            event = "tunnel.master.stale",
+            target = %target_name,
+            control_path = %control_path.display(),
+            detail = %check.detail,
+            "stale ssh control socket detected"
+        );
     }
 }
 
