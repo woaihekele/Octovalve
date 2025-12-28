@@ -130,7 +130,7 @@ function deactivateShortcut(field: ShortcutField) {
         <div class="border-t border-slate-800 pt-4">
           <div class="text-sm font-medium mb-3">快捷键</div>
           <div class="space-y-3">
-            <label
+            <div
               v-for="item in shortcutFields"
               :key="item.key"
               class="flex items-center justify-between gap-4 text-sm"
@@ -175,7 +175,7 @@ function deactivateShortcut(field: ShortcutField) {
                   </svg>
                 </button>
               </div>
-            </label>
+            </div>
           </div>
         </div>
       </div>
