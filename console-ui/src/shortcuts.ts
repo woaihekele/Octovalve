@@ -56,8 +56,14 @@ export function normalizeShortcut(raw: string): string | null {
     code = part;
   }
   if (!code) return null;
+  let normalizedCode = code;
+  if (!looksLikeCode(normalizedCode)) {
+    const mapped = keyToCode(normalizedCode);
+    if (!mapped) return null;
+    normalizedCode = mapped;
+  }
   const ordered = MODIFIER_ORDER.filter((mod) => modifiers.has(mod));
-  ordered.push(code);
+  ordered.push(normalizedCode);
   return ordered.join('+');
 }
 

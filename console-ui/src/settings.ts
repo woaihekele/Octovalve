@@ -25,13 +25,24 @@ export function loadSettings(): AppSettings {
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const parsedShortcuts = parsed.shortcuts ?? {};
+    const normalizeWithFallback = (value: unknown, fallback: string) => {
+      if (value === '') {
+        return '';
+      }
+      if (typeof value !== 'string') {
+        return fallback;
+      }
+      return normalizeShortcut(value) ?? fallback;
+    };
     const normalizedShortcuts = {
-      jumpNextPending:
-        normalizeShortcut(parsedShortcuts.jumpNextPending ?? '') ?? DEFAULT_SETTINGS.shortcuts.jumpNextPending,
-      approve: normalizeShortcut(parsedShortcuts.approve ?? '') ?? DEFAULT_SETTINGS.shortcuts.approve,
-      deny: normalizeShortcut(parsedShortcuts.deny ?? '') ?? DEFAULT_SETTINGS.shortcuts.deny,
-      fullScreen: normalizeShortcut(parsedShortcuts.fullScreen ?? '') ?? DEFAULT_SETTINGS.shortcuts.fullScreen,
-      toggleList: normalizeShortcut(parsedShortcuts.toggleList ?? '') ?? DEFAULT_SETTINGS.shortcuts.toggleList,
+      jumpNextPending: normalizeWithFallback(
+        parsedShortcuts.jumpNextPending,
+        DEFAULT_SETTINGS.shortcuts.jumpNextPending
+      ),
+      approve: normalizeWithFallback(parsedShortcuts.approve, DEFAULT_SETTINGS.shortcuts.approve),
+      deny: normalizeWithFallback(parsedShortcuts.deny, DEFAULT_SETTINGS.shortcuts.deny),
+      fullScreen: normalizeWithFallback(parsedShortcuts.fullScreen, DEFAULT_SETTINGS.shortcuts.fullScreen),
+      toggleList: normalizeWithFallback(parsedShortcuts.toggleList, DEFAULT_SETTINGS.shortcuts.toggleList),
     };
     return {
       ...DEFAULT_SETTINGS,
