@@ -5,6 +5,7 @@ members = [
   "crates/protocol",
   "crates/local-proxy",
   "crates/remote-broker",
+  "crates/tunnel-manager",
   "crates/tunnel-protocol",
   "crates/tunnel-daemon",
 ]
