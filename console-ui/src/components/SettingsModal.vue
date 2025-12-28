@@ -59,10 +59,10 @@ function captureShortcut(field: ShortcutField, event: KeyboardEvent) {
 }
 
 function shortcutDisplay(field: ShortcutField) {
-  if (activeShortcut.value === field) {
-    return '按键盘设置快捷键';
-  }
   const formatted = formatShortcut(localSettings.value.shortcuts[field]);
+  if (activeShortcut.value === field) {
+    return formatted || '按键盘设置快捷键';
+  }
   return formatted || '点击设置快捷键';
 }
 
