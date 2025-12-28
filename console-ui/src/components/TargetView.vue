@@ -143,12 +143,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
             <span>{{ props.target.hostname || props.target.ip || 'unknown' }}</span>
           </div>
         </div>
-        <span
-          class="text-xs px-2 py-1 rounded border"
-          :class="props.target.status === 'ready' ? 'bg-emerald-900/30 text-emerald-300 border-emerald-900/40' : 'bg-rose-900/30 text-rose-300 border-rose-900/40'"
-        >
-          {{ props.target.status.toUpperCase() }}
-        </span>
       </div>
     </div>
 
