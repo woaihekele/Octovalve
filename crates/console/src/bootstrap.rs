@@ -4,10 +4,11 @@ use std::fmt;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
+use std::time::Instant;
 use tokio::process::Command;
 use tokio::io::AsyncReadExt;
 use tokio::time::{timeout, Duration};
-use tracing::info;
+use tracing::{info, warn};
 
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const SCP_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
@@ -51,7 +52,10 @@ pub(crate) async fn bootstrap_remote_broker(
         return Ok(());
     }
     info!(target = %target.name, "syncing remote broker");
-    let local_bin = select_local_bin(target, bootstrap).await?;
+    let local_bin = run_bootstrap_step(target, "select_local_bin", || {
+        select_local_bin(target, bootstrap)
+    })
+    .await?;
     info!(
         target = %target.name,
         broker_bin = %local_bin.display(),
@@ -67,25 +71,32 @@ pub(crate) async fn bootstrap_remote_broker(
         );
     }
 
-    let remote_dir = resolve_remote_path(target, &bootstrap.remote_dir).await?;
-    let remote_audit_dir = resolve_remote_path(target, &bootstrap.remote_audit_dir).await?;
+    let remote_dir = run_bootstrap_step(target, "resolve_remote_dir", || {
+        resolve_remote_path(target, &bootstrap.remote_dir)
+    })
+    .await?;
+    let remote_audit_dir = run_bootstrap_step(target, "resolve_remote_audit_dir", || {
+        resolve_remote_path(target, &bootstrap.remote_audit_dir)
+    })
+    .await?;
     let remote_bin = join_remote(&remote_dir, "remote-broker");
     let remote_bin_tmp = format!("{remote_bin}.tmp");
     let remote_config = join_remote(&remote_dir, "config.toml");
     let remote_config_tmp = format!("{remote_config}.tmp");
     let remote_log = join_remote(&remote_dir, "remote-broker.log");
 
-    run_ssh(
-        target,
-        &format!(
-            "mkdir -p {} {}",
-            shell_escape(&remote_dir),
-            shell_escape(&remote_audit_dir)
-        ),
-    )
-    .await?;
+    let mkdir_cmd = format!(
+        "mkdir -p {} {}",
+        shell_escape(&remote_dir),
+        shell_escape(&remote_audit_dir)
+    );
+    run_bootstrap_step(target, "mkdir_remote_dirs", || run_ssh(target, &mkdir_cmd)).await?;
 
-    let skip_bin_upload = match remote_md5_hex(target, &remote_bin).await? {
+    let skip_bin_upload = match run_bootstrap_step(target, "remote_md5", || {
+        remote_md5_hex(target, &remote_bin)
+    })
+    .await?
+    {
         Some(remote_md5) if remote_md5 == local_md5_hex(&local_bin)? => {
             info!(target = %target.name, "remote broker binary up to date, skipping upload");
             true
@@ -93,29 +104,30 @@ pub(crate) async fn bootstrap_remote_broker(
         _ => false,
     };
     if !skip_bin_upload {
-        run_scp(target, &local_bin, &remote_bin_tmp).await?;
-        run_ssh(
-            target,
-            &format!(
-                "mv -f {} {}",
-                shell_escape(&remote_bin_tmp),
-                shell_escape(&remote_bin)
-            ),
-        )
+        run_bootstrap_step(target, "upload_bin_scp", || {
+            run_scp(target, &local_bin, &remote_bin_tmp)
+        })
         .await?;
-    }
-    run_scp(target, &bootstrap.local_config, &remote_config_tmp).await?;
-    run_ssh(
-        target,
-        &format!(
+        let bin_move_cmd = format!(
             "mv -f {} {}",
-            shell_escape(&remote_config_tmp),
-            shell_escape(&remote_config)
-        ),
-    )
+            shell_escape(&remote_bin_tmp),
+            shell_escape(&remote_bin)
+        );
+        run_bootstrap_step(target, "upload_bin_mv", || run_ssh(target, &bin_move_cmd)).await?;
+    }
+    run_bootstrap_step(target, "upload_config_scp", || {
+        run_scp(target, &bootstrap.local_config, &remote_config_tmp)
+    })
     .await?;
+    let config_move_cmd = format!(
+        "mv -f {} {}",
+        shell_escape(&remote_config_tmp),
+        shell_escape(&remote_config)
+    );
+    run_bootstrap_step(target, "upload_config_mv", || run_ssh(target, &config_move_cmd)).await?;
 
-    run_ssh(target, &format!("chmod +x {}", shell_escape(&remote_bin))).await?;
+    let chmod_cmd = format!("chmod +x {}", shell_escape(&remote_bin));
+    run_bootstrap_step(target, "chmod_remote_bin", || run_ssh(target, &chmod_cmd)).await?;
 
     let pgrep_pattern = shell_escape(&format!(
         "[r]emote-broker.*--control-addr {}",
@@ -131,10 +143,44 @@ pub(crate) async fn bootstrap_remote_broker(
         shell_escape(&remote_audit_dir),
         shell_escape(&remote_log),
     );
-    run_ssh(target, &start_cmd).await?;
+    run_bootstrap_step(target, "start_remote_broker", || run_ssh(target, &start_cmd)).await?;
     info!(target = %target.name, "remote broker ready");
 
     Ok(())
+}
+
+async fn run_bootstrap_step<T, F, Fut>(
+    target: &TargetRuntime,
+    step: &'static str,
+    f: F,
+) -> anyhow::Result<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    info!(target = %target.name, step, "bootstrap step start");
+    let start = Instant::now();
+    match f().await {
+        Ok(value) => {
+            info!(
+                target = %target.name,
+                step,
+                elapsed_ms = start.elapsed().as_millis(),
+                "bootstrap step done"
+            );
+            Ok(value)
+        }
+        Err(err) => {
+            warn!(
+                target = %target.name,
+                step,
+                elapsed_ms = start.elapsed().as_millis(),
+                error = %err,
+                "bootstrap step failed"
+            );
+            Err(err)
+        }
+    }
 }
 
 pub(crate) async fn stop_remote_broker(
@@ -246,7 +292,10 @@ async fn remote_md5_hex(
     );
     let output = match run_ssh_capture(target, &remote_cmd).await {
         Ok(output) => output,
-        Err(_) => return Ok(None),
+        Err(err) => {
+            warn!(target = %target.name, error = %err, "failed to check remote md5");
+            return Ok(None);
+        }
     };
     let hash = output.split_whitespace().next().unwrap_or("");
     if hash.is_empty() {
