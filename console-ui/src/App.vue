@@ -27,6 +27,7 @@ const isSettingsOpen = ref(false);
 const notification = ref<{ message: string; count?: number } | null>(null);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
+const pendingJumpToken = ref(0);
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
@@ -168,6 +169,7 @@ function handleGlobalKey(event: KeyboardEvent) {
     const target = targets.value.find((item) => item.pending_count > 0);
     if (target) {
       selectedTargetName.value = target.name;
+      pendingJumpToken.value += 1;
     } else {
       showNotification('没有待审批任务');
     }
@@ -258,6 +260,7 @@ watch(
           :target="selectedTarget"
           :snapshot="selectedSnapshot"
           :settings="settings"
+          :pending-jump-token="pendingJumpToken"
           @approve="approve"
           @deny="deny"
         />

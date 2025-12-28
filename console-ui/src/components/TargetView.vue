@@ -7,6 +7,7 @@ const props = defineProps<{
   target: TargetInfo;
   snapshot: ServiceSnapshot | null;
   settings: AppSettings;
+  pendingJumpToken: number;
 }>();
 
 const emit = defineEmits<{
@@ -26,6 +27,14 @@ const selectedItem = computed(() => currentList.value[selectedIndex.value] ?? nu
 watch(
   () => [props.target.name, activeTab.value],
   () => {
+    selectedIndex.value = 0;
+  }
+);
+
+watch(
+  () => props.pendingJumpToken,
+  () => {
+    activeTab.value = 'pending';
     selectedIndex.value = 0;
   }
 );
