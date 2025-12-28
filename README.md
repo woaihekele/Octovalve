@@ -221,7 +221,7 @@ npm run tauri:build:dmg
 
 ## 密码登录说明
 如果必须使用密码登录，请在目标中配置 `ssh_password`。
-console/octovalve-proxy 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh-askpass.sh`）注入密码。
+console/octovalve-proxy 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh-askpass.sh`）注入密码，无需安装 sshpass。
 
 ## CLI 选项
 remote-broker：
