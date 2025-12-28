@@ -296,10 +296,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 >
-                  <polyline points="21 15 21 21 15 21" />
-                  <polyline points="3 9 3 3 9 3" />
-                  <line x1="21" y1="21" x2="14" y2="14" />
-                  <line x1="3" y1="3" x2="10" y2="10" />
+                  <line x1="3" y1="3" x2="9" y2="9" />
+                  <polyline points="9 5 9 9 5 9" />
+                  <line x1="21" y1="3" x2="15" y2="9" />
+                  <polyline points="15 5 15 9 19 9" />
+                  <line x1="3" y1="21" x2="9" y2="15" />
+                  <polyline points="9 19 9 15 5 15" />
+                  <line x1="21" y1="21" x2="15" y2="15" />
+                  <polyline points="15 19 15 15 19 15" />
                 </svg>
               </button>
             </div>
