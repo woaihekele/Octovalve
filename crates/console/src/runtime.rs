@@ -1,7 +1,7 @@
 use crate::bootstrap::{
     bootstrap_remote_broker, stop_remote_broker, BootstrapConfig, UnsupportedRemotePlatform,
 };
-use crate::control::{ControlRequest, ControlResponse};
+use crate::control::{ControlRequest, ControlResponse, ServiceEvent};
 use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
 use crate::tunnel::TargetRuntime;
@@ -298,12 +298,41 @@ async fn handle_response(
 ) {
     match response {
         ControlResponse::Snapshot { snapshot } => {
+            let queue_len = snapshot.queue.len();
+            let history_len = snapshot.history.len();
+            let last_id = snapshot.last_result.as_ref().map(|result| result.id.as_str());
+            info!(
+                target = %name,
+                queue_len = queue_len,
+                history_len = history_len,
+                last_result_id = ?last_id,
+                "control snapshot received"
+            );
             let mut guard = state.write().await;
             guard.apply_snapshot(name, snapshot);
             drop(guard);
             emit_target_update(name, state, event_tx).await;
         }
         ControlResponse::Event { event } => {
+            match &event {
+                ServiceEvent::QueueUpdated(queue) => {
+                    info!(
+                        target = %name,
+                        queue_len = queue.len(),
+                        "control queue updated"
+                    );
+                }
+                ServiceEvent::ResultUpdated(result) => {
+                    info!(
+                        target = %name,
+                        result_id = %result.id,
+                        "control result updated"
+                    );
+                }
+                ServiceEvent::ConnectionsChanged => {
+                    info!(target = %name, "control connections changed");
+                }
+            }
             let mut guard = state.write().await;
             guard.apply_event(name, event);
             drop(guard);

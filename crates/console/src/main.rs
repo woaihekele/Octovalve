@@ -169,7 +169,19 @@ async fn get_snapshot(
 ) -> Result<Json<ServiceSnapshot>, StatusCode> {
     let state = state.state.read().await;
     match state.snapshot(&name) {
-        Some(snapshot) => Ok(Json(snapshot)),
+        Some(snapshot) => {
+            let queue_len = snapshot.queue.len();
+            let history_len = snapshot.history.len();
+            let last_id = snapshot.last_result.as_ref().map(|result| result.id.clone());
+            tracing::info!(
+                target = %name,
+                queue_len = queue_len,
+                history_len = history_len,
+                last_result_id = ?last_id,
+                "snapshot served"
+            );
+            Ok(Json(snapshot))
+        }
         None => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -313,12 +325,15 @@ async fn ensure_tunnel_daemon(
     config: &FsPath,
 ) -> anyhow::Result<()> {
     if client.list_forwards().await.is_ok() {
+        info!(addr = %addr, "tunnel-daemon already available");
         let _ = client.heartbeat().await;
         return Ok(());
     }
+    info!(addr = %addr, "tunnel-daemon not available, spawning");
     spawn_tunnel_daemon(addr, config)?;
     for _ in 0..TUNNEL_DAEMON_BOOT_RETRIES {
         if client.list_forwards().await.is_ok() {
+            info!(addr = %addr, "tunnel-daemon ready");
             let _ = client.heartbeat().await;
             return Ok(());
         }
@@ -329,6 +344,7 @@ async fn ensure_tunnel_daemon(
 
 fn spawn_tunnel_daemon(addr: &str, config: &FsPath) -> anyhow::Result<()> {
     let bin = resolve_tunnel_daemon_bin();
+    info!(addr = %addr, bin = %bin.display(), "spawning tunnel-daemon");
     let mut cmd = Command::new(bin);
     cmd.arg("--config")
         .arg(config)

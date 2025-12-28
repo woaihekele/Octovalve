@@ -111,6 +111,10 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
   let logs_dir = config_dir.join("logs");
   fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
   let console_log = logs_dir.join("console.log");
+  let _ = append_log_line(
+    app_log,
+    &format!("console log path: {}", console_log.display()),
+  );
 
   let broker_bin_linux_x86_64 = resolve_linux_broker(
     app,
@@ -150,6 +154,10 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
     .envs(envs)
     .spawn()
     .map_err(|err| err.to_string())?;
+  let _ = append_log_line(
+    app_log,
+    &format!("console sidecar started pid={}", child.pid()),
+  );
 
   *app.state::<ConsoleSidecarState>().0.lock().unwrap() = Some(child);
 
@@ -463,7 +471,13 @@ fn find_crlf(body: &[u8], start: usize) -> Option<usize> {
 
 #[tauri::command]
 async fn proxy_fetch_targets(log_state: State<'_, AppLogState>) -> Result<Value, String> {
-  console_get("/targets", &log_state.app_log).await
+  let targets = console_get("/targets", &log_state.app_log).await?;
+  let count = targets.as_array().map(|value| value.len()).unwrap_or(0);
+  let _ = append_log_line(
+    &log_state.app_log,
+    &format!("fetch targets ok count={count}"),
+  );
+  Ok(targets)
 }
 
 #[tauri::command]
@@ -472,7 +486,24 @@ async fn proxy_fetch_snapshot(
   log_state: State<'_, AppLogState>,
 ) -> Result<Value, String> {
   let path = format!("/targets/{name}/snapshot");
-  console_get(&path, &log_state.app_log).await
+  let snapshot = console_get(&path, &log_state.app_log).await?;
+  let queue_len = snapshot
+    .get("queue")
+    .and_then(|value| value.as_array())
+    .map(|value| value.len())
+    .unwrap_or(0);
+  let history_len = snapshot
+    .get("history")
+    .and_then(|value| value.as_array())
+    .map(|value| value.len())
+    .unwrap_or(0);
+  let _ = append_log_line(
+    &log_state.app_log,
+    &format!(
+      "fetch snapshot ok target={name} queue_len={queue_len} history_len={history_len}"
+    ),
+  );
+  Ok(snapshot)
 }
 
 #[tauri::command]
