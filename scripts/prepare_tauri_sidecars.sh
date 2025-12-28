@@ -12,7 +12,7 @@ fi
 
 cd "${REPO_ROOT}"
 cargo build --release --manifest-path "${REPO_ROOT}/Cargo.toml" \
-  -p console -p tunnel-daemon
+  -p console
 
 BIN_DIR="${REPO_ROOT}/target/release"
 SUFFIX="-${TARGET_TRIPLE}"
@@ -21,7 +21,7 @@ if [[ "${TARGET_TRIPLE}" == *windows* ]]; then
   EXT=".exe"
 fi
 
-for bin in console tunnel-daemon; do
+for bin in console; do
   src="${BIN_DIR}/${bin}${EXT}"
   dst="${BIN_DIR}/${bin}${SUFFIX}${EXT}"
   if [[ ! -f "${src}" ]]; then

@@ -126,12 +126,7 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
   } else {
     sidecar_path("remote-broker")?
   };
-  let tunnel_bin = sidecar_path("tunnel-daemon")?;
   let mut envs = HashMap::new();
-  envs.insert(
-    "OCTOVALVE_TUNNEL_DAEMON_BIN".to_string(),
-    tunnel_bin.to_string_lossy().to_string(),
-  );
   envs.insert("PATH".to_string(), build_console_path());
 
   let mut console_args = vec![

@@ -32,8 +32,7 @@
         "remote-broker/linux-x86_64"
       ],
       "externalBin": [
-        "../../target/release/console",
-        "../../target/release/tunnel-daemon"
+        "../../target/release/console"
       ],
       "icon": [
         "icons/icon.icns",
