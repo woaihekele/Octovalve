@@ -68,6 +68,8 @@ export type ListTab = 'pending' | 'history';
 export interface AppSettings {
   notificationsEnabled: boolean;
   shortcuts: {
+    prevTarget: string;
+    nextTarget: string;
     jumpNextPending: string;
     approve: string;
     deny: string;

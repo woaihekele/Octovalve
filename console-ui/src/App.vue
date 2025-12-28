@@ -167,8 +167,7 @@ function handleGlobalKey(event: KeyboardEvent) {
   if (isSettingsOpen.value) {
     return;
   }
-  const key = event.key.toLowerCase();
-  if ((key === 'w' || key === 's') && !event.metaKey && !event.ctrlKey && !event.altKey) {
+  if (matchesShortcut(event, settings.value.shortcuts.prevTarget)) {
     event.preventDefault();
     if (targets.value.length === 0) {
       return;
@@ -176,10 +175,23 @@ function handleGlobalKey(event: KeyboardEvent) {
     const currentIndex = selectedTargetName.value
       ? targets.value.findIndex((item) => item.name === selectedTargetName.value)
       : -1;
-    const nextIndex =
-      key === 'w'
-        ? Math.max(currentIndex - 1, 0)
-        : Math.min(currentIndex + 1, targets.value.length - 1);
+    const nextIndex = Math.max(currentIndex - 1, 0);
+    if (currentIndex === -1) {
+      selectedTargetName.value = targets.value[0].name;
+    } else if (nextIndex !== currentIndex) {
+      selectedTargetName.value = targets.value[nextIndex].name;
+    }
+    return;
+  }
+  if (matchesShortcut(event, settings.value.shortcuts.nextTarget)) {
+    event.preventDefault();
+    if (targets.value.length === 0) {
+      return;
+    }
+    const currentIndex = selectedTargetName.value
+      ? targets.value.findIndex((item) => item.name === selectedTargetName.value)
+      : -1;
+    const nextIndex = Math.min(currentIndex + 1, targets.value.length - 1);
     if (currentIndex === -1) {
       selectedTargetName.value = targets.value[0].name;
     } else if (nextIndex !== currentIndex) {

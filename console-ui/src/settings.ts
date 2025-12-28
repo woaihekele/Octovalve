@@ -6,6 +6,8 @@ const SETTINGS_KEY = 'octovalve.console.settings';
 export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   shortcuts: {
+    prevTarget: 'KeyW',
+    nextTarget: 'KeyS',
     jumpNextPending: 'Meta+KeyN',
     approve: 'KeyA',
     deny: 'KeyD',
@@ -35,6 +37,8 @@ export function loadSettings(): AppSettings {
       return normalizeShortcut(value) ?? fallback;
     };
     const normalizedShortcuts = {
+      prevTarget: normalizeWithFallback(parsedShortcuts.prevTarget, DEFAULT_SETTINGS.shortcuts.prevTarget),
+      nextTarget: normalizeWithFallback(parsedShortcuts.nextTarget, DEFAULT_SETTINGS.shortcuts.nextTarget),
       jumpNextPending: normalizeWithFallback(
         parsedShortcuts.jumpNextPending,
         DEFAULT_SETTINGS.shortcuts.jumpNextPending

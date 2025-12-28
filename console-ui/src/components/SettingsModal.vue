@@ -23,6 +23,8 @@ function cloneSettings(source: AppSettings): AppSettings {
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const shortcutFields = [
+  { key: 'prevTarget', label: '上一个目标' },
+  { key: 'nextTarget', label: '下一个目标' },
   { key: 'jumpNextPending', label: '跳转到下一个 Pending' },
   { key: 'approve', label: '批准' },
   { key: 'deny', label: '拒绝' },
