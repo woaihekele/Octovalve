@@ -117,30 +117,6 @@ impl ProxyState {
         }))
     }
 
-    pub(crate) fn forward_specs(&self) -> Vec<ForwardSpec> {
-        self.target_order
-            .iter()
-            .filter_map(|name| self.targets.get(name))
-            .filter_map(|target| {
-                if target.ssh.is_none() {
-                    return None;
-                }
-                let bind = target
-                    .local_bind
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
-                let port = target.local_port?;
-                Some(ForwardSpec {
-                    target: target.name.clone(),
-                    purpose: ForwardPurpose::Data,
-                    local_bind: bind,
-                    local_port: port,
-                    remote_addr: target.remote_addr.clone(),
-                })
-            })
-            .collect()
-    }
-
     pub(crate) fn tunnel_targets(&self) -> Vec<TunnelTargetSpec> {
         self.target_order
             .iter()
