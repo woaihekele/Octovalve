@@ -385,6 +385,7 @@ fn build_ssh_base(target: &TargetRuntime, command: &str) -> anyhow::Result<Comma
 
 fn configure_askpass(cmd: &mut Command, password: &str) -> anyhow::Result<()> {
     let script = ensure_askpass_script()?;
+    info!(event = "ssh.auth.askpass", "using SSH_ASKPASS for password auth");
     cmd.env("OCTOVALVE_SSH_PASS", password);
     cmd.env("SSH_ASKPASS", script);
     cmd.env("SSH_ASKPASS_REQUIRE", "force");

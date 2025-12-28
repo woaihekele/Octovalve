@@ -4,6 +4,7 @@ use std::process::Stdio;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout, Duration};
 use tunnel_protocol::ForwardSpec;
+use tracing::info;
 
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
@@ -129,6 +130,7 @@ fn build_ssh_base(target: &SshTarget, allow_password: bool) -> anyhow::Result<Co
 
 fn configure_askpass(cmd: &mut Command, password: &str) -> anyhow::Result<()> {
     let script = ensure_askpass_script()?;
+    info!(event = "ssh.auth.askpass", "using SSH_ASKPASS for password auth");
     cmd.env("OCTOVALVE_SSH_PASS", password);
     cmd.env("SSH_ASKPASS", script);
     cmd.env("SSH_ASKPASS_REQUIRE", "force");
