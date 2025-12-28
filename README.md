@@ -113,6 +113,27 @@ cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
 
 6) 将 MCP 客户端配置指向 `octovalve-proxy`（stdio 模式）。
 
+Codex CLI 示例（`~/.codex/config.toml`）：
+
+```toml
+[mcp_servers.octovalve]
+command = "~/octovalve/target/release/octovalve-proxy"
+args = ["--config", "~/.octovalve/local-proxy-config.toml",
+        "--client-id", "codex-1"]
+env = { RUST_LOG = "info" }
+```
+
+开发态可用 `cargo run`：
+
+```toml
+[mcp_servers.octovalve]
+command = "cargo"
+args = ["run", "-p", "octovalve-proxy", "--",
+        "--config", "~/.octovalve/local-proxy-config.toml",
+        "--client-id", "codex-1"]
+env = { RUST_LOG = "info" }
+```
+
 ## 手动启动 remote-broker（不使用 console）
 在远端运行：
 
