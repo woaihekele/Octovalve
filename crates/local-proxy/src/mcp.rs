@@ -14,11 +14,11 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use tunnel_manager::TunnelManager;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tunnel_manager::TunnelManager;
 use uuid::Uuid;
 
 pub(crate) struct ProxyHandler {
@@ -233,10 +233,7 @@ impl ServerHandler for ProxyHandler {
                         .ensure_forward(&self.client_id, &forward)
                         .await
                         .map_err(|err| {
-                            CallToolError::invalid_arguments(
-                                "run_command",
-                                Some(err.to_string()),
-                            )
+                            CallToolError::invalid_arguments("run_command", Some(err.to_string()))
                         })?;
                     {
                         let mut state = self.state.write().await;

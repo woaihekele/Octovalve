@@ -171,10 +171,7 @@ async fn handle_server_event(
                 });
             } else {
                 state.pending.push(pending);
-                tracing::info!(
-                    event = "queue.updated",
-                    queue_len = state.pending.len()
-                );
+                tracing::info!(event = "queue.updated", queue_len = state.pending.len());
                 let queue = build_queue_snapshots(&state.pending);
                 let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
             }
@@ -194,10 +191,7 @@ async fn handle_command(
     match command {
         ServiceCommand::Approve(id) => {
             if let Some(pending) = remove_pending(state, &id) {
-                tracing::info!(
-                    event = "queue.updated",
-                    queue_len = state.pending.len()
-                );
+                tracing::info!(event = "queue.updated", queue_len = state.pending.len());
                 let queue = build_queue_snapshots(&state.pending);
                 let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
 
@@ -223,10 +217,7 @@ async fn handle_command(
         }
         ServiceCommand::Deny(id) => {
             if let Some(pending) = remove_pending(state, &id) {
-                tracing::info!(
-                    event = "queue.updated",
-                    queue_len = state.pending.len()
-                );
+                tracing::info!(event = "queue.updated", queue_len = state.pending.len());
                 let queue = build_queue_snapshots(&state.pending);
                 let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
 

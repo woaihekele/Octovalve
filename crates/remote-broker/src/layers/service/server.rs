@@ -34,14 +34,9 @@ pub(crate) fn spawn_accept_loop(
                     let activity = Arc::clone(&activity);
                     tokio::spawn(async move {
                         let _guard = activity.track_data();
-                        if let Err(err) = handle_connection_tui(
-                            stream,
-                            addr,
-                            accept_tx,
-                            output_dir,
-                            whitelist,
-                        )
-                        .await
+                        if let Err(err) =
+                            handle_connection_tui(stream, addr, accept_tx, output_dir, whitelist)
+                                .await
                         {
                             tracing::error!(
                                 event = "data.conn.error",
@@ -82,7 +77,8 @@ pub(crate) async fn run_headless(
                     tokio::spawn(async move {
                         let _guard = activity.track_data();
                         if let Err(err) =
-                            handle_connection_auto(stream, addr, whitelist, limits, output_dir).await
+                            handle_connection_auto(stream, addr, whitelist, limits, output_dir)
+                                .await
                         {
                             tracing::error!(
                                 event = "data.conn.error",

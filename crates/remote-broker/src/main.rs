@@ -73,7 +73,10 @@ async fn main() -> anyhow::Result<()> {
                 "idle shutdown scheduled"
             );
         }
-        tracing::info!(event = "mode.auto_approve", "running in auto-approve headless mode");
+        tracing::info!(
+            event = "mode.auto_approve",
+            "running in auto-approve headless mode"
+        );
         run_headless(listener, whitelist, limits, output_dir, activity).await?;
         return Ok(());
     }
@@ -122,7 +125,10 @@ async fn main() -> anyhow::Result<()> {
                 "idle shutdown scheduled"
             );
         }
-        tracing::info!(event = "mode.headless", "running in headless mode, waiting for ctrl-c");
+        tracing::info!(
+            event = "mode.headless",
+            "running in headless mode, waiting for ctrl-c"
+        );
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }
