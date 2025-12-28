@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
+use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -21,6 +22,10 @@ use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 const FAST_RECONNECT_DELAY: Duration = Duration::from_secs(1);
+const CONTROL_READY_TIMEOUT: Duration = Duration::from_secs(6);
+const CONTROL_READY_INTERVAL: Duration = Duration::from_millis(200);
+const CONTROL_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
+const INITIAL_CONNECT_GRACE: Duration = Duration::from_secs(15);
 
 struct SessionTracker {
     started_at: Instant,
@@ -94,6 +99,8 @@ async fn run_target_worker(
     let forward_spec = control_forward_spec(&runtime);
     let mut bootstrap_needed = true;
     let mut connect_failures = 0;
+    let connect_grace_started = Instant::now();
+    let mut ever_snapshot = false;
     let shutdown_requested = loop {
         if shutdown.is_cancelled() {
             break true;
@@ -116,14 +123,19 @@ async fn run_target_worker(
                     continue;
                 };
                 if let Err(err) = manager.ensure_forward(&tunnel_client_id, forward).await {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some(err.to_string()),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
+                    let error = err.to_string();
+                    if in_connect_grace(ever_snapshot, connect_grace_started) {
+                        set_connecting_status(&runtime.name, &state, &event_tx).await;
+                    } else {
+                        set_status_and_notify(
+                            &runtime.name,
+                            TargetStatus::Down,
+                            Some(error),
+                            &state,
+                            &event_tx,
+                        )
+                        .await;
+                    }
                     warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
                     if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
@@ -149,14 +161,28 @@ async fn run_target_worker(
         if bootstrap_needed {
             info!(target = %runtime.name, "bootstrapping remote broker");
             if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
-                set_status_and_notify(
-                    &runtime.name,
-                    TargetStatus::Down,
-                    Some(err.to_string()),
-                    &state,
-                    &event_tx,
-                )
-                .await;
+                let error = err.to_string();
+                if err.downcast_ref::<UnsupportedRemotePlatform>().is_some() {
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(error),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
+                } else if in_connect_grace(ever_snapshot, connect_grace_started) {
+                    set_connecting_status(&runtime.name, &state, &event_tx).await;
+                } else {
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(error),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
+                }
                 warn!(target = %runtime.name, error = %err, "failed to bootstrap remote broker");
                 if err.downcast_ref::<UnsupportedRemotePlatform>().is_some() {
                     info!(
@@ -180,22 +206,55 @@ async fn run_target_worker(
         }
 
         let addr = runtime.connect_addr();
+        if in_connect_grace(ever_snapshot, connect_grace_started) {
+            set_connecting_status(&runtime.name, &state, &event_tx).await;
+        }
+        if runtime.ssh.is_some() && !ever_snapshot {
+            if let Err(err) = wait_for_control_ready(&runtime.name, &addr, &shutdown).await {
+                let error = err.to_string();
+                if in_connect_grace(ever_snapshot, connect_grace_started) {
+                    set_connecting_status(&runtime.name, &state, &event_tx).await;
+                } else {
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(error),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
+                }
+                warn!(target = %runtime.name, error = %err, "control addr not ready");
+                let delay = if in_connect_grace(ever_snapshot, connect_grace_started) {
+                    FAST_RECONNECT_DELAY
+                } else {
+                    RECONNECT_DELAY
+                };
+                if wait_reconnect_or_shutdown(&shutdown, delay).await {
+                    break true;
+                }
+                continue;
+            }
+        }
         info!(target = %runtime.name, addr = %addr, "connecting control channel");
         match connect_control(&addr).await {
             Ok(mut framed) => {
                 connect_failures = 0;
                 let mut tracker = SessionTracker::new();
-                set_status_and_notify(&runtime.name, TargetStatus::Ready, None, &state, &event_tx)
-                    .await;
                 if let Err(err) = send_request(&mut framed, ControlRequest::Subscribe).await {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some(err.to_string()),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
+                    let error = err.to_string();
+                    if in_connect_grace(ever_snapshot, connect_grace_started) {
+                        set_connecting_status(&runtime.name, &state, &event_tx).await;
+                    } else {
+                        set_status_and_notify(
+                            &runtime.name,
+                            TargetStatus::Down,
+                            Some(error),
+                            &state,
+                            &event_tx,
+                        )
+                        .await;
+                    }
                     warn!(target = %runtime.name, error = %err, "failed to subscribe");
                     if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
@@ -203,14 +262,19 @@ async fn run_target_worker(
                     continue;
                 }
                 if let Err(err) = send_request(&mut framed, ControlRequest::Snapshot).await {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some(err.to_string()),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
+                    let error = err.to_string();
+                    if in_connect_grace(ever_snapshot, connect_grace_started) {
+                        set_connecting_status(&runtime.name, &state, &event_tx).await;
+                    } else {
+                        set_status_and_notify(
+                            &runtime.name,
+                            TargetStatus::Down,
+                            Some(error),
+                            &state,
+                            &event_tx,
+                        )
+                        .await;
+                    }
                     warn!(target = %runtime.name, error = %err, "failed to request snapshot");
                     if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
@@ -230,14 +294,21 @@ async fn run_target_worker(
                 )
                 .await
                 {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some(err.to_string()),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
+                    let error = err.to_string();
+                    if !tracker.snapshot_received
+                        && in_connect_grace(ever_snapshot, connect_grace_started)
+                    {
+                        set_connecting_status(&runtime.name, &state, &event_tx).await;
+                    } else {
+                        set_status_and_notify(
+                            &runtime.name,
+                            TargetStatus::Down,
+                            Some(error),
+                            &state,
+                            &event_tx,
+                        )
+                        .await;
+                    }
                     warn!(target = %runtime.name, error = %err, "control session ended");
                     if !tracker.snapshot_received {
                         warn!(
@@ -247,6 +318,9 @@ async fn run_target_worker(
                             "control session ended before snapshot"
                         );
                     }
+                }
+                if tracker.snapshot_received {
+                    ever_snapshot = true;
                 }
                 let reconnect_delay = if tracker.snapshot_received {
                     RECONNECT_DELAY
@@ -268,14 +342,19 @@ async fn run_target_worker(
                 continue;
             }
             Err(err) => {
-                set_status_and_notify(
-                    &runtime.name,
-                    TargetStatus::Down,
-                    Some(err.to_string()),
-                    &state,
-                    &event_tx,
-                )
-                .await;
+                let error = err.to_string();
+                if in_connect_grace(ever_snapshot, connect_grace_started) {
+                    set_connecting_status(&runtime.name, &state, &event_tx).await;
+                } else {
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some(error),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
+                }
                 warn!(target = %runtime.name, error = %err, "failed to connect control channel");
                 connect_failures += 1;
                 if connect_failures >= 3 {
@@ -307,6 +386,57 @@ async fn wait_reconnect_or_shutdown(shutdown: &CancellationToken, delay: Duratio
     tokio::select! {
         _ = shutdown.cancelled() => true,
         _ = tokio::time::sleep(delay) => false,
+    }
+}
+
+fn in_connect_grace(ever_snapshot: bool, started_at: Instant) -> bool {
+    !ever_snapshot && started_at.elapsed() < INITIAL_CONNECT_GRACE
+}
+
+async fn set_connecting_status(
+    name: &str,
+    state: &Arc<RwLock<ConsoleState>>,
+    event_tx: &broadcast::Sender<ConsoleEvent>,
+) {
+    set_status_and_notify(name, TargetStatus::Down, None, state, event_tx).await;
+}
+
+async fn wait_for_control_ready(
+    target: &str,
+    addr: &str,
+    shutdown: &CancellationToken,
+) -> anyhow::Result<()> {
+    let start = Instant::now();
+    let mut logged = false;
+    loop {
+        if shutdown.is_cancelled() {
+            anyhow::bail!("shutdown requested");
+        }
+        match timeout(CONTROL_READY_CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
+            Ok(Ok(stream)) => {
+                drop(stream);
+                return Ok(());
+            }
+            Ok(Err(_)) | Err(_) => {
+                if !logged {
+                    info!(
+                        event = "control.ready.wait",
+                        target = %target,
+                        addr = %addr,
+                        timeout_ms = CONTROL_READY_TIMEOUT.as_millis(),
+                        "waiting for control listener"
+                    );
+                    logged = true;
+                }
+            }
+        }
+        if start.elapsed() >= CONTROL_READY_TIMEOUT {
+            anyhow::bail!(
+                "control addr not ready after {}ms",
+                CONTROL_READY_TIMEOUT.as_millis()
+            );
+        }
+        tokio::time::sleep(CONTROL_READY_INTERVAL).await;
     }
 }
 
@@ -394,6 +524,7 @@ async fn handle_response(
                 );
             }
             let mut guard = state.write().await;
+            guard.set_status(name, TargetStatus::Ready, None);
             guard.apply_snapshot(name, snapshot);
             drop(guard);
             emit_target_update(name, state, event_tx).await;
@@ -419,6 +550,7 @@ async fn handle_response(
                 }
             }
             let mut guard = state.write().await;
+            guard.set_status(name, TargetStatus::Ready, None);
             guard.apply_event(name, event);
             drop(guard);
             emit_target_update(name, state, event_tx).await;

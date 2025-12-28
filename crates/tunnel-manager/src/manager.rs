@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 use tunnel_protocol::ForwardSpec;
 
-const CONTROL_SOCKET_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
+const CONTROL_SOCKET_WAIT_TIMEOUT: Duration = Duration::from_secs(3);
 const CONTROL_SOCKET_WAIT_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct TunnelTargetSpec {
