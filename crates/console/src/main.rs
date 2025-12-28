@@ -6,7 +6,6 @@ mod events;
 mod runtime;
 mod state;
 mod tunnel;
-mod tunnel_client;
 
 use crate::bootstrap::BootstrapConfig;
 use crate::cli::Args;
@@ -14,8 +13,7 @@ use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
-use crate::state::{build_console_state, ControlCommand, TargetInfo};
-use crate::tunnel_client::TunnelClient;
+use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
 use anyhow::Context;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -31,14 +29,13 @@ use axum::routing::post;
 use axum::{Json, Router};
 use clap::Parser;
 use serde::Deserialize;
-use std::path::{Path as FsPath, PathBuf};
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::sync::Arc;
+use tunnel_manager::{TunnelManager, TunnelTargetSpec};
+use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 use tokio::net::TcpListener;
-use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -48,9 +45,7 @@ struct AppState {
     event_tx: broadcast::Sender<ConsoleEvent>,
 }
 
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
-const TUNNEL_DAEMON_BOOT_RETRIES: usize = 10;
-const TUNNEL_DAEMON_BOOT_DELAY: Duration = Duration::from_millis(200);
+const CONSOLE_TUNNEL_CLIENT_ID: &str = "console";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -66,8 +61,8 @@ async fn main() -> anyhow::Result<()> {
     );
     let config = load_console_config(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
-    let needs_tunnel_daemon = config.targets.iter().any(|target| target.ssh.is_some());
     let state = build_console_state(config)?;
+    let tunnel_targets = build_tunnel_targets(&state);
 
     let shutdown = CancellationToken::new();
     let bootstrap = BootstrapConfig {
@@ -96,24 +91,20 @@ async fn main() -> anyhow::Result<()> {
         .with_state(app_state)
         .layer(middleware::from_fn(log_http_request));
 
-    let tunnel_client = TunnelClient::new(args.tunnel_daemon_addr.clone(), args.tunnel_client_id);
-    if needs_tunnel_daemon {
-        let daemon_client = tunnel_client.clone();
-        let addr = args.tunnel_daemon_addr.clone();
-        let config_path = args.config.clone();
-        tokio::spawn(async move {
-            if let Err(err) = ensure_tunnel_daemon(&daemon_client, &addr, &config_path).await {
-                warn!(error = %err, "tunnel-daemon not ready, continuing without tunnels");
-            }
-        });
-        spawn_heartbeat_task(tunnel_client.clone(), shutdown.clone());
-    }
+    let tunnel_manager = if tunnel_targets.is_empty() {
+        None
+    } else {
+        let control_dir = expand_tilde(&args.tunnel_control_dir);
+        Some(Arc::new(TunnelManager::new(tunnel_targets, control_dir)?))
+    };
+    let tunnel_manager_handle = tunnel_manager.clone();
     let worker_handles = spawn_target_workers(
         Arc::clone(&shared_state),
         bootstrap,
         shutdown.clone(),
         event_tx,
-        tunnel_client,
+        tunnel_manager,
+        CONSOLE_TUNNEL_CLIENT_ID.to_string(),
     )
     .await;
 
@@ -128,6 +119,9 @@ async fn main() -> anyhow::Result<()> {
     shutdown.cancel();
     for handle in worker_handles {
         let _ = handle.await;
+    }
+    if let Some(manager) = tunnel_manager_handle {
+        manager.shutdown().await;
     }
     info!("console workers stopped");
     Ok(())
@@ -305,73 +299,48 @@ async fn wait_for_shutdown(shutdown: CancellationToken) {
     shutdown.cancel();
 }
 
-fn spawn_heartbeat_task(client: TunnelClient, shutdown: CancellationToken) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
-        loop {
-            tokio::select! {
-                _ = shutdown.cancelled() => break,
-                _ = interval.tick() => {
-                    let _ = client.heartbeat().await;
-                }
-            }
-        }
-    });
+fn build_tunnel_targets(state: &ConsoleState) -> Vec<TunnelTargetSpec> {
+    state
+        .target_specs()
+        .into_iter()
+        .filter_map(|target| {
+            let ssh = target.ssh.clone()?;
+            let Some(local_bind) = target.control_local_bind.clone() else {
+                warn!(target = %target.name, "missing control_local_bind; skipping tunnel target");
+                return None;
+            };
+            let Some(local_port) = target.control_local_port else {
+                warn!(target = %target.name, "missing control_local_port; skipping tunnel target");
+                return None;
+            };
+            let allowed_forwards = vec![ForwardSpec {
+                target: target.name.clone(),
+                purpose: ForwardPurpose::Control,
+                local_bind,
+                local_port,
+                remote_addr: target.control_remote_addr.clone(),
+            }];
+            Some(TunnelTargetSpec {
+                name: target.name,
+                ssh,
+                ssh_args: target.ssh_args,
+                ssh_password: target.ssh_password,
+                allowed_forwards,
+            })
+        })
+        .collect()
 }
 
-async fn ensure_tunnel_daemon(
-    client: &TunnelClient,
-    addr: &str,
-    config: &FsPath,
-) -> anyhow::Result<()> {
-    if client.list_forwards().await.is_ok() {
-        info!(addr = %addr, "tunnel-daemon already available");
-        let _ = client.heartbeat().await;
-        return Ok(());
-    }
-    info!(addr = %addr, "tunnel-daemon not available, spawning");
-    spawn_tunnel_daemon(addr, config)?;
-    for _ in 0..TUNNEL_DAEMON_BOOT_RETRIES {
-        if client.list_forwards().await.is_ok() {
-            info!(addr = %addr, "tunnel-daemon ready");
-            let _ = client.heartbeat().await;
-            return Ok(());
-        }
-        sleep(TUNNEL_DAEMON_BOOT_DELAY).await;
-    }
-    anyhow::bail!("tunnel-daemon not available at {addr}");
-}
-
-fn spawn_tunnel_daemon(addr: &str, config: &FsPath) -> anyhow::Result<()> {
-    let bin = resolve_tunnel_daemon_bin();
-    info!(addr = %addr, bin = %bin.display(), "spawning tunnel-daemon");
-    let mut cmd = Command::new(bin);
-    cmd.arg("--config")
-        .arg(config)
-        .arg("--listen-addr")
-        .arg(addr)
-        .arg("--log-to-stderr")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit());
-    cmd.spawn().map_err(|err| {
-        anyhow::anyhow!(
-            "failed to spawn tunnel-daemon: {} (set OCTOVALVE_TUNNEL_DAEMON_BIN to override)",
-            err
-        )
-    })?;
-    Ok(())
-}
-
-fn resolve_tunnel_daemon_bin() -> PathBuf {
-    if let Ok(path) = std::env::var("OCTOVALVE_TUNNEL_DAEMON_BIN") {
-        return PathBuf::from(path);
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        let candidate = exe.with_file_name("tunnel-daemon");
-        if candidate.exists() {
-            return candidate;
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home);
         }
     }
-    PathBuf::from("tunnel-daemon")
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(path)
 }

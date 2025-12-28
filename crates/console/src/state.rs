@@ -34,6 +34,9 @@ pub(crate) struct TargetSpec {
     pub(crate) ssh: Option<String>,
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
+    pub(crate) data_remote_addr: String,
+    pub(crate) data_local_bind: Option<String>,
+    pub(crate) data_local_port: Option<u16>,
     pub(crate) control_remote_addr: String,
     pub(crate) control_local_bind: Option<String>,
     pub(crate) control_local_port: Option<u16>,
@@ -251,6 +254,21 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         .unwrap_or_else(default_remote_addr);
     let remote_addr = target.remote_addr.unwrap_or(default_remote);
 
+    let data_bind = target
+        .local_bind
+        .clone()
+        .or_else(|| defaults.local_bind.clone())
+        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
+    let data_local_port = if target.ssh.is_some() {
+        Some(
+            target
+                .local_port
+                .ok_or_else(|| anyhow::anyhow!("target {} missing local_port", target.name))?,
+        )
+    } else {
+        None
+    };
+
     let control_remote_addr = target
         .control_remote_addr
         .or_else(|| defaults.control_remote_addr.clone())
@@ -308,6 +326,9 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         ssh: target.ssh,
         ssh_args,
         ssh_password,
+        data_remote_addr: remote_addr.clone(),
+        data_local_bind: data_local_port.map(|_| data_bind),
+        data_local_port,
         control_remote_addr,
         control_local_bind: control_local_port.map(|_| control_bind),
         control_local_port,

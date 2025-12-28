@@ -5,7 +5,6 @@ use crate::control::{ControlRequest, ControlResponse, ServiceEvent};
 use crate::events::ConsoleEvent;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
 use crate::tunnel::TargetRuntime;
-use crate::tunnel_client::TunnelClient;
 use anyhow::Context;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
@@ -17,6 +16,7 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+use tunnel_manager::TunnelManager;
 use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
@@ -26,7 +26,8 @@ pub(crate) async fn spawn_target_workers(
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
-    tunnel_client: TunnelClient,
+    tunnel_manager: Option<Arc<TunnelManager>>,
+    tunnel_client_id: String,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     let targets = {
@@ -44,7 +45,8 @@ pub(crate) async fn spawn_target_workers(
         let shutdown = shutdown.clone();
         let bootstrap = bootstrap.clone();
         let event_tx = event_tx.clone();
-        let tunnel_client = tunnel_client.clone();
+        let tunnel_manager = tunnel_manager.clone();
+        let tunnel_client_id = tunnel_client_id.clone();
         let handle = tokio::spawn(async move {
             run_target_worker(
                 spec,
@@ -53,7 +55,8 @@ pub(crate) async fn spawn_target_workers(
                 bootstrap,
                 shutdown,
                 event_tx,
-                tunnel_client,
+                tunnel_manager,
+                tunnel_client_id,
             )
             .await;
         });
@@ -69,7 +72,8 @@ async fn run_target_worker(
     bootstrap: BootstrapConfig,
     shutdown: CancellationToken,
     event_tx: broadcast::Sender<ConsoleEvent>,
-    tunnel_client: TunnelClient,
+    tunnel_manager: Option<Arc<TunnelManager>>,
+    tunnel_client_id: String,
 ) {
     let runtime = TargetRuntime::from_spec(spec);
     let forward_spec = control_forward_spec(&runtime);
@@ -82,7 +86,21 @@ async fn run_target_worker(
 
         if runtime.ssh.is_some() {
             if let Some(forward) = forward_spec.as_ref() {
-                if let Err(err) = tunnel_client.ensure_forward(forward.clone()).await {
+                let Some(manager) = tunnel_manager.as_ref() else {
+                    set_status_and_notify(
+                        &runtime.name,
+                        TargetStatus::Down,
+                        Some("tunnel manager not available".to_string()),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
+                    if wait_reconnect_or_shutdown(&shutdown).await {
+                        break true;
+                    }
+                    continue;
+                };
+                if let Err(err) = manager.ensure_forward(&tunnel_client_id, forward).await {
                     set_status_and_notify(
                         &runtime.name,
                         TargetStatus::Down,
@@ -131,7 +149,9 @@ async fn run_target_worker(
                         "unsupported remote platform, stopping worker"
                     );
                     if let Some(forward) = forward_spec.as_ref() {
-                        let _ = tunnel_client.release_forward(forward.clone()).await;
+                        if let Some(manager) = tunnel_manager.as_ref() {
+                            let _ = manager.release_forward(&tunnel_client_id, forward).await;
+                        }
                     }
                     break false;
                 }
@@ -227,15 +247,17 @@ async fn run_target_worker(
         }
     };
     if shutdown_requested {
-        info!(target = %runtime.name, "shutdown requested, stopping remote broker");
-        if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
-            warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
+            info!(target = %runtime.name, "shutdown requested, stopping remote broker");
+            if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
+                warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
+            }
+            if let Some(forward) = forward_spec.as_ref() {
+                if let Some(manager) = tunnel_manager.as_ref() {
+                    let _ = manager.release_forward(&tunnel_client_id, forward).await;
+                }
+            }
+            info!(target = %runtime.name, "worker stopped");
         }
-        if let Some(forward) = forward_spec.as_ref() {
-            let _ = tunnel_client.release_forward(forward.clone()).await;
-        }
-        info!(target = %runtime.name, "worker stopped");
-    }
 }
 
 async fn wait_reconnect_or_shutdown(shutdown: &CancellationToken) -> bool {
