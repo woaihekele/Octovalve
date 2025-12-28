@@ -21,9 +21,9 @@ use axum::extract::Path;
 use axum::extract::State;
 use axum::http::Request;
 use axum::http::StatusCode;
+use axum::middleware::{self, Next};
 use axum::response::IntoResponse;
 use axum::response::Response;
-use axum::middleware::{self, Next};
 use axum::routing::get;
 use axum::routing::post;
 use axum::{Json, Router};
@@ -31,13 +31,13 @@ use clap::Parser;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tunnel_manager::{TunnelManager, TunnelTargetSpec};
-use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+use tunnel_manager::{TunnelManager, TunnelTargetSpec};
+use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
 #[derive(Clone)]
 struct AppState {
@@ -166,7 +166,10 @@ async fn get_snapshot(
         Some(snapshot) => {
             let queue_len = snapshot.queue.len();
             let history_len = snapshot.history.len();
-            let last_id = snapshot.last_result.as_ref().map(|result| result.id.clone());
+            let last_id = snapshot
+                .last_result
+                .as_ref()
+                .map(|result| result.id.clone());
             tracing::info!(
                 target = %name,
                 queue_len = queue_len,
@@ -176,7 +179,26 @@ async fn get_snapshot(
             );
             Ok(Json(snapshot))
         }
-        None => Err(StatusCode::NOT_FOUND),
+        None => {
+            if let Some(target) = state.target_info(&name) {
+                tracing::info!(
+                    event = "snapshot.miss",
+                    target = %name,
+                    status = ?target.status,
+                    pending_count = target.pending_count,
+                    last_seen = ?target.last_seen,
+                    last_error = ?target.last_error,
+                    "snapshot not ready"
+                );
+            } else {
+                tracing::warn!(
+                    event = "snapshot.miss",
+                    target = %name,
+                    "snapshot not ready"
+                );
+            }
+            Err(StatusCode::NOT_FOUND)
+        }
     }
 }
 

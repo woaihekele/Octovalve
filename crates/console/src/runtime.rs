@@ -9,7 +9,7 @@ use anyhow::Context;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
@@ -20,6 +20,21 @@ use tunnel_manager::TunnelManager;
 use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+const FAST_RECONNECT_DELAY: Duration = Duration::from_secs(1);
+
+struct SessionTracker {
+    started_at: Instant,
+    snapshot_received: bool,
+}
+
+impl SessionTracker {
+    fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+            snapshot_received: false,
+        }
+    }
+}
 
 pub(crate) async fn spawn_target_workers(
     state: Arc<RwLock<ConsoleState>>,
@@ -95,7 +110,7 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
-                    if wait_reconnect_or_shutdown(&shutdown).await {
+                    if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
                     }
                     continue;
@@ -110,7 +125,7 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
-                    if wait_reconnect_or_shutdown(&shutdown).await {
+                    if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
                     }
                     continue;
@@ -124,7 +139,7 @@ async fn run_target_worker(
                     &event_tx,
                 )
                 .await;
-                if wait_reconnect_or_shutdown(&shutdown).await {
+                if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                     break true;
                 }
                 continue;
@@ -155,7 +170,7 @@ async fn run_target_worker(
                     }
                     break false;
                 }
-                if wait_reconnect_or_shutdown(&shutdown).await {
+                if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                     break true;
                 }
                 continue;
@@ -169,6 +184,7 @@ async fn run_target_worker(
         match connect_control(&addr).await {
             Ok(mut framed) => {
                 connect_failures = 0;
+                let mut tracker = SessionTracker::new();
                 set_status_and_notify(&runtime.name, TargetStatus::Ready, None, &state, &event_tx)
                     .await;
                 if let Err(err) = send_request(&mut framed, ControlRequest::Subscribe).await {
@@ -181,7 +197,7 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to subscribe");
-                    if wait_reconnect_or_shutdown(&shutdown).await {
+                    if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
                     }
                     continue;
@@ -196,7 +212,7 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "failed to request snapshot");
-                    if wait_reconnect_or_shutdown(&shutdown).await {
+                    if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
                     }
                     continue;
@@ -210,6 +226,7 @@ async fn run_target_worker(
                     &mut cmd_rx,
                     &shutdown,
                     &event_tx,
+                    &mut tracker,
                 )
                 .await
                 {
@@ -222,7 +239,33 @@ async fn run_target_worker(
                     )
                     .await;
                     warn!(target = %runtime.name, error = %err, "control session ended");
+                    if !tracker.snapshot_received {
+                        warn!(
+                            event = "control.session.no_snapshot",
+                            target = %runtime.name,
+                            session_ms = tracker.started_at.elapsed().as_millis(),
+                            "control session ended before snapshot"
+                        );
+                    }
                 }
+                let reconnect_delay = if tracker.snapshot_received {
+                    RECONNECT_DELAY
+                } else {
+                    FAST_RECONNECT_DELAY
+                };
+                if reconnect_delay != RECONNECT_DELAY {
+                    info!(
+                        event = "control.session.retry",
+                        target = %runtime.name,
+                        delay_ms = reconnect_delay.as_millis(),
+                        snapshot_received = tracker.snapshot_received,
+                        "retrying control session"
+                    );
+                }
+                if wait_reconnect_or_shutdown(&shutdown, reconnect_delay).await {
+                    break true;
+                }
+                continue;
             }
             Err(err) => {
                 set_status_and_notify(
@@ -242,28 +285,28 @@ async fn run_target_worker(
             }
         }
 
-        if wait_reconnect_or_shutdown(&shutdown).await {
+        if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
             break true;
         }
     };
     if shutdown_requested {
-            info!(target = %runtime.name, "shutdown requested, stopping remote broker");
-            if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
-                warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
-            }
-            if let Some(forward) = forward_spec.as_ref() {
-                if let Some(manager) = tunnel_manager.as_ref() {
-                    let _ = manager.release_forward(&tunnel_client_id, forward).await;
-                }
-            }
-            info!(target = %runtime.name, "worker stopped");
+        info!(target = %runtime.name, "shutdown requested, stopping remote broker");
+        if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
+            warn!(target = %runtime.name, error = %err, "failed to stop remote broker");
         }
+        if let Some(forward) = forward_spec.as_ref() {
+            if let Some(manager) = tunnel_manager.as_ref() {
+                let _ = manager.release_forward(&tunnel_client_id, forward).await;
+            }
+        }
+        info!(target = %runtime.name, "worker stopped");
+    }
 }
 
-async fn wait_reconnect_or_shutdown(shutdown: &CancellationToken) -> bool {
+async fn wait_reconnect_or_shutdown(shutdown: &CancellationToken, delay: Duration) -> bool {
     tokio::select! {
         _ = shutdown.cancelled() => true,
-        _ = tokio::time::sleep(RECONNECT_DELAY) => false,
+        _ = tokio::time::sleep(delay) => false,
     }
 }
 
@@ -289,6 +332,7 @@ async fn session_loop(
     cmd_rx: &mut mpsc::Receiver<ControlCommand>,
     shutdown: &CancellationToken,
     event_tx: &broadcast::Sender<ConsoleEvent>,
+    tracker: &mut SessionTracker,
 ) -> anyhow::Result<()> {
     loop {
         tokio::select! {
@@ -306,7 +350,7 @@ async fn session_loop(
                 let frame = frame.context("control stream closed")?;
                 let bytes = frame.context("read control frame")?;
                 let response: ControlResponse = serde_json::from_slice(&bytes)?;
-                handle_response(name, state, response, event_tx).await;
+                handle_response(name, state, response, event_tx, tracker).await;
             }
         }
     }
@@ -317,19 +361,38 @@ async fn handle_response(
     state: &Arc<RwLock<ConsoleState>>,
     response: ControlResponse,
     event_tx: &broadcast::Sender<ConsoleEvent>,
+    tracker: &mut SessionTracker,
 ) {
     match response {
         ControlResponse::Snapshot { snapshot } => {
             let queue_len = snapshot.queue.len();
             let history_len = snapshot.history.len();
-            let last_id = snapshot.last_result.as_ref().map(|result| result.id.as_str());
-            info!(
-                target = %name,
-                queue_len = queue_len,
-                history_len = history_len,
-                last_result_id = ?last_id,
-                "control snapshot received"
-            );
+            let last_id = snapshot
+                .last_result
+                .as_ref()
+                .map(|result| result.id.as_str());
+            let latency_ms = tracker.started_at.elapsed().as_millis();
+            if !tracker.snapshot_received {
+                tracker.snapshot_received = true;
+                info!(
+                    event = "control.snapshot.received",
+                    target = %name,
+                    latency_ms = latency_ms,
+                    queue_len = queue_len,
+                    history_len = history_len,
+                    last_result_id = ?last_id,
+                    "control snapshot received"
+                );
+            } else {
+                info!(
+                    event = "control.snapshot.update",
+                    target = %name,
+                    queue_len = queue_len,
+                    history_len = history_len,
+                    last_result_id = ?last_id,
+                    "control snapshot updated"
+                );
+            }
             let mut guard = state.write().await;
             guard.apply_snapshot(name, snapshot);
             drop(guard);
