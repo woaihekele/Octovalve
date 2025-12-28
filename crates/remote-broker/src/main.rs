@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
 
     let _file_guard = init_tracing(&args.audit_dir, args.log_to_stderr)?;
     tracing::info!(
+        event = "startup.begin",
         listen_addr = %args.listen_addr,
         control_addr = ?args.control_addr,
         headless = args.headless,
@@ -40,7 +41,11 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::load(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
-    tracing::info!(auto_approve_allowed = config.auto_approve_allowed, "config loaded");
+    tracing::info!(
+        event = "startup.config_loaded",
+        auto_approve_allowed = config.auto_approve_allowed,
+        "config loaded"
+    );
     let whitelist = Arc::new(Whitelist::from_config(&config.whitelist)?);
     let limits = Arc::new(config.limits);
     let output_dir = Arc::new(args.audit_dir.join("requests"));
@@ -50,7 +55,11 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(&args.listen_addr)
         .await
         .with_context(|| format!("failed to bind {}", args.listen_addr))?;
-    tracing::info!(listen_addr = %args.listen_addr, "listener bound");
+    tracing::info!(
+        event = "startup.listener_bound",
+        listen_addr = %args.listen_addr,
+        "listener bound"
+    );
 
     if args.auto_approve {
         if args.control_addr.is_some() {
@@ -59,11 +68,12 @@ async fn main() -> anyhow::Result<()> {
         if args.idle_exit_secs > 0 {
             spawn_idle_shutdown(activity.clone(), Duration::from_secs(args.idle_exit_secs));
             tracing::info!(
+                event = "startup.idle_shutdown_scheduled",
                 idle_exit_secs = args.idle_exit_secs,
                 "idle shutdown scheduled"
             );
         }
-        tracing::info!("running in auto-approve headless mode");
+        tracing::info!(event = "mode.auto_approve", "running in auto-approve headless mode");
         run_headless(listener, whitelist, limits, output_dir, activity).await?;
         return Ok(());
     }
@@ -87,7 +97,11 @@ async fn main() -> anyhow::Result<()> {
     );
 
     if let Some(control_addr) = args.control_addr.clone() {
-        tracing::info!(control_addr = %control_addr, "starting control server");
+        tracing::info!(
+            event = "control.start",
+            control_addr = %control_addr,
+            "starting control server"
+        );
         spawn_control_server(
             control_addr,
             cmd_tx.clone(),
@@ -103,11 +117,12 @@ async fn main() -> anyhow::Result<()> {
         if args.idle_exit_secs > 0 {
             spawn_idle_shutdown(activity, Duration::from_secs(args.idle_exit_secs));
             tracing::info!(
+                event = "startup.idle_shutdown_scheduled",
                 idle_exit_secs = args.idle_exit_secs,
                 "idle shutdown scheduled"
             );
         }
-        tracing::info!("running in headless mode, waiting for ctrl-c");
+        tracing::info!(event = "mode.headless", "running in headless mode, waiting for ctrl-c");
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }

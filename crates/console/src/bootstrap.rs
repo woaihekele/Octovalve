@@ -51,7 +51,7 @@ pub(crate) async fn bootstrap_remote_broker(
     if target.ssh.is_none() {
         return Ok(());
     }
-    info!(target = %target.name, "syncing remote broker");
+    info!(event = "bootstrap.start", target = %target.name, "syncing remote broker");
     let local_bin = run_bootstrap_step(target, "select_local_bin", || {
         select_local_bin(target, bootstrap)
     })
@@ -154,9 +154,13 @@ pub(crate) async fn bootstrap_remote_broker(
         );
         run_bootstrap_step(target, "start_remote_broker", || run_ssh(target, &start_cmd)).await?;
     } else {
-        info!(target = %target.name, "remote broker already running");
+        info!(
+            event = "bootstrap.skip_start",
+            target = %target.name,
+            "remote broker already running"
+        );
     }
-    info!(target = %target.name, "remote broker ready");
+    info!(event = "bootstrap.ready", target = %target.name, "remote broker ready");
 
     Ok(())
 }
@@ -170,11 +174,17 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<T>>,
 {
-    info!(target = %target.name, step, "bootstrap step start");
+    info!(
+        event = "bootstrap.step.start",
+        target = %target.name,
+        step,
+        "bootstrap step start"
+    );
     let start = Instant::now();
     match f().await {
         Ok(value) => {
             info!(
+                event = "bootstrap.step.done",
                 target = %target.name,
                 step,
                 elapsed_ms = start.elapsed().as_millis(),
@@ -184,6 +194,7 @@ where
         }
         Err(err) => {
             warn!(
+                event = "bootstrap.step.failed",
                 target = %target.name,
                 step,
                 elapsed_ms = start.elapsed().as_millis(),

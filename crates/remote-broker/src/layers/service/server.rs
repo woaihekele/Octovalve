@@ -34,16 +34,30 @@ pub(crate) fn spawn_accept_loop(
                     let activity = Arc::clone(&activity);
                     tokio::spawn(async move {
                         let _guard = activity.track_data();
-                        if let Err(err) =
-                            handle_connection_tui(stream, addr, accept_tx, output_dir, whitelist)
-                                .await
+                        if let Err(err) = handle_connection_tui(
+                            stream,
+                            addr,
+                            accept_tx,
+                            output_dir,
+                            whitelist,
+                        )
+                        .await
                         {
-                            tracing::error!(error = %err, "connection handler failed");
+                            tracing::error!(
+                                event = "data.conn.error",
+                                peer = %addr,
+                                error = %err,
+                                "connection handler failed"
+                            );
                         }
                     });
                 }
                 Err(err) => {
-                    tracing::error!(error = %err, "listener accept failed");
+                    tracing::error!(
+                        event = "data.listener.accept_failed",
+                        error = %err,
+                        "listener accept failed"
+                    );
                 }
             }
         }
@@ -68,15 +82,23 @@ pub(crate) async fn run_headless(
                     tokio::spawn(async move {
                         let _guard = activity.track_data();
                         if let Err(err) =
-                            handle_connection_auto(stream, addr, whitelist, limits, output_dir)
-                                .await
+                            handle_connection_auto(stream, addr, whitelist, limits, output_dir).await
                         {
-                            tracing::error!(error = %err, "connection handler failed");
+                            tracing::error!(
+                                event = "data.conn.error",
+                                peer = %addr,
+                                error = %err,
+                                "connection handler failed"
+                            );
                         }
                     });
                 }
                 Err(err) => {
-                    tracing::error!(error = %err, "listener accept failed");
+                    tracing::error!(
+                        event = "data.listener.accept_failed",
+                        error = %err,
+                        "listener accept failed"
+                    );
                 }
             }
         }
@@ -93,6 +115,7 @@ async fn handle_connection_tui(
     output_dir: Arc<PathBuf>,
     whitelist: Arc<Whitelist>,
 ) -> anyhow::Result<()> {
+    tracing::info!(event = "data.conn.open", peer = %addr);
     let _ = server_tx.send(ServerEvent::ConnectionOpened).await;
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
     while let Some(frame) = framed.next().await {
@@ -100,7 +123,12 @@ async fn handle_connection_tui(
         let request: CommandRequest = match serde_json::from_slice(&bytes) {
             Ok(request) => request,
             Err(err) => {
-                tracing::warn!(error = %err, "invalid request payload");
+                tracing::warn!(
+                    event = "request.invalid",
+                    peer = %addr,
+                    error = %err,
+                    "invalid request payload"
+                );
                 let response = CommandResponse::error("invalid", "invalid request");
                 let payload = serde_json::to_vec(&response)?;
                 let _ = framed.send(Bytes::from(payload)).await;
@@ -164,6 +192,7 @@ async fn handle_connection_tui(
         }
     }
     let _ = server_tx.send(ServerEvent::ConnectionClosed).await;
+    tracing::info!(event = "data.conn.closed", peer = %addr);
     Ok(())
 }
 
@@ -174,13 +203,19 @@ async fn handle_connection_auto(
     limits: Arc<crate::layers::policy::config::LimitsConfig>,
     output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
+    tracing::info!(event = "data.conn.open", peer = %addr);
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
     while let Some(frame) = framed.next().await {
         let bytes = frame.context("frame read")?;
         let request: CommandRequest = match serde_json::from_slice(&bytes) {
             Ok(request) => request,
             Err(err) => {
-                tracing::warn!(error = %err, "invalid request payload");
+                tracing::warn!(
+                    event = "request.invalid",
+                    peer = %addr,
+                    error = %err,
+                    "invalid request payload"
+                );
                 let response = CommandResponse::error("invalid", "invalid request");
                 let payload = serde_json::to_vec(&response)?;
                 let _ = framed.send(Bytes::from(payload)).await;
@@ -205,5 +240,6 @@ async fn handle_connection_auto(
         let payload = serde_json::to_vec(&response)?;
         framed.send(Bytes::from(payload)).await?;
     }
+    tracing::info!(event = "data.conn.closed", peer = %addr);
     Ok(())
 }
