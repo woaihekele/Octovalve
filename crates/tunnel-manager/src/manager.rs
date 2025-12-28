@@ -203,8 +203,12 @@ impl TargetState {
             }
         }
 
-        let child = spawn_master(&self.ssh, &self.control_path).await?;
-        wait_for_control_socket(&self.control_path).await?;
+        let mut child = spawn_master(&self.ssh, &self.control_path).await?;
+        if let Err(err) = wait_for_control_socket(&self.control_path).await {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(err);
+        }
         self.master = Some(SshMaster { child });
         Ok(())
     }
