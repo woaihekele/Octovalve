@@ -11,6 +11,7 @@ import {
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from './api';
+import { matchesShortcut } from './shortcuts';
 import Sidebar from './components/Sidebar.vue';
 import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
@@ -162,8 +163,7 @@ function handleGlobalKey(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
   }
-  const modifierPressed = event.altKey || event.metaKey;
-  if (modifierPressed && event.key.toLowerCase() === settings.value.shortcuts.jumpNextPending.toLowerCase()) {
+  if (matchesShortcut(event, settings.value.shortcuts.jumpNextPending)) {
     event.preventDefault();
     const target = targets.value.find((item) => item.pending_count > 0);
     if (target) {

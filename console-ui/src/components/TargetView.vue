@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { formatShortcut, matchesShortcut } from '../shortcuts';
 import type { AppSettings, ListTab, RequestSnapshot, ResultSnapshot, ServiceSnapshot, TargetInfo } from '../types';
 
 const props = defineProps<{
@@ -78,10 +79,6 @@ function buildOutput(result: ResultSnapshot) {
   return '';
 }
 
-function matchesShortcut(key: string, shortcut: string) {
-  return key.toLowerCase() === shortcut.toLowerCase();
-}
-
 function handleKeyDown(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
@@ -101,13 +98,13 @@ function handleKeyDown(event: KeyboardEvent) {
     return;
   }
 
-  if (matchesShortcut(key, props.settings.shortcuts.toggleList)) {
+  if (matchesShortcut(event, props.settings.shortcuts.toggleList)) {
     event.preventDefault();
     activeTab.value = activeTab.value === 'pending' ? 'history' : 'pending';
     return;
   }
 
-  if (matchesShortcut(key, props.settings.shortcuts.fullScreen)) {
+  if (matchesShortcut(event, props.settings.shortcuts.fullScreen)) {
     event.preventDefault();
     isFullScreen.value = !isFullScreen.value;
     return;
@@ -119,9 +116,9 @@ function handleKeyDown(event: KeyboardEvent) {
   }
 
   if (activeTab.value === 'pending' && selectedItem.value) {
-    if (matchesShortcut(key, props.settings.shortcuts.approve)) {
+    if (matchesShortcut(event, props.settings.shortcuts.approve)) {
       emit('approve', selectedItem.value.id);
-    } else if (matchesShortcut(key, props.settings.shortcuts.deny)) {
+    } else if (matchesShortcut(event, props.settings.shortcuts.deny)) {
       emit('deny', selectedItem.value.id);
     }
   }
@@ -252,13 +249,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
                 class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded shadow"
                 @click="emit('approve', selectedItem.id)"
               >
-                Approve <span class="bg-emerald-700/50 px-1.5 rounded text-xs font-mono">{{ props.settings.shortcuts.approve.toUpperCase() }}</span>
+                Approve <span class="bg-emerald-700/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.approve) }}</span>
               </button>
               <button
                 class="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded shadow"
                 @click="emit('deny', selectedItem.id)"
               >
-                Deny <span class="bg-rose-700/50 px-1.5 rounded text-xs font-mono">{{ props.settings.shortcuts.deny.toUpperCase() }}</span>
+                Deny <span class="bg-rose-700/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.deny) }}</span>
               </button>
             </div>
           </div>

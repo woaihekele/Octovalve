@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
 import type { AppSettings } from '../types';
 
 const props = defineProps<{
@@ -34,6 +35,18 @@ const hasOpen = computed(() => props.isOpen);
 function save() {
   emit('save', localSettings.value);
 }
+
+function captureShortcut(field: keyof AppSettings['shortcuts'], event: KeyboardEvent) {
+  const shortcut = eventToShortcut(event);
+  if (!shortcut) {
+    return;
+  }
+  const normalized = normalizeShortcut(shortcut);
+  if (!normalized) {
+    return;
+  }
+  localSettings.value.shortcuts[field] = normalized;
+}
 </script>
 
 <template>
@@ -62,38 +75,53 @@ function save() {
           <div class="text-sm font-medium mb-3">快捷键</div>
           <div class="space-y-3">
             <label class="flex items-center justify-between gap-4 text-sm">
-              <span class="text-slate-400">跳转到下一个 Pending（Alt/Cmd + 键）</span>
+              <span class="text-slate-400">跳转到下一个 Pending</span>
               <input
-                v-model="localSettings.shortcuts.jumpNextPending"
+                :value="formatShortcut(localSettings.shortcuts.jumpNextPending)"
                 class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
+                placeholder="按下快捷键"
+                readonly
+                @keydown.prevent="captureShortcut('jumpNextPending', $event)"
               />
             </label>
             <label class="flex items-center justify-between gap-4 text-sm">
               <span class="text-slate-400">批准</span>
               <input
-                v-model="localSettings.shortcuts.approve"
+                :value="formatShortcut(localSettings.shortcuts.approve)"
                 class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
+                placeholder="按下快捷键"
+                readonly
+                @keydown.prevent="captureShortcut('approve', $event)"
               />
             </label>
             <label class="flex items-center justify-between gap-4 text-sm">
               <span class="text-slate-400">拒绝</span>
               <input
-                v-model="localSettings.shortcuts.deny"
+                :value="formatShortcut(localSettings.shortcuts.deny)"
                 class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
+                placeholder="按下快捷键"
+                readonly
+                @keydown.prevent="captureShortcut('deny', $event)"
               />
             </label>
             <label class="flex items-center justify-between gap-4 text-sm">
               <span class="text-slate-400">切换 Pending/History</span>
               <input
-                v-model="localSettings.shortcuts.toggleList"
+                :value="formatShortcut(localSettings.shortcuts.toggleList)"
                 class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
+                placeholder="按下快捷键"
+                readonly
+                @keydown.prevent="captureShortcut('toggleList', $event)"
               />
             </label>
             <label class="flex items-center justify-between gap-4 text-sm">
               <span class="text-slate-400">全屏输出</span>
               <input
-                v-model="localSettings.shortcuts.fullScreen"
+                :value="formatShortcut(localSettings.shortcuts.fullScreen)"
                 class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
+                placeholder="按下快捷键"
+                readonly
+                @keydown.prevent="captureShortcut('fullScreen', $event)"
               />
             </label>
           </div>
