@@ -164,7 +164,7 @@ cargo run -p remote-broker -- \
 ## 内置隧道管理
 octovalve-proxy 与 console 内置 SSH 隧道管理，无需单独启动 tunnel-daemon。
 
-默认控制 socket 目录：`~/.octovalve/tunnel-control`，可通过 `--tunnel-control-dir` 覆盖。
+默认控制 socket 目录：console 为 `~/.octovalve/tunnel-control/console`，octovalve-proxy 为 `~/.octovalve/tunnel-control/proxy`，可通过 `--tunnel-control-dir` 覆盖。
 
 ## Console UI（Tauri）
 可选的本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
@@ -218,7 +218,7 @@ octovalve-proxy：
 - `--client-id`（默认：`octovalve-proxy`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
-- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control`）
+- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control/proxy`）
 
 console：
 - `--config`（目标配置，沿用 `config/local-proxy-config.toml`）
@@ -230,7 +230,7 @@ console：
 - `--remote-listen-addr`（默认：`127.0.0.1:19307`）
 - `--remote-control-addr`（默认：`127.0.0.1:19308`）
 - `--remote-audit-dir`（默认：`~/.octovalve/logs`）
-- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control`）
+- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control/console`）
 
 ## TUI 操作
 - 左侧为上下两栏：`Pending/History`（历史默认保留最近 50 条）。

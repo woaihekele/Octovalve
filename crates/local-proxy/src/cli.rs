@@ -12,7 +12,7 @@ pub(crate) struct Args {
     pub(crate) config: PathBuf,
     #[arg(long, default_value = "octovalve-proxy")]
     pub(crate) client_id: String,
-    #[arg(long, default_value = "~/.octovalve/tunnel-control")]
+    #[arg(long, default_value = "~/.octovalve/tunnel-control/proxy")]
     pub(crate) tunnel_control_dir: String,
     #[arg(long, default_value_t = 30_000)]
     pub(crate) timeout_ms: u64,
