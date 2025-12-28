@@ -5,9 +5,9 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use futures_util::StreamExt;
 use serde_json::{json, Value};
@@ -22,7 +22,12 @@ use tokio_tungstenite::tungstenite::Message;
 const DEFAULT_PROXY_EXAMPLE: &str = include_str!("../resources/local-proxy-config.toml.example");
 const DEFAULT_BROKER_CONFIG: &str = include_str!("../../../config/config.toml");
 
-struct ConsoleSidecarState(Mutex<Option<CommandChild>>);
+struct ConsoleSidecar {
+  child: CommandChild,
+  exited: std::sync::Arc<AtomicBool>,
+}
+
+struct ConsoleSidecarState(Mutex<Option<ConsoleSidecar>>);
 struct ConsoleStreamState(Mutex<bool>);
 struct ProxyConfigState(ProxyConfigStatus);
 struct AppLogState {
@@ -154,8 +159,13 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
     &format!("console sidecar started pid={}", child.pid()),
   );
 
-  *app.state::<ConsoleSidecarState>().0.lock().unwrap() = Some(child);
+  let exited = std::sync::Arc::new(AtomicBool::new(false));
+  *app.state::<ConsoleSidecarState>().0.lock().unwrap() = Some(ConsoleSidecar {
+    child,
+    exited: exited.clone(),
+  });
 
+  let app_log = app_log.to_path_buf();
   tauri::async_runtime::spawn(async move {
     let mut file = match OpenOptions::new().create(true).append(true).open(&console_log) {
       Ok(file) => file,
@@ -177,6 +187,11 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
         }
         CommandEvent::Terminated(payload) => {
           let _ = writeln!(file, "[exit] {:?}", payload.code);
+          exited.store(true, Ordering::SeqCst);
+          let _ = append_log_line(
+            &app_log,
+            &format!("console sidecar exited code={:?}", payload.code),
+          );
         }
         _ => {}
       }
@@ -189,18 +204,29 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
 fn stop_console(app: &AppHandle) {
   let state = app.state::<ConsoleSidecarState>();
   let mut guard = state.0.lock().unwrap();
-  let Some(child) = guard.take() else {
+  let Some(sidecar) = guard.take() else {
     return;
   };
-  let pid = child.pid();
+  let pid = sidecar.child.pid();
+  let exited = sidecar.exited.clone();
+  let log_path = app.state::<AppLogState>().app_log.clone();
+  let _ = append_log_line(&log_path, &format!("console stop requested pid={pid}"));
   #[cfg(unix)]
   {
     unsafe {
       libc::kill(pid as i32, libc::SIGINT);
     }
-    std::thread::sleep(Duration::from_millis(300));
   }
-  let _ = child.kill();
+  let deadline = Instant::now() + Duration::from_secs(5);
+  while !exited.load(Ordering::SeqCst) && Instant::now() < deadline {
+    std::thread::sleep(Duration::from_millis(100));
+  }
+  if exited.load(Ordering::SeqCst) {
+    let _ = append_log_line(&log_path, "console stopped gracefully");
+    return;
+  }
+  let _ = append_log_line(&log_path, "console stop timed out; sending kill");
+  let _ = sidecar.child.kill();
 }
 
 fn ensure_file(path: &Path, contents: &str) -> Result<(), String> {
