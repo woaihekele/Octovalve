@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Child;
 use tokio::sync::Mutex;
+use tracing::{info, warn};
 use tunnel_protocol::ForwardSpec;
 
 const CONTROL_SOCKET_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -47,8 +48,9 @@ impl TunnelManager {
         if targets.is_empty() {
             anyhow::bail!("no ssh targets available for tunnel manager");
         }
-        std::fs::create_dir_all(&control_dir)
-            .map_err(|err| anyhow::anyhow!("failed to create {}: {}", control_dir.display(), err))?;
+        std::fs::create_dir_all(&control_dir).map_err(|err| {
+            anyhow::anyhow!("failed to create {}: {}", control_dir.display(), err)
+        })?;
 
         let mut state_targets = HashMap::new();
         let mut seen = HashSet::new();
@@ -126,8 +128,8 @@ impl TunnelManager {
 
     pub async fn shutdown(&self) {
         let mut state = self.state.lock().await;
-        for target in state.targets.values_mut() {
-            target.shutdown().await;
+        for (name, target) in state.targets.iter_mut() {
+            target.shutdown(name).await;
         }
     }
 }
@@ -141,12 +143,20 @@ impl TargetState {
         if !self.allowed_forwards.contains(forward) {
             anyhow::bail!("forward not allowed for target {}", forward.target);
         }
-        self.ensure_master().await?;
+        self.ensure_master(&forward.target).await?;
         let entry = self.active_forwards.entry(forward.clone());
         let active = match entry {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::hash_map::Entry::Vacant(entry) => {
                 forward_add(&self.ssh, &self.control_path, forward).await?;
+                info!(
+                    event = "tunnel.forward.add",
+                    target = %forward.target,
+                    local_addr = %forward.local_addr(),
+                    remote_addr = %forward.remote_addr,
+                    client_id = %client_id,
+                    "forward added"
+                );
                 entry.insert(ActiveForward {
                     clients: HashSet::new(),
                 })
@@ -164,7 +174,27 @@ impl TargetState {
         let removed = if let Some(active) = self.active_forwards.get_mut(forward) {
             let removed = active.clients.remove(client_id);
             if active.clients.is_empty() {
-                let _ = forward_cancel(&self.ssh, &self.control_path, forward).await;
+                match forward_cancel(&self.ssh, &self.control_path, forward).await {
+                    Ok(_) => {
+                        info!(
+                            event = "tunnel.forward.release",
+                            target = %forward.target,
+                            local_addr = %forward.local_addr(),
+                            remote_addr = %forward.remote_addr,
+                            "forward released"
+                        );
+                    }
+                    Err(err) => {
+                        warn!(
+                            event = "tunnel.forward.release_failed",
+                            target = %forward.target,
+                            local_addr = %forward.local_addr(),
+                            remote_addr = %forward.remote_addr,
+                            error = %err,
+                            "forward release failed"
+                        );
+                    }
+                }
                 self.active_forwards.remove(forward);
             }
             removed
@@ -172,48 +202,77 @@ impl TargetState {
             false
         };
         if self.active_forwards.is_empty() {
-            self.shutdown_master().await;
+            self.shutdown_master(&forward.target).await;
         }
         Ok(removed)
     }
 
-    async fn shutdown(&mut self) {
+    async fn shutdown(&mut self, target_name: &str) {
         let forwards: Vec<ForwardSpec> = self.active_forwards.keys().cloned().collect();
         for forward in forwards {
             let _ = forward_cancel(&self.ssh, &self.control_path, &forward).await;
             self.active_forwards.remove(&forward);
         }
-        self.shutdown_master().await;
+        self.shutdown_master(target_name).await;
     }
 
-    async fn ensure_master(&mut self) -> anyhow::Result<()> {
+    async fn ensure_master(&mut self, target_name: &str) -> anyhow::Result<()> {
         if let Some(master) = self.master.as_mut() {
             match master.child.try_wait() {
                 Ok(None) => return Ok(()),
                 Ok(Some(status)) => {
                     self.master = None;
                     self.active_forwards.clear();
-                    tracing::warn!(error = %status, "ssh master exited, restarting");
+                    warn!(
+                        event = "tunnel.master.exit",
+                        target = %target_name,
+                        error = %status,
+                        "ssh master exited, restarting"
+                    );
                 }
                 Err(err) => {
                     self.master = None;
                     self.active_forwards.clear();
-                    tracing::warn!(error = %err, "ssh master status check failed, restarting");
+                    warn!(
+                        event = "tunnel.master.status_failed",
+                        target = %target_name,
+                        error = %err,
+                        "ssh master status check failed, restarting"
+                    );
                 }
             }
         }
 
+        info!(
+            event = "tunnel.master.spawn",
+            target = %target_name,
+            control_path = %self.control_path.display(),
+            "spawning ssh master"
+        );
         let mut child = spawn_master(&self.ssh, &self.control_path).await?;
         if let Err(err) = wait_for_control_socket(&self.control_path).await {
             let _ = child.kill().await;
             let _ = child.wait().await;
             return Err(err);
         }
+        info!(
+            event = "tunnel.master.ready",
+            target = %target_name,
+            control_path = %self.control_path.display(),
+            pid = ?child.id(),
+            "ssh master ready"
+        );
         self.master = Some(SshMaster { child });
         Ok(())
     }
 
-    async fn shutdown_master(&mut self) {
+    async fn shutdown_master(&mut self, target_name: &str) {
+        info!(
+            event = "tunnel.master.shutdown",
+            target = %target_name,
+            control_path = %self.control_path.display(),
+            "shutting down ssh master"
+        );
         let _ = exit_master(&self.ssh, &self.control_path).await;
         if let Some(mut master) = self.master.take() {
             match master.child.try_wait() {
