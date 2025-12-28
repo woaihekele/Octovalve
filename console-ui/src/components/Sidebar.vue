@@ -46,7 +46,7 @@ function statusClass(target: TargetInfo) {
   <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
     <div class="p-4 border-b border-slate-800 flex items-center gap-2">
       <div class="w-2.5 h-2.5 rounded-full bg-indigo-400"></div>
-      <h1 class="font-semibold text-lg tracking-tight">Octovalve Console</h1>
+      <h1 class="font-semibold text-lg tracking-tight">Octovalve</h1>
     </div>
 
     <div class="flex-1 overflow-y-auto p-2 space-y-1">
