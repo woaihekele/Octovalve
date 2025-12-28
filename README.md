@@ -5,15 +5,13 @@
 自动引导远端 `remote-broker` 并聚合多目标状态（为后续前端 UI 做准备）。
 
 ## 组件
-- octovalve-proxy：MCP stdio server，提供 `run_command` 工具并转发请求。
+- octovalve-proxy：MCP stdio server，提供 `run_command` 工具并转发请求（内置 SSH 隧道管理）。
 - remote-broker：TUI 审批服务，人工确认后执行命令并返回结果。
-- console：本地控制服务，自动启动/同步远端 `remote-broker`，提供 HTTP 控制接口。
-- tunnel-daemon：本地 SSH 隧道复用服务，供多进程 octovalve-proxy/console 共享连接。
+- console：本地控制服务，自动启动/同步远端 `remote-broker`，提供 HTTP 控制接口（内置 SSH 隧道管理）。
 - protocol：本地与远端共享的请求/响应结构体。
 
 ## 环境要求
 - Rust 1.88（见 `rust-toolchain.toml`）。
-- 可选：`sshpass`（当 `ssh_password` 配置为口令登录时需要）。
 - 可选：`zig` + `cargo-zigbuild`（本机是 macOS，但远端是 Linux 时用来跨平台构建 `remote-broker`）。
 
 ## 快速开始（推荐：console 自动引导）
@@ -163,23 +161,10 @@ cargo run -p remote-broker -- \
   - `targets_snapshot`：初始全量目标列表
   - `target_updated`：单目标状态更新
 
-## Tunnel Daemon（必需）
-用于多进程 octovalve-proxy/console 共享 SSH 隧道（严格模式：只允许配置中声明的目标与端口）。
+## 内置隧道管理
+octovalve-proxy 与 console 内置 SSH 隧道管理，无需单独启动 tunnel-daemon。
 
-自动拉起（默认监听 `127.0.0.1:19310`）：
-```bash
-cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
-cargo run -p console -- --config config/local-proxy-config.toml
-```
-
-手动启动（调试用）：
-```bash
-cargo run -p tunnel-daemon -- --config config/local-proxy-config.toml --listen-addr 127.0.0.1:19310
-```
-
-注意：
-- tunnel-daemon 使用 octovalve-proxy/console 的配置文件作为 allowlist。
-- 多进程请设置不同的 `--client-id`（octovalve-proxy）或 `--tunnel-client-id`（console）。
+默认控制 socket 目录：`~/.octovalve/tunnel-control`，可通过 `--tunnel-control-dir` 覆盖。
 
 ## Console UI（Tauri）
 可选的本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
@@ -201,13 +186,13 @@ npm run tauri:build:dmg
 
 说明：
 - `tauri.bundle.active` 默认关闭，打包需使用 `tauri:build:dmg`。
-- 构建前会自动编译 console/tunnel-daemon/remote-broker 并准备 sidecar。
+- 构建前会自动编译 console/remote-broker 并准备 sidecar。
 - DMG 构建会额外准备 Linux x86_64 版 `remote-broker`，用于同步到远端。
   - 需要安装 `cargo-zigbuild` 与 `zig`，或设置：
     - `OCTOVALVE_LINUX_BROKER_X86_64=/path/to/remote-broker`
 
 运行时说明：
-- 应用启动会自动拉起 console（包含 tunnel-daemon sidecar，Linux 版 remote-broker 作为资源打包）。
+- 应用启动会自动拉起 console（内置隧道管理，Linux 版 remote-broker 作为资源打包）。
 - 首次启动会在 `~/.octovalve/` 生成 `local-proxy-config.toml.example`。
   - 复制为 `local-proxy-config.toml` 并修改后重启应用。
 - `remote-broker-config.toml` 仍保存在应用配置目录（console 启动时生成）。
@@ -215,7 +200,7 @@ npm run tauri:build:dmg
 
 ## 密码登录说明
 如果必须使用密码登录，请在目标中配置 `ssh_password`。
-console/tunnel-daemon 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh-askpass.sh`）注入密码，无需安装 `sshpass`。
+console/octovalve-proxy 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh-askpass.sh`）注入密码。
 
 ## CLI 选项
 remote-broker：
@@ -233,7 +218,7 @@ octovalve-proxy：
 - `--client-id`（默认：`octovalve-proxy`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
-- `--tunnel-daemon-addr`（默认：`127.0.0.1:19310`）
+- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control`）
 
 console：
 - `--config`（目标配置，沿用 `config/local-proxy-config.toml`）
@@ -245,13 +230,7 @@ console：
 - `--remote-listen-addr`（默认：`127.0.0.1:19307`）
 - `--remote-control-addr`（默认：`127.0.0.1:19308`）
 - `--remote-audit-dir`（默认：`~/.octovalve/logs`）
-- `--tunnel-daemon-addr`（默认：`127.0.0.1:19310`）
-- `--tunnel-client-id`（默认：`console`）
-
-tunnel-daemon：
-- `--config`（使用 octovalve-proxy/console 的配置，默认 `config/local-proxy-config.toml`）
-- `--listen-addr`（默认：`127.0.0.1:19310`）
-- `--control-dir`（默认：`~/.octovalve/tunnel-control`）
+- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control`）
 
 ## TUI 操作
 - 左侧为上下两栏：`Pending/History`（历史默认保留最近 50 条）。
@@ -268,7 +247,7 @@ tunnel-daemon：
 
 ## 安全说明
 - 无内置认证，请确保远端服务仅监听 `127.0.0.1`，由本地代理通过 SSH 隧道访问。
-- SSH 连接由 `tunnel-daemon` 管理并使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
+- SSH 连接由 console/octovalve-proxy 内置管理并使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
 - `--auto-approve` 与 TUI 手动审批均只会硬拒绝 `denied` 列表中的命令。
 - `argv` 模式直接执行可执行文件，不经过 shell；`shell` 模式使用 `/bin/bash -lc`。
 - 建议使用非 root 用户运行并关注审计日志。
