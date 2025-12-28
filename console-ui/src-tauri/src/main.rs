@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use tauri::api::path::home_dir;
 use tauri::api::process::{Command, CommandChild, CommandEvent};
 use tauri::{AppHandle, Manager, RunEvent, State};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 
 const DEFAULT_PROXY_EXAMPLE: &str = include_str!("../resources/local-proxy-config.toml.example");
@@ -35,6 +37,7 @@ struct ProxyConfigStatus {
 }
 
 const CONSOLE_HTTP_BASE: &str = "http://127.0.0.1:19309";
+const CONSOLE_HTTP_HOST: &str = "127.0.0.1:19309";
 const CONSOLE_WS_URL: &str = "ws://127.0.0.1:19309/ws";
 const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
 static HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -300,6 +303,30 @@ fn console_http_url(path: &str) -> String {
 }
 
 async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
+  let (status, body, _version, _content_type) = console_get_reqwest(path, log_path).await?;
+  if status == 400 && body.is_empty() {
+    let _ = append_log_line(
+      log_path,
+      &format!("console http GET retrying with raw tcp for {path}"),
+    );
+    return console_get_raw(path, log_path).await;
+  }
+  if status / 100 != 2 {
+    return Err(format!("console http GET status {} for {}", status, path));
+  }
+  serde_json::from_str(&body).map_err(|err| {
+    let _ = append_log_line(
+      log_path,
+      &format!("console http GET parse error: {err}"),
+    );
+    err.to_string()
+  })
+}
+
+async fn console_get_reqwest(
+  path: &str,
+  log_path: &Path,
+) -> Result<(u16, String, String, String), String> {
   let url = console_http_url(path);
   let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
   let _ = append_log_line(
@@ -355,15 +382,60 @@ async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
       escape_log_body(&body)
     ),
   );
-  if !status.is_success() {
-    return Err(format!(
-      "console http GET status {} for {}",
-      status.as_u16(),
-      path
-    ));
+  Ok((status.as_u16(), body, version, content_type))
+}
+
+async fn console_get_raw(path: &str, log_path: &Path) -> Result<Value, String> {
+  let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+  let _ = append_log_line(
+    log_path,
+    &format!("console raw GET#{request_id} start path={path}"),
+  );
+  let mut stream = TcpStream::connect(CONSOLE_HTTP_HOST)
+    .await
+    .map_err(|err| err.to_string())?;
+  let request = format!(
+    "GET {path} HTTP/1.1\r\nHost: {CONSOLE_HTTP_HOST}\r\nConnection: close\r\n\r\n"
+  );
+  stream
+    .write_all(request.as_bytes())
+    .await
+    .map_err(|err| err.to_string())?;
+  let mut buffer = Vec::new();
+  stream
+    .read_to_end(&mut buffer)
+    .await
+    .map_err(|err| err.to_string())?;
+  let response = String::from_utf8_lossy(&buffer);
+  let (head, body) = response
+    .split_once("\r\n\r\n")
+    .ok_or_else(|| "raw http response missing header".to_string())?;
+  let status = head
+    .lines()
+    .next()
+    .and_then(|line| line.split_whitespace().nth(1))
+    .and_then(|code| code.parse::<u16>().ok())
+    .unwrap_or(0);
+  let _ = append_log_line(
+    log_path,
+    &format!("console raw GET#{request_id} status={status}"),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!("console raw GET#{request_id} body_len={}", body.len()),
+  );
+  let _ = append_log_line(
+    log_path,
+    &format!(
+      "console raw GET#{request_id} body: {}",
+      escape_log_body(body)
+    ),
+  );
+  if status / 100 != 2 {
+    return Err(format!("console raw GET status {} for {}", status, path));
   }
-  serde_json::from_str(&body).map_err(|err| {
-    let _ = append_log_line(log_path, &format!("console http GET parse error: {err}"));
+  serde_json::from_str(body).map_err(|err| {
+    let _ = append_log_line(log_path, &format!("console raw GET parse error: {err}"));
     err.to_string()
   })
 }
