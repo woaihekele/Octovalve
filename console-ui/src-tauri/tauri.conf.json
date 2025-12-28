@@ -6,7 +6,7 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "Octovalve Console",
+    "productName": "Octovalve",
     "version": "0.1.0"
   },
   "tauri": {
@@ -18,7 +18,7 @@
     },
     "windows": [
       {
-        "title": "Octovalve Console",
+        "title": "Octovalve",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
