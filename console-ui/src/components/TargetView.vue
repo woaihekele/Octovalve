@@ -183,7 +183,7 @@ function handleTerminalToggle() {
           :class="
             props.target.terminal_available
               ? props.terminalOpen
-                ? 'bg-danger/20 text-danger border-danger/40'
+                ? 'bg-panel/60 text-foreground border-accent/30'
                 : 'bg-panel/60 text-foreground border-border hover:border-accent/40'
               : 'bg-panel/30 text-foreground-muted border-border/60 cursor-not-allowed'
           "
