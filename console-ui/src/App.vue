@@ -140,6 +140,9 @@ const selectedTerminalEntry = computed(() => {
   }
   return terminalEntries.value.find((item) => item.target.name === selectedTargetName.value) ?? null;
 });
+const activeTerminalTabId = computed<string | number | undefined>(() => {
+  return selectedTerminalEntry.value?.state.activeId ?? undefined;
+});
 
 function createTabId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -211,6 +214,30 @@ function addTerminalTab(name: string) {
     activeId: tab.id,
     nextIndex: (current.nextIndex || 1) + 1,
   });
+}
+
+function handleAddTerminalTab() {
+  const entry = selectedTerminalEntry.value;
+  if (!entry) {
+    return;
+  }
+  addTerminalTab(entry.target.name);
+}
+
+function handleCloseTerminalTab(name: string | number) {
+  const entry = selectedTerminalEntry.value;
+  if (!entry) {
+    return;
+  }
+  closeTerminalTab(entry.target.name, String(name));
+}
+
+function handleActivateTerminalTab(value: string | number) {
+  const entry = selectedTerminalEntry.value;
+  if (!entry) {
+    return;
+  }
+  activateTerminalTab(entry.target.name, String(value));
 }
 
 function activateTerminalTab(name: string, tabId: string) {
@@ -568,15 +595,15 @@ watch(
               <div class="flex flex-col min-h-0 h-full">
               <div class="pt-1 pb-0 bg-surface">
                 <n-tabs
-                  :value="selectedTerminalEntry.state.activeId"
+                  :value="activeTerminalTabId"
                   type="card"
                   size="small"
                   addable
                   closable
                   class="min-w-0 terminal-tabs"
-                  @add="addTerminalTab(selectedTerminalEntry.target.name)"
-                  @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
-                  @update:value="(value) => activateTerminalTab(selectedTerminalEntry.target.name, String(value))"
+                  @add="handleAddTerminalTab"
+                  @close="handleCloseTerminalTab"
+                  @update:value="handleActivateTerminalTab"
                 >
                   <n-tab-pane
                     v-for="tab in selectedTerminalEntry.state.tabs"
