@@ -19,13 +19,56 @@ const editorHeight = computed(() => props.height ?? '260px');
 let editor: Monaco.editor.IStandaloneCodeEditor | null = null;
 let monacoApi: typeof Monaco | null = null;
 let updatingFromEditor = false;
+let tomlRegistered = false;
+
+function ensureTomlLanguage(monaco: typeof Monaco) {
+  if (tomlRegistered) {
+    return;
+  }
+  monaco.languages.register({ id: 'toml' });
+  monaco.languages.setMonarchTokensProvider('toml', {
+    tokenizer: {
+      root: [
+        [/^\s*\[[^\]]+\]/, 'tag'],
+        [/^\s*#.*$/, 'comment'],
+        [/"([^"\\]|\\.)*$/, 'string.invalid'],
+        [/"([^"\\]|\\.)*"/, 'string'],
+        [/'([^'\\]|\\.)*'/, 'string'],
+        [/\b(true|false)\b/, 'keyword'],
+        [/[+-]?\d+(\.\d+)?([eE][+-]?\d+)?/, 'number'],
+        [/^[A-Za-z0-9_-]+(?=\s*=)/, 'key'],
+        [/[{}\[\],=]/, 'delimiter'],
+      ],
+    },
+  });
+  monaco.languages.setLanguageConfiguration('toml', {
+    comments: { lineComment: '#' },
+    brackets: [
+      ['[', ']'],
+      ['{', '}'],
+    ],
+    autoClosingPairs: [
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+      { open: '[', close: ']' },
+      { open: '{', close: '}' },
+    ],
+    surroundingPairs: [
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+      { open: '[', close: ']' },
+      { open: '{', close: '}' },
+    ],
+  });
+  tomlRegistered = true;
+}
 
 async function initEditor() {
   if (!containerRef.value || editor) {
     return;
   }
   monacoApi = await import('monaco-editor');
-  await import('monaco-editor/esm/vs/basic-languages/toml/toml');
+  ensureTomlLanguage(monacoApi);
   monacoApi.editor.setTheme('vs-dark');
   editor = monacoApi.editor.create(containerRef.value, {
     value: props.modelValue ?? '',

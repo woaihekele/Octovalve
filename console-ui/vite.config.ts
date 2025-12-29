@@ -1,11 +1,14 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { monacoEditorPlugin } from 'vite-plugin-monaco-editor';
+import monacoEditorPlugin from 'vite-plugin-monaco-editor';
+
+const monacoPluginFactory =
+  (monacoEditorPlugin as unknown as { default?: typeof monacoEditorPlugin }).default ?? monacoEditorPlugin;
 
 export default defineConfig({
   plugins: [
     vue(),
-    monacoEditorPlugin({
+    monacoPluginFactory({
       languageWorkers: ['editorWorkerService'],
     }),
   ],
