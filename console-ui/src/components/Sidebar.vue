@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', name: string): void;
+  (e: 'open-settings'): void;
 }>();
 
 function resolveStatus(target: TargetInfo) {
@@ -98,8 +99,21 @@ function handleTitleDrag(event: MouseEvent) {
       </button>
     </div>
 
-    <div class="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
-      Pending Total: {{ props.pendingTotal }}
+    <div class="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500">
+      <button
+        class="p-2 rounded-full border border-slate-800 text-slate-400 hover:text-white hover:border-indigo-500/40 transition-colors"
+        @click="emit('open-settings')"
+        aria-label="设置"
+        title="设置"
+      >
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          ></path>
+        </svg>
+      </button>
+      <div>Pending Total: {{ props.pendingTotal }}</div>
     </div>
   </aside>
 </template>

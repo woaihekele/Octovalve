@@ -21,6 +21,7 @@ const activeTab = ref<ListTab>('pending');
 const selectedIndex = ref(0);
 const isFullScreen = ref(false);
 const isTerminalOpen = ref(false);
+const isTerminalInitialized = ref(false);
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
@@ -32,6 +33,7 @@ watch(
   () => {
     selectedIndex.value = 0;
     isTerminalOpen.value = false;
+    isTerminalInitialized.value = false;
   }
 );
 
@@ -150,6 +152,14 @@ function handleTitleDrag(event: MouseEvent) {
   event.preventDefault();
   void startWindowDrag();
 }
+
+function openTerminal() {
+  if (!props.target.terminal_available) {
+    return;
+  }
+  isTerminalInitialized.value = true;
+  isTerminalOpen.value = true;
+}
 </script>
 
 <template>
@@ -172,7 +182,7 @@ function handleTitleDrag(event: MouseEvent) {
       </div>
       <div class="flex items-center gap-2">
         <button
-          class="text-xs px-3 py-1.5 rounded border transition-colors"
+          class="p-2 rounded border transition-colors"
           :class="
             props.target.terminal_available
               ? isTerminalOpen
@@ -181,9 +191,15 @@ function handleTitleDrag(event: MouseEvent) {
               : 'bg-slate-900/30 text-slate-500 border-slate-800 cursor-not-allowed'
           "
           :disabled="!props.target.terminal_available"
-          @click="isTerminalOpen = true"
+          @click="openTerminal"
+          aria-label="终端"
+          title="终端"
         >
-          终端
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <polyline points="8 9 11 12 8 15"></polyline>
+            <line x1="13" y1="15" x2="17" y2="15"></line>
+          </svg>
         </button>
       </div>
     </div>
@@ -368,8 +384,10 @@ function handleTitleDrag(event: MouseEvent) {
     </div>
 
     <TerminalPanel
-      v-if="isTerminalOpen"
+      v-if="isTerminalInitialized"
+      v-show="isTerminalOpen"
       :target="props.target"
+      :visible="isTerminalOpen"
       @close="isTerminalOpen = false"
     />
   </div>

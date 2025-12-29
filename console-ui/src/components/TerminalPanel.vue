@@ -9,6 +9,7 @@ import type { TargetInfo } from '../types';
 
 const props = defineProps<{
   target: TargetInfo;
+  visible: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -25,6 +26,8 @@ let resizeObserver: ResizeObserver | null = null;
 let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 let unlistenError: UnlistenFn | null = null;
+let inputBuffer = '';
+let inputFlushTimer: number | null = null;
 
 const termName = 'xterm-256color';
 const textEncoder = new TextEncoder();
@@ -91,9 +94,8 @@ async function openSession() {
     if (!sessionId) {
       return;
     }
-    const bytes = textEncoder.encode(data);
-    const payload = encodeBase64(bytes);
-    void terminalInput(sessionId, payload);
+    inputBuffer += data;
+    scheduleInputFlush();
   });
 
   unlistenOutput = await listen('terminal_output', (event) => {
@@ -135,7 +137,33 @@ async function openSession() {
   statusMessage.value = null;
 }
 
+function scheduleInputFlush() {
+  if (inputFlushTimer !== null) {
+    return;
+  }
+  inputFlushTimer = window.setTimeout(() => {
+    inputFlushTimer = null;
+    flushInputBuffer();
+  }, 12);
+}
+
+function flushInputBuffer() {
+  if (!sessionId || inputBuffer.length === 0) {
+    inputBuffer = '';
+    return;
+  }
+  const bytes = textEncoder.encode(inputBuffer);
+  inputBuffer = '';
+  const payload = encodeBase64(bytes);
+  void terminalInput(sessionId, payload);
+}
+
 function cleanupTerminal(sendClose: boolean) {
+  if (inputFlushTimer !== null) {
+    window.clearTimeout(inputFlushTimer);
+    inputFlushTimer = null;
+  }
+  inputBuffer = '';
   if (resizeObserver && containerRef.value) {
     resizeObserver.disconnect();
     resizeObserver = null;
@@ -180,8 +208,28 @@ watch(
   }
 );
 
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) {
+      return;
+    }
+    if (!sessionId) {
+      void openSession();
+      return;
+    }
+    if (terminal && fitAddon && sessionId) {
+      fitAddon.fit();
+      terminal.focus();
+      void terminalResize(sessionId, terminal.cols, terminal.rows);
+    }
+  }
+);
+
 onMounted(() => {
-  void openSession();
+  if (props.visible) {
+    void openSession();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -194,10 +242,15 @@ onBeforeUnmount(() => {
     <div class="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900/70">
       <div class="text-sm text-slate-200">{{ props.target.name }} · 终端</div>
       <button
-        class="text-xs text-slate-400 hover:text-white border border-slate-700 rounded px-2 py-1"
+        class="p-1.5 text-slate-400 hover:text-white border border-slate-700 rounded"
         @click="handleClose"
+        aria-label="关闭终端"
+        title="关闭终端"
       >
-        关闭
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
       </button>
     </div>
     <div class="flex-1 min-h-0">
