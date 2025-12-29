@@ -573,7 +573,6 @@ watch(
                   size="small"
                   addable
                   closable
-                  :pane-style="{ display: 'none' }"
                   class="min-w-0 terminal-tabs"
                   @add="addTerminalTab(selectedTerminalEntry.target.name)"
                   @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
