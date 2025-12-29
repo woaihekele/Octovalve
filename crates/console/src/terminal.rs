@@ -373,13 +373,9 @@ fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
 fn apply_locale_env(cmd: &mut CommandBuilder) {
     if let Some(locale) = resolve_terminal_locale() {
         cmd.env("LANG", &locale);
-        cmd.env("LC_ALL", &locale);
-        cmd.env("LC_CTYPE", &locale);
     }
     cmd.arg("-o");
     cmd.arg("SendEnv=LANG");
-    cmd.arg("-o");
-    cmd.arg("SendEnv=LC_*");
 }
 
 fn resolve_terminal_locale() -> Option<String> {
@@ -389,19 +385,26 @@ fn resolve_terminal_locale() -> Option<String> {
             return Some(trimmed.to_string());
         }
     }
-    if let Ok(value) = std::env::var("LC_ALL") {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() && is_utf8_locale(trimmed) {
-            return Some(trimmed.to_string());
-        }
+    resolve_fallback_locale(std::env::var("LANG").ok())
+}
+
+fn resolve_fallback_locale(value: Option<String>) -> Option<String> {
+    let value = value?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
     }
-    if let Ok(value) = std::env::var("LANG") {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() && is_utf8_locale(trimmed) {
-            return Some(trimmed.to_string());
-        }
+    let lower = trimmed.to_ascii_lowercase();
+    if !is_utf8_locale(&lower) {
+        return None;
     }
-    None
+    if matches!(
+        lower.as_str(),
+        "c" | "posix" | "c.utf-8" | "c.utf8" | "utf-8" | "utf8"
+    ) {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 fn is_utf8_locale(value: &str) -> bool {
