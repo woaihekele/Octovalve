@@ -3,25 +3,23 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { formatShortcut, matchesShortcut } from '../shortcuts';
 import { startWindowDrag } from '../tauriWindow';
 import type { AppSettings, ListTab, RequestSnapshot, ResultSnapshot, ServiceSnapshot, TargetInfo } from '../types';
-import TerminalPanel from './TerminalPanel.vue';
-
 const props = defineProps<{
   target: TargetInfo;
   snapshot: ServiceSnapshot | null;
   settings: AppSettings;
   pendingJumpToken: number;
+  terminalOpen: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'approve', id: string): void;
   (e: 'deny', id: string): void;
+  (e: 'open-terminal'): void;
 }>();
 
 const activeTab = ref<ListTab>('pending');
 const selectedIndex = ref(0);
 const isFullScreen = ref(false);
-const isTerminalOpen = ref(false);
-const isTerminalInitialized = ref(false);
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
@@ -32,8 +30,6 @@ watch(
   () => [props.target.name, activeTab.value],
   () => {
     selectedIndex.value = 0;
-    isTerminalOpen.value = false;
-    isTerminalInitialized.value = false;
   }
 );
 
@@ -98,7 +94,7 @@ function handleKeyDown(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
   }
-  if (isTerminalOpen.value) {
+  if (props.terminalOpen) {
     return;
   }
 
@@ -152,14 +148,6 @@ function handleTitleDrag(event: MouseEvent) {
   event.preventDefault();
   void startWindowDrag();
 }
-
-function openTerminal() {
-  if (!props.target.terminal_available) {
-    return;
-  }
-  isTerminalInitialized.value = true;
-  isTerminalOpen.value = true;
-}
 </script>
 
 <template>
@@ -185,13 +173,13 @@ function openTerminal() {
           class="p-2 rounded border transition-colors"
           :class="
             props.target.terminal_available
-              ? isTerminalOpen
+              ? props.terminalOpen
                 ? 'bg-indigo-500/20 text-indigo-200 border-indigo-500/40'
                 : 'bg-slate-900/60 text-slate-200 border-slate-700 hover:border-indigo-500/40'
               : 'bg-slate-900/30 text-slate-500 border-slate-800 cursor-not-allowed'
           "
           :disabled="!props.target.terminal_available"
-          @click="openTerminal"
+          @click="emit('open-terminal')"
           aria-label="终端"
           title="终端"
         >
@@ -383,12 +371,5 @@ function openTerminal() {
       </div>
     </div>
 
-    <TerminalPanel
-      v-if="isTerminalInitialized"
-      v-show="isTerminalOpen"
-      :target="props.target"
-      :visible="isTerminalOpen"
-      @close="isTerminalOpen = false"
-    />
   </div>
 </template>

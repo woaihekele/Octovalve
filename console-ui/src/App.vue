@@ -13,6 +13,7 @@ import {
 } from './api';
 import { matchesShortcut } from './shortcuts';
 import Sidebar from './components/Sidebar.vue';
+import TerminalPanel from './components/TerminalPanel.vue';
 import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import ToastNotification from './components/ToastNotification.vue';
@@ -29,18 +30,57 @@ const notification = ref<{ message: string; count?: number } | null>(null);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
 const pendingJumpToken = ref(0);
+const terminalState = ref<Record<string, { initialized: boolean; open: boolean }>>({});
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
+const selectedTerminal = computed(() => {
+  if (!selectedTargetName.value) {
+    return { initialized: false, open: false };
+  }
+  return terminalState.value[selectedTargetName.value] ?? { initialized: false, open: false };
+});
 const selectedSnapshot = computed(() => {
   if (!selectedTargetName.value) {
     return null;
   }
   return snapshots.value[selectedTargetName.value] ?? null;
 });
+
+const terminalEntries = computed(() =>
+  targets.value
+    .map((target) => ({ target, state: terminalState.value[target.name] }))
+    .filter((entry) => entry.state?.initialized)
+    .map((entry) => ({ target: entry.target, state: entry.state! }))
+);
+
+function openTerminalForTarget(name: string) {
+  terminalState.value = {
+    ...terminalState.value,
+    [name]: { initialized: true, open: true },
+  };
+}
+
+function closeTerminalForTarget(name: string) {
+  const current = terminalState.value[name];
+  if (!current) {
+    return;
+  }
+  terminalState.value = {
+    ...terminalState.value,
+    [name]: { ...current, open: false },
+  };
+}
+
+function handleOpenTerminal() {
+  if (!selectedTargetName.value) {
+    return;
+  }
+  openTerminalForTarget(selectedTargetName.value);
+}
 
 function showNotification(message: string, count?: number) {
   notification.value = { message, count };
@@ -299,13 +339,22 @@ watch(
           :snapshot="selectedSnapshot"
           :settings="settings"
           :pending-jump-token="pendingJumpToken"
+          :terminal-open="selectedTerminal.open"
           @approve="approve"
           @deny="deny"
+          @open-terminal="handleOpenTerminal"
         />
         <div v-else class="flex-1 flex items-center justify-center text-slate-600">
           请选择目标开始操作。
         </div>
       </div>
+      <TerminalPanel
+        v-for="entry in terminalEntries"
+        :key="entry.target.name"
+        :target="entry.target"
+        :visible="entry.state.open && selectedTargetName === entry.target.name"
+        @close="closeTerminalForTarget(entry.target.name)"
+      />
     </div>
 
     <SettingsModal
