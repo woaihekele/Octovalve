@@ -90,9 +90,9 @@ const naiveThemeOverrides = computed(() => {
     },
     Tabs: {
       tabFontSizeSmall: '12px',
-      tabHeightSmall: '26px',
+      tabHeightSmall: '24px',
       tabPaddingSmall: '0 10px',
-      cardPaddingSmall: '0 6px',
+      cardPaddingSmall: '0 4px',
       cardGapSmall: '4px',
     },
   };
@@ -138,11 +138,7 @@ const selectedTerminalEntry = computed(() => {
   if (!selectedTargetName.value) {
     return null;
   }
-  const entry = terminalEntries.value.find((item) => item.target.name === selectedTargetName.value) ?? null;
-  if (!entry || !entry.state.open) {
-    return null;
-  }
-  return entry;
+  return terminalEntries.value.find((item) => item.target.name === selectedTargetName.value) ?? null;
 });
 
 function createTabId() {
@@ -570,28 +566,28 @@ watch(
           >
             <template v-if="selectedTerminalEntry" #terminal>
               <div class="flex flex-col min-h-0 h-full">
-                <div class="border-b border-border px-6 pt-1 pb-0.5 bg-surface">
-                  <n-tabs
-                    :value="selectedTerminalEntry.state.activeId"
-                    type="card"
-                    size="small"
-                    addable
+              <div class="px-6 pt-1 pb-0 bg-surface">
+                <n-tabs
+                  :value="selectedTerminalEntry.state.activeId"
+                  type="card"
+                  size="small"
+                  addable
+                  closable
+                  :pane-style="{ display: 'none' }"
+                  class="min-w-0 terminal-tabs"
+                  @add="addTerminalTab(selectedTerminalEntry.target.name)"
+                  @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
+                  @update:value="(value) => activateTerminalTab(selectedTerminalEntry.target.name, String(value))"
+                >
+                  <n-tab-pane
+                    v-for="tab in selectedTerminalEntry.state.tabs"
+                    :key="tab.id"
+                    :name="tab.id"
+                    :tab="tab.label"
                     closable
-                    :pane-style="{ display: 'none' }"
-                    class="min-w-0 terminal-tabs"
-                    @add="addTerminalTab(selectedTerminalEntry.target.name)"
-                    @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
-                    @update:value="(value) => activateTerminalTab(selectedTerminalEntry.target.name, String(value))"
-                  >
-                    <n-tab-pane
-                      v-for="tab in selectedTerminalEntry.state.tabs"
-                      :key="tab.id"
-                      :name="tab.id"
-                      :tab="tab.label"
-                      closable
-                    />
-                  </n-tabs>
-                </div>
+                  />
+                </n-tabs>
+              </div>
                 <div class="flex-1 min-h-0 relative">
                   <TerminalPanel
                     v-for="tab in selectedTerminalEntry.state.tabs"
@@ -599,11 +595,11 @@ watch(
                     :target="selectedTerminalEntry.target"
                     :theme="resolvedTheme"
                     :visible="
-                      selectedTerminalEntry.state.open &&
+                      selectedTerminalOpen &&
                       selectedTerminalEntry.state.activeId === tab.id
                     "
                     v-show="
-                      selectedTerminalEntry.state.open &&
+                      selectedTerminalOpen &&
                       selectedTerminalEntry.state.activeId === tab.id
                     "
                   />

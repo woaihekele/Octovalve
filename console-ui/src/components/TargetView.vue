@@ -224,12 +224,10 @@ function handleTerminalToggle() {
     </div>
 
     <div class="flex-1 flex overflow-hidden min-h-0">
-      <template v-if="props.terminalOpen">
-        <div class="flex-1 min-h-0">
-          <slot name="terminal" />
-        </div>
-      </template>
-      <template v-else>
+      <div v-show="props.terminalOpen" class="flex-1 min-h-0">
+        <slot name="terminal" />
+      </div>
+      <div v-show="!props.terminalOpen" class="flex-1 flex overflow-hidden min-h-0">
         <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
           <div class="flex border-b border-border">
             <button
@@ -406,7 +404,7 @@ function handleTerminalToggle() {
             请选择一条记录查看详情
           </div>
         </div>
-      </template>
+      </div>
     </div>
 
   </div>
