@@ -275,3 +275,27 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+:deep(.xterm-viewport) {
+  scrollbar-color: #475569 #020617;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar) {
+  width: 10px;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar-track) {
+  background: #020617;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+  background-color: #334155;
+  border-radius: 8px;
+  border: 2px solid #020617;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+  background-color: #475569;
+}
+</style>
