@@ -70,7 +70,7 @@ const proxyDirty = computed(() => proxyConfigText.value !== proxyOriginal.value)
 const brokerDirty = computed(() => brokerConfigText.value !== brokerOriginal.value);
 
 function save() {
-  emit('save', localSettings.value);
+  emit('save', cloneSettings(localSettings.value));
 }
 
 function showConfigMessage(message: string) {
@@ -257,6 +257,11 @@ watch(
 watch(
   () => props.isOpen,
   (open) => {
+    if (open) {
+      localSettings.value = cloneSettings(props.settings);
+      activeShortcut.value = null;
+      return;
+    }
     if (!open) {
       configLoaded.value = false;
       configError.value = null;
@@ -268,6 +273,7 @@ watch(
       proxyOriginal.value = '';
       brokerOriginal.value = '';
       activeTab.value = 'general';
+      activeShortcut.value = null;
     }
   }
 );
