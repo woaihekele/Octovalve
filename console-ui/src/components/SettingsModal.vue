@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue';
 import {
   NAlert,
   NButton,
@@ -86,6 +86,16 @@ const cardStyle = computed(() => ({
   maxWidth: isConfigTab.value ? '80rem' : '32rem',
   height: isConfigTab.value ? '80vh' : 'auto',
 }));
+const cardContentStyle = computed<CSSProperties>(() => {
+  if (!isConfigTab.value) {
+    return {};
+  }
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+  };
+});
 
 function save() {
   emit('save', cloneSettings(localSettings.value));
@@ -289,7 +299,7 @@ watch(
     :close-on-esc="true"
     @update:show="(value) => { if (!value) emit('close'); }"
   >
-    <n-card :bordered="true" :style="cardStyle" size="large">
+    <n-card :bordered="true" :style="cardStyle" :content-style="cardContentStyle" size="large">
       <template #header>设置</template>
       <template #header-extra>
         <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
@@ -300,7 +310,12 @@ watch(
         </n-button>
       </template>
 
-      <n-tabs v-model:value="activeTab" type="line" size="small">
+      <n-tabs
+        v-model:value="activeTab"
+        type="line"
+        size="small"
+        :class="isConfigTab ? 'settings-tabs settings-tabs--full' : 'settings-tabs'"
+      >
         <n-tab-pane name="general" tab="通用设置">
           <div class="space-y-4">
             <div class="flex items-center justify-between gap-4">
@@ -378,7 +393,7 @@ watch(
         </n-tab-pane>
 
         <n-tab-pane name="config" tab="配置中心">
-          <div class="flex flex-col gap-4 min-h-0">
+          <div class="flex flex-col gap-4 min-h-0 flex-1">
             <div v-if="configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
               <n-spin size="small" />
               <span>正在加载配置...</span>
@@ -386,8 +401,8 @@ watch(
             <n-alert v-else-if="configError" type="error" :bordered="false">
               加载失败：{{ configError }}
             </n-alert>
-            <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-              <div class="flex flex-col gap-2 min-h-0">
+            <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">
+              <div class="flex flex-col gap-2 min-h-0 flex-1">
                 <div class="flex items-center justify-between text-sm">
                   <div>
                     <div class="font-medium">本地代理配置</div>
@@ -395,18 +410,22 @@ watch(
                   </div>
                   <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
                 </div>
-                <MonacoEditor v-model="proxyConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
+                <div class="flex-1 min-h-0">
+                  <MonacoEditor v-model="proxyConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
+                </div>
                 <div class="text-xs text-foreground-muted">修改 broker_config_path 后建议点击刷新或保存并应用。</div>
               </div>
 
-              <div class="flex flex-col gap-2 min-h-0">
+              <div class="flex flex-col gap-2 min-h-0 flex-1">
                 <div class="flex items-center justify-between text-sm">
                   <div>
                     <div class="font-medium">远端 broker 配置（源文件）</div>
                     <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
                   </div>
                 </div>
-                <MonacoEditor v-model="brokerConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
+                <div class="flex-1 min-h-0">
+                  <MonacoEditor v-model="brokerConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
+                </div>
               </div>
             </div>
 
@@ -436,3 +455,21 @@ watch(
     </n-card>
   </n-modal>
 </template>
+
+<style scoped>
+.settings-tabs--full {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-tabs--full :deep(.n-tabs-content),
+.settings-tabs--full :deep(.n-tabs-pane-wrapper),
+.settings-tabs--full :deep(.n-tab-pane) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+</style>
