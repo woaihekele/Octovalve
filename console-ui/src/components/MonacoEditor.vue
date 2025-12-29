@@ -7,6 +7,7 @@ const props = defineProps<{
   language?: string;
   readOnly?: boolean;
   height?: string;
+  theme?: 'dark' | 'light';
 }>();
 
 const emit = defineEmits<{
@@ -20,6 +21,16 @@ let editor: Monaco.editor.IStandaloneCodeEditor | null = null;
 let monacoApi: typeof Monaco | null = null;
 let updatingFromEditor = false;
 let tomlRegistered = false;
+
+function resolveMonacoTheme() {
+  return props.theme === 'light' ? 'vs' : 'vs-dark';
+}
+
+function applyMonacoTheme() {
+  if (monacoApi) {
+    monacoApi.editor.setTheme(resolveMonacoTheme());
+  }
+}
 
 function ensureTomlLanguage(monaco: typeof Monaco) {
   if (tomlRegistered) {
@@ -69,7 +80,7 @@ async function initEditor() {
   }
   monacoApi = await import('monaco-editor');
   ensureTomlLanguage(monacoApi);
-  monacoApi.editor.setTheme('vs-dark');
+  monacoApi.editor.setTheme(resolveMonacoTheme());
   editor = monacoApi.editor.create(containerRef.value, {
     value: props.modelValue ?? '',
     language: props.language ?? 'toml',
@@ -115,6 +126,13 @@ watch(
   }
 );
 
+watch(
+  () => props.theme,
+  () => {
+    applyMonacoTheme();
+  }
+);
+
 onMounted(() => {
   void initEditor();
 });
@@ -129,5 +147,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="w-full rounded-md overflow-hidden border border-slate-800" :style="{ height: editorHeight }"></div>
+  <div ref="containerRef" class="w-full rounded-md overflow-hidden border border-border" :style="{ height: editorHeight }"></div>
 </template>

@@ -1,4 +1,5 @@
 export type TargetStatus = 'ready' | 'down';
+export type ThemeMode = 'system' | 'dark' | 'light';
 
 export interface ConfigFilePayload {
   path: string;
@@ -74,6 +75,7 @@ export type ListTab = 'pending' | 'history';
 
 export interface AppSettings {
   notificationsEnabled: boolean;
+  theme: ThemeMode;
   shortcuts: {
     prevTarget: string;
     nextTarget: string;

@@ -10,6 +10,7 @@ import type { TargetInfo } from '../types';
 const props = defineProps<{
   target: TargetInfo;
   visible: boolean;
+  theme: 'dark' | 'light';
 }>();
 
 const emit = defineEmits<{
@@ -32,6 +33,36 @@ let inputFlushTimer: number | null = null;
 const termName = 'xterm-256color';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+
+function readCssVar(name: string, fallback: string) {
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function resolveTerminalTheme() {
+  const background = `rgb(${readCssVar('--color-bg', '2 6 23')})`;
+  const foreground = `rgb(${readCssVar('--color-text', '226 232 240')})`;
+  const cursor = `rgb(${readCssVar('--color-accent', '99 102 241')})`;
+  return {
+    background,
+    foreground,
+    cursor,
+    cursorAccent: background,
+  };
+}
+
+function applyTerminalTheme() {
+  if (!terminal) {
+    return;
+  }
+  terminal.setOption('theme', resolveTerminalTheme());
+  if (terminal.rows > 0) {
+    terminal.refresh(0, terminal.rows - 1);
+  }
+}
 
 function encodeBase64(bytes: Uint8Array) {
   let binary = '';
@@ -67,10 +98,7 @@ async function openSession() {
     cursorBlink: true,
     fontSize: 12,
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-    theme: {
-      background: '#020617',
-      foreground: '#e2e8f0',
-    },
+    theme: resolveTerminalTheme(),
     scrollback: 5000,
   });
   fitAddon = new FitAddon();
@@ -225,6 +253,13 @@ watch(
 );
 
 watch(
+  () => props.theme,
+  () => {
+    applyTerminalTheme();
+  }
+);
+
+watch(
   () => props.visible,
   async (visible) => {
     if (!visible) {
@@ -252,11 +287,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="absolute inset-0 z-40 flex flex-col bg-slate-950">
-    <div class="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900/70">
-      <div class="text-sm text-slate-200">{{ props.target.name }} · 终端</div>
+  <div class="absolute inset-0 z-40 flex flex-col bg-surface">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-panel/70">
+      <div class="text-sm text-foreground">{{ props.target.name }} · 终端</div>
       <button
-        class="p-1.5 text-slate-400 hover:text-white border border-slate-700 rounded"
+        class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
         @click="handleClose"
         aria-label="关闭终端"
         title="关闭终端"
@@ -270,7 +305,7 @@ onBeforeUnmount(() => {
     <div class="flex-1 min-h-0">
       <div ref="containerRef" class="h-full w-full" />
     </div>
-    <div v-if="statusMessage" class="px-4 py-2 text-xs text-amber-300 bg-slate-900/60 border-t border-slate-800">
+    <div v-if="statusMessage" class="px-4 py-2 text-xs text-warning bg-panel/60 border-t border-border">
       {{ statusMessage }}
     </div>
   </div>
@@ -278,7 +313,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 :deep(.xterm-viewport) {
-  scrollbar-color: #475569 #020617;
+  scrollbar-color: rgb(var(--color-scrollbar)) rgb(var(--color-scrollbar-track));
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar) {
@@ -286,16 +321,16 @@ onBeforeUnmount(() => {
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-track) {
-  background: #020617;
+  background: rgb(var(--color-scrollbar-track));
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
-  background-color: #334155;
+  background-color: rgb(var(--color-scrollbar));
   border-radius: 8px;
-  border: 2px solid #020617;
+  border: 2px solid rgb(var(--color-scrollbar-track));
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
-  background-color: #475569;
+  background-color: rgb(var(--color-scrollbar));
 }
 </style>

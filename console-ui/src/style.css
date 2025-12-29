@@ -4,6 +4,40 @@
 
 :root {
   color-scheme: dark;
+  --color-bg: 2 6 23;
+  --color-panel: 15 23 42;
+  --color-panel-muted: 30 41 59;
+  --color-border: 51 65 85;
+  --color-text: 226 232 240;
+  --color-text-muted: 100 116 139;
+  --color-accent: 99 102 241;
+  --color-accent-soft: 67 56 202;
+  --color-success: 52 211 153;
+  --color-warning: 251 191 36;
+  --color-danger: 244 63 94;
+  --color-scrollbar: 71 85 105;
+  --color-scrollbar-track: 2 6 23;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-bg: 248 250 252;
+  --color-panel: 255 255 255;
+  --color-panel-muted: 241 245 249;
+  --color-border: 226 232 240;
+  --color-text: 15 23 42;
+  --color-text-muted: 100 116 139;
+  --color-accent: 79 70 229;
+  --color-accent-soft: 224 231 255;
+  --color-success: 16 185 129;
+  --color-warning: 245 158 11;
+  --color-danger: 225 29 72;
+  --color-scrollbar: 148 163 184;
+  --color-scrollbar-track: 241 245 249;
 }
 
 * {
@@ -13,6 +47,8 @@
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text));
 }
 
 html,

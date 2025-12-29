@@ -5,6 +5,7 @@ const SETTINGS_KEY = 'octovalve.console.settings';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
+  theme: 'system',
   shortcuts: {
     prevTarget: 'KeyW',
     nextTarget: 'KeyS',
@@ -27,6 +28,12 @@ export function loadSettings(): AppSettings {
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const parsedShortcuts: Partial<AppSettings['shortcuts']> = parsed.shortcuts ?? {};
+    const normalizeTheme = (value: unknown) => {
+      if (value === 'dark' || value === 'light' || value === 'system') {
+        return value;
+      }
+      return DEFAULT_SETTINGS.theme;
+    };
     const normalizeWithFallback = (value: unknown, fallback: string) => {
       if (value === '') {
         return '';
@@ -51,6 +58,7 @@ export function loadSettings(): AppSettings {
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      theme: normalizeTheme(parsed.theme),
       shortcuts: normalizedShortcuts,
     };
   } catch {

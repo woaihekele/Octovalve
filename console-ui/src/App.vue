@@ -18,7 +18,7 @@ import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import { loadSettings, saveSettings } from './settings';
-import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
+import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo, ThemeMode } from './types';
 import { startWindowDrag } from './tauriWindow';
 
 const targets = ref<TargetInfo[]>([]);
@@ -31,9 +31,11 @@ const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connec
 const snapshotLoading = ref<Record<string, boolean>>({});
 const pendingJumpToken = ref(0);
 const terminalState = ref<Record<string, { initialized: boolean; open: boolean }>>({});
+const resolvedTheme = ref<'dark' | 'light'>('dark');
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
+let stopSystemThemeListener: (() => void) | null = null;
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
@@ -73,6 +75,37 @@ function closeTerminalForTarget(name: string) {
     ...terminalState.value,
     [name]: { ...current, open: false },
   };
+}
+
+function updateResolvedTheme(resolved: 'dark' | 'light', mode: ThemeMode) {
+  resolvedTheme.value = resolved;
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.themeMode = mode;
+}
+
+function applyThemeMode(mode: ThemeMode) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return;
+  }
+  if (stopSystemThemeListener) {
+    stopSystemThemeListener();
+    stopSystemThemeListener = null;
+  }
+  if (mode === 'system') {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = () => updateResolvedTheme(media.matches ? 'dark' : 'light', mode);
+    update();
+    const handler = () => update();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', handler);
+      stopSystemThemeListener = () => media.removeEventListener('change', handler);
+    } else {
+      media.addListener(handler);
+      stopSystemThemeListener = () => media.removeListener(handler);
+    }
+    return;
+  }
+  updateResolvedTheme(mode, mode);
 }
 
 function handleOpenTerminal() {
@@ -282,6 +315,9 @@ onBeforeUnmount(() => {
   if (streamHandle) {
     streamHandle.close();
   }
+  if (stopSystemThemeListener) {
+    stopSystemThemeListener();
+  }
   window.removeEventListener('keydown', handleGlobalKey);
 });
 
@@ -298,10 +334,18 @@ watch(
   },
   { deep: true }
 );
+
+watch(
+  () => settings.value.theme,
+  (mode) => {
+    applyThemeMode(mode);
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
-  <div class="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden pt-7">
+  <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
     <div
       class="fixed top-0 left-0 right-0 h-7 z-30"
       data-tauri-drag-region
@@ -326,7 +370,7 @@ watch(
       <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
         <span
           v-if="connectionState === 'disconnected'"
-          class="text-xs px-2 py-1 rounded border bg-rose-500/20 text-rose-300 border-rose-500/30"
+          class="text-xs px-2 py-1 rounded border bg-danger/20 text-danger border-danger/30"
         >
           console 异常，请重启
         </span>
@@ -344,7 +388,7 @@ watch(
           @deny="deny"
           @open-terminal="handleOpenTerminal"
         />
-        <div v-else class="flex-1 flex items-center justify-center text-slate-600">
+        <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
           请选择目标开始操作。
         </div>
       </div>
@@ -352,6 +396,7 @@ watch(
         v-for="entry in terminalEntries"
         :key="entry.target.name"
         :target="entry.target"
+        :theme="resolvedTheme"
         v-show="entry.state.open && selectedTargetName === entry.target.name"
         :visible="entry.state.open && selectedTargetName === entry.target.name"
         @close="closeTerminalForTarget(entry.target.name)"
@@ -361,6 +406,7 @@ watch(
     <SettingsModal
       :is-open="isSettingsOpen"
       :settings="settings"
+      :resolved-theme="resolvedTheme"
       @close="isSettingsOpen = false"
       @save="handleSettingsSave"
     />
