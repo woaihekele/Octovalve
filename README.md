@@ -68,6 +68,7 @@ timeout_ms = 30000
 max_output_bytes = 1048576
 local_bind = "127.0.0.1"
 remote_addr = "127.0.0.1:19307"
+# terminal_locale = "zh_CN.UTF-8"
 # console 默认使用 control 端口 = remote_addr + 1（即 19308）
 # control_local_port 默认使用 local_port + 100（例如 19311 -> 19411）
 
@@ -78,6 +79,7 @@ hostname = "***REMOVED***"
 ip = "192.168.2.162"
 ssh = "devops@192.168.2.162"
 # ssh_password = "你的密码"
+# terminal_locale = "zh_CN.UTF-8"
 local_port = 19311
 
 [[targets]]

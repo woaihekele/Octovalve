@@ -34,6 +34,7 @@ pub(crate) struct TargetSpec {
     pub(crate) ssh: Option<String>,
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
+    pub(crate) terminal_locale: Option<String>,
     pub(crate) control_remote_addr: String,
     pub(crate) control_local_bind: Option<String>,
     pub(crate) control_local_port: Option<u16>,
@@ -297,6 +298,17 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
     let ssh_password = target
         .ssh_password
         .or_else(|| defaults.ssh_password.clone());
+    let terminal_locale = target
+        .terminal_locale
+        .or_else(|| defaults.terminal_locale.clone())
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
     if ssh_password.is_some() {
         tracing::warn!(
             target = %target.name,
@@ -324,6 +336,7 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         ssh: target.ssh,
         ssh_args,
         ssh_password,
+        terminal_locale,
         control_remote_addr,
         control_local_bind: control_local_port.map(|_| control_bind),
         control_local_port,

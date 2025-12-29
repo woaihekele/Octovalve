@@ -50,6 +50,7 @@ struct TerminalTarget {
     ssh: String,
     ssh_args: Vec<String>,
     ssh_password: Option<String>,
+    terminal_locale: Option<String>,
 }
 
 impl TerminalTarget {
@@ -63,6 +64,7 @@ impl TerminalTarget {
             ssh,
             ssh_args: spec.ssh_args,
             ssh_password: spec.ssh_password,
+            terminal_locale: spec.terminal_locale,
         })
     }
 }
@@ -134,7 +136,7 @@ async fn handle_terminal(mut socket: WebSocket, target: TerminalTarget, config: 
     };
 
     let mut cmd = CommandBuilder::new("ssh");
-    apply_locale_env(&mut cmd);
+    apply_locale_env(&mut cmd, target.terminal_locale.as_deref());
     for arg in &target.ssh_args {
         cmd.arg(arg);
     }
@@ -370,26 +372,44 @@ fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
-fn apply_locale_env(cmd: &mut CommandBuilder) {
-    if let Some(locale) = resolve_terminal_locale() {
+fn apply_locale_env(cmd: &mut CommandBuilder, preferred: Option<&str>) {
+    cmd.env_remove("LC_ALL");
+    cmd.env_remove("LC_CTYPE");
+    if let Some(locale) = resolve_terminal_locale(preferred) {
         cmd.env("LANG", &locale);
     }
     cmd.arg("-o");
     cmd.arg("SendEnv=LANG");
 }
 
-fn resolve_terminal_locale() -> Option<String> {
+fn resolve_terminal_locale(preferred: Option<&str>) -> Option<String> {
+    if let Some(locale) = preferred.and_then(sanitize_locale) {
+        return Some(locale);
+    }
     if let Ok(value) = std::env::var("OCTOVALVE_TERMINAL_LOCALE") {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() && is_utf8_locale(trimmed) {
-            return Some(trimmed.to_string());
+        if let Some(locale) = sanitize_locale(&value) {
+            return Some(locale);
         }
     }
-    resolve_fallback_locale(std::env::var("LANG").ok())
+    if let Ok(value) = std::env::var("LANG") {
+        if let Some(locale) = sanitize_locale(&value) {
+            return Some(locale);
+        }
+    }
+    if let Ok(value) = std::env::var("LC_ALL") {
+        if let Some(locale) = sanitize_locale(&value) {
+            return Some(locale);
+        }
+    }
+    if let Ok(value) = std::env::var("LC_CTYPE") {
+        if let Some(locale) = sanitize_locale(&value) {
+            return Some(locale);
+        }
+    }
+    None
 }
 
-fn resolve_fallback_locale(value: Option<String>) -> Option<String> {
-    let value = value?;
+fn sanitize_locale(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return None;
