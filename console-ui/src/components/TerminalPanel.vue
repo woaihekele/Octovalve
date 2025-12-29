@@ -54,7 +54,7 @@ function applyTerminalTheme() {
   if (!terminal) {
     return;
   }
-  terminal.setOption('theme', resolveTerminalTheme());
+  terminal.options.theme = resolveTerminalTheme();
   if (terminal.rows > 0) {
     terminal.refresh(0, terminal.rows - 1);
   }
