@@ -413,7 +413,6 @@ watch(
                 <div class="flex-1 min-h-0">
                   <MonacoEditor v-model="proxyConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
                 </div>
-                <div class="text-xs text-foreground-muted">修改 broker_config_path 后建议点击刷新或保存并应用。</div>
               </div>
 
               <div class="flex flex-col gap-2 min-h-0 flex-1">
