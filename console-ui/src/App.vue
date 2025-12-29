@@ -92,7 +92,7 @@ function createTabId() {
 function createTerminalTab(index: number): TerminalTab {
   return {
     id: createTabId(),
-    label: `终端 ${index}`,
+    label: `Session ${index}`,
     createdAt: Date.now(),
   };
 }
@@ -511,21 +511,21 @@ watch(
         class="absolute inset-0 z-40 flex flex-col bg-surface"
         v-show="entry.state.open && selectedTargetName === entry.target.name"
       >
-        <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-panel/70">
-          <div class="flex items-center gap-3 min-w-0">
+        <div class="flex items-end justify-between px-4 pt-2 pb-0 border-b border-border bg-panel/70">
+          <div class="flex items-end gap-3 min-w-0">
             <div class="text-sm font-semibold text-foreground whitespace-nowrap">
               {{ entry.target.name }}
             </div>
             <div class="h-4 w-px bg-border"></div>
-            <div class="flex items-center gap-2 overflow-x-auto min-w-0 pr-2">
+            <div class="flex items-end gap-2 overflow-x-auto min-w-0 pr-2">
               <div
                 v-for="tab in entry.state.tabs"
                 :key="tab.id"
-                class="group flex items-center gap-2 px-3 py-1.5 rounded-t border transition-colors cursor-pointer flex-none"
+                class="group flex items-center gap-2 px-3 py-2 rounded-t-md border border-transparent -mb-px transition-colors cursor-pointer flex-none"
                 :class="
                   tab.id === entry.state.activeId
                     ? 'bg-surface text-foreground border-border'
-                    : 'text-foreground-muted border-transparent hover:text-foreground hover:bg-panel/40'
+                    : 'text-foreground-muted hover:text-foreground hover:bg-panel/40 hover:border-border/60'
                 "
                 role="tab"
                 :aria-selected="tab.id === entry.state.activeId"
