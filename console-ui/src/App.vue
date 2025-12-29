@@ -591,44 +591,48 @@ watch(
             @open-terminal="handleOpenTerminal"
             @close-terminal="handleCloseTerminal"
           >
-            <template v-if="selectedTerminalEntry" #terminal>
+            <template #terminal>
               <div class="flex flex-col min-h-0 h-full">
-              <div class="pt-1 pb-0 bg-surface">
-                <n-tabs
-                  :value="activeTerminalTabId"
-                  type="card"
-                  size="small"
-                  addable
-                  closable
-                  class="min-w-0 terminal-tabs"
-                  @add="handleAddTerminalTab"
-                  @close="handleCloseTerminalTab"
-                  @update:value="handleActivateTerminalTab"
-                >
-                  <n-tab-pane
-                    v-for="tab in selectedTerminalEntry.state.tabs"
-                    :key="tab.id"
-                    :name="tab.id"
-                    :tab="tab.label"
+              <div v-if="selectedTerminalEntry" class="pt-1 pb-0 bg-surface">
+                  <n-tabs
+                    :value="activeTerminalTabId"
+                    type="card"
+                    size="small"
+                    addable
                     closable
-                  />
-                </n-tabs>
-              </div>
+                    class="min-w-0 terminal-tabs"
+                    @add="handleAddTerminalTab"
+                    @close="handleCloseTerminalTab"
+                    @update:value="handleActivateTerminalTab"
+                  >
+                    <n-tab-pane
+                      v-for="tab in selectedTerminalEntry.state.tabs"
+                      :key="tab.id"
+                      :name="tab.id"
+                      :tab="tab.label"
+                      closable
+                    />
+                  </n-tabs>
+                </div>
                 <div class="flex-1 min-h-0 relative">
-                  <TerminalPanel
-                    v-for="tab in selectedTerminalEntry.state.tabs"
-                    :key="tab.id"
-                    :target="selectedTerminalEntry.target"
-                    :theme="resolvedTheme"
-                    :visible="
-                      selectedTerminalOpen &&
-                      selectedTerminalEntry.state.activeId === tab.id
-                    "
-                    v-show="
-                      selectedTerminalOpen &&
-                      selectedTerminalEntry.state.activeId === tab.id
-                    "
-                  />
+                  <template v-for="entry in terminalEntries" :key="entry.target.name">
+                    <TerminalPanel
+                      v-for="tab in entry.state.tabs"
+                      :key="tab.id"
+                      :target="entry.target"
+                      :theme="resolvedTheme"
+                      :visible="
+                        selectedTerminalOpen &&
+                        selectedTargetName === entry.target.name &&
+                        entry.state.activeId === tab.id
+                      "
+                      v-show="
+                        selectedTerminalOpen &&
+                        selectedTargetName === entry.target.name &&
+                        entry.state.activeId === tab.id
+                      "
+                    />
+                  </template>
                 </div>
               </div>
             </template>
