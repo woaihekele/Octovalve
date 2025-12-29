@@ -511,17 +511,17 @@ watch(
         class="absolute inset-0 z-40 flex flex-col bg-surface"
         v-show="entry.state.open && selectedTargetName === entry.target.name"
       >
-        <div class="flex items-end justify-between px-4 pt-2 pb-0 border-b border-border bg-panel/70">
-          <div class="flex items-end gap-3 min-w-0">
-            <div class="text-sm font-semibold text-foreground whitespace-nowrap">
+        <div class="flex items-center justify-between px-4 pt-1.5 pb-0.5 border-b border-border bg-panel/70">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="text-xs font-semibold text-foreground whitespace-nowrap">
               {{ entry.target.name }}
             </div>
-            <div class="h-4 w-px bg-border"></div>
-            <div class="flex items-end gap-2 overflow-x-auto min-w-0 pr-2">
+            <div class="h-3 w-px bg-border"></div>
+            <div class="flex items-end gap-2 overflow-x-auto overflow-y-hidden min-w-0 pr-2 self-end -mb-px">
               <div
                 v-for="tab in entry.state.tabs"
                 :key="tab.id"
-                class="group flex items-center gap-2 px-3 py-2 rounded-t-md border border-transparent -mb-px transition-colors cursor-pointer flex-none"
+                class="group flex items-center gap-2 px-2.5 py-1 rounded-t-md border border-transparent transition-colors cursor-pointer flex-none text-xs leading-none"
                 :class="
                   tab.id === entry.state.activeId
                     ? 'bg-surface text-foreground border-border'
