@@ -559,73 +559,52 @@ watch(
             @approve="approve"
             @deny="deny"
             @open-terminal="handleOpenTerminal"
-          />
+          >
+            <template v-if="selectedTerminalEntry" #terminal>
+              <div class="flex flex-col min-h-0 h-full">
+                <div class="border-b border-border px-6 pt-2 pb-1 bg-panel/50">
+                  <n-tabs
+                    :value="selectedTerminalEntry.state.activeId"
+                    type="card"
+                    size="small"
+                    addable
+                    closable
+                    :pane-style="{ display: 'none' }"
+                    class="min-w-0 terminal-tabs"
+                    @add="addTerminalTab(selectedTerminalEntry.target.name)"
+                    @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
+                    @update:value="(value) => activateTerminalTab(selectedTerminalEntry.target.name, String(value))"
+                  >
+                    <n-tab-pane
+                      v-for="tab in selectedTerminalEntry.state.tabs"
+                      :key="tab.id"
+                      :name="tab.id"
+                      :tab="tab.label"
+                      closable
+                    />
+                  </n-tabs>
+                </div>
+                <div class="flex-1 min-h-0 relative">
+                  <TerminalPanel
+                    v-for="tab in selectedTerminalEntry.state.tabs"
+                    :key="tab.id"
+                    :target="selectedTerminalEntry.target"
+                    :theme="resolvedTheme"
+                    :visible="
+                      selectedTerminalEntry.state.open &&
+                      selectedTerminalEntry.state.activeId === tab.id
+                    "
+                    v-show="
+                      selectedTerminalEntry.state.open &&
+                      selectedTerminalEntry.state.activeId === tab.id
+                    "
+                  />
+                </div>
+              </div>
+            </template>
+          </TargetView>
           <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
             请选择目标开始操作。
-          </div>
-        </div>
-        <div v-if="selectedTerminalEntry" class="absolute inset-0 z-40 flex flex-col bg-surface">
-          <div class="h-16 border-b border-border flex items-center justify-between px-6 bg-panel/50">
-            <div class="flex items-center gap-2">
-              <n-tabs
-                :value="selectedTerminalEntry.state.activeId"
-                type="card"
-                size="small"
-                addable
-                closable
-                :pane-style="{ display: 'none' }"
-                class="min-w-0"
-                @add="addTerminalTab(selectedTerminalEntry.target.name)"
-                @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
-                @update:value="(value) => activateTerminalTab(selectedTerminalEntry.target.name, String(value))"
-              >
-                <n-tab-pane
-                  v-for="tab in selectedTerminalEntry.state.tabs"
-                  :key="tab.id"
-                  :name="tab.id"
-                  :tab="tab.label"
-                  closable
-                />
-              </n-tabs>
-            </div>
-            <div class="flex items-center gap-2">
-              <n-button
-                size="small"
-                quaternary
-                @click="hideTerminalForTarget(selectedTerminalEntry.target.name)"
-                aria-label="隐藏终端"
-                title="隐藏终端"
-              >
-                <svg
-                  class="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </n-button>
-            </div>
-          </div>
-          <div class="flex-1 min-h-0 relative">
-            <TerminalPanel
-              v-for="tab in selectedTerminalEntry.state.tabs"
-              :key="tab.id"
-              :target="selectedTerminalEntry.target"
-              :theme="resolvedTheme"
-              :visible="
-                selectedTerminalEntry.state.open &&
-                selectedTerminalEntry.state.activeId === tab.id
-              "
-              v-show="
-                selectedTerminalEntry.state.open &&
-                selectedTerminalEntry.state.activeId === tab.id
-              "
-            />
           </div>
         </div>
         </div>

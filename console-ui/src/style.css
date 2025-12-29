@@ -51,6 +51,14 @@ body {
   color: rgb(var(--color-text));
 }
 
+.terminal-tabs .n-tabs-nav {
+  padding-bottom: 0;
+}
+
+.terminal-tabs .n-tabs-pane-wrapper {
+  display: none;
+}
+
 html,
 body,
 #app {

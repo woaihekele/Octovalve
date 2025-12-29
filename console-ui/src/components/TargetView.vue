@@ -193,182 +193,189 @@ function handleTitleDrag(event: MouseEvent) {
     </div>
 
     <div class="flex-1 flex overflow-hidden min-h-0">
-      <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
-        <div class="flex border-b border-border">
-          <button
-            class="flex-1 py-3 text-sm font-medium transition-colors"
-            :class="activeTab === 'pending' ? 'text-accent border-b-2 border-accent bg-accent/5' : 'text-foreground-muted hover:text-foreground'"
-            @click="activeTab = 'pending'"
-          >
-            Pending <span class="ml-1 text-xs bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">{{ pendingList.length }}</span>
-          </button>
-          <button
-            class="flex-1 py-3 text-sm font-medium transition-colors"
-            :class="activeTab === 'history' ? 'text-accent border-b-2 border-accent bg-accent/5' : 'text-foreground-muted hover:text-foreground'"
-            @click="activeTab = 'history'"
-          >
-            History <span class="ml-1 text-xs bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">{{ historyList.length }}</span>
-          </button>
+      <template v-if="props.terminalOpen">
+        <div class="flex-1 min-h-0">
+          <slot name="terminal" />
+        </div>
+      </template>
+      <template v-else>
+        <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
+          <div class="flex border-b border-border">
+            <button
+              class="flex-1 py-3 text-sm font-medium transition-colors"
+              :class="activeTab === 'pending' ? 'text-accent border-b-2 border-accent bg-accent/5' : 'text-foreground-muted hover:text-foreground'"
+              @click="activeTab = 'pending'"
+            >
+              Pending <span class="ml-1 text-xs bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">{{ pendingList.length }}</span>
+            </button>
+            <button
+              class="flex-1 py-3 text-sm font-medium transition-colors"
+              :class="activeTab === 'history' ? 'text-accent border-b-2 border-accent bg-accent/5' : 'text-foreground-muted hover:text-foreground'"
+              @click="activeTab = 'history'"
+            >
+              History <span class="ml-1 text-xs bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">{{ historyList.length }}</span>
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto min-h-0">
+            <div v-if="currentList.length === 0" class="p-8 text-center text-foreground-muted text-sm">
+              暂无 {{ activeTab === 'pending' ? 'Pending' : 'History' }} 记录。
+            </div>
+            <div
+              v-for="(item, index) in currentList"
+              :key="item.id"
+              class="p-4 border-b border-border cursor-pointer transition-colors"
+              :class="index === selectedIndex ? 'bg-accent/20 border-l-4 border-l-accent' : 'hover:bg-panel-muted/30 border-l-4 border-l-transparent'"
+              @click="selectedIndex = index"
+            >
+              <div class="flex justify-between items-start mb-1">
+                <span class="font-mono text-sm line-clamp-1" :class="index === selectedIndex ? 'text-accent' : 'text-foreground'">
+                  {{ item.raw_command }}
+                </span>
+                <span
+                  v-if="activeTab === 'history'"
+                  class="text-xs px-2 py-0.5 rounded"
+                  :class="(item as ResultSnapshot).status === 'completed' ? 'bg-success/20 text-success' : (item as ResultSnapshot).status === 'denied' ? 'bg-danger/20 text-danger' : 'bg-warning/20 text-warning'"
+                >
+                  {{ (item as ResultSnapshot).status }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center text-xs text-foreground-muted">
+                <span>
+                  {{ activeTab === 'pending' ? formatTime((item as RequestSnapshot).received_at_ms) : formatTime((item as ResultSnapshot).finished_at_ms) }}
+                </span>
+                <span v-if="activeTab === 'pending'" class="truncate">{{ (item as RequestSnapshot).intent }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto min-h-0">
-          <div v-if="currentList.length === 0" class="p-8 text-center text-foreground-muted text-sm">
-            暂无 {{ activeTab === 'pending' ? 'Pending' : 'History' }} 记录。
-          </div>
-          <div
-            v-for="(item, index) in currentList"
-            :key="item.id"
-            class="p-4 border-b border-border cursor-pointer transition-colors"
-            :class="index === selectedIndex ? 'bg-accent/20 border-l-4 border-l-accent' : 'hover:bg-panel-muted/30 border-l-4 border-l-transparent'"
-            @click="selectedIndex = index"
-          >
-            <div class="flex justify-between items-start mb-1">
-              <span class="font-mono text-sm line-clamp-1" :class="index === selectedIndex ? 'text-accent' : 'text-foreground'">
-                {{ item.raw_command }}
-              </span>
-              <span
-                v-if="activeTab === 'history'"
-                class="text-xs px-2 py-0.5 rounded"
-                :class="(item as ResultSnapshot).status === 'completed' ? 'bg-success/20 text-success' : (item as ResultSnapshot).status === 'denied' ? 'bg-danger/20 text-danger' : 'bg-warning/20 text-warning'"
-              >
-                {{ (item as ResultSnapshot).status }}
-              </span>
-            </div>
-            <div class="flex justify-between items-center text-xs text-foreground-muted">
-              <span>
-                {{ activeTab === 'pending' ? formatTime((item as RequestSnapshot).received_at_ms) : formatTime((item as ResultSnapshot).finished_at_ms) }}
-              </span>
-              <span v-if="activeTab === 'pending'" class="truncate">{{ (item as RequestSnapshot).intent }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+        <div class="flex-1 flex flex-col">
+          <template v-if="selectedItem">
+            <div class="border-b border-border bg-panel/30 p-6 flex justify-between gap-6">
+              <div class="flex-1">
+                <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Command</h3>
+                <code class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border">
+                  {{ selectedItem.raw_command }}
+                </code>
 
-      <div class="flex-1 flex flex-col">
-        <template v-if="selectedItem">
-          <div class="border-b border-border bg-panel/30 p-6 flex justify-between gap-6">
-            <div class="flex-1">
-              <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Command</h3>
-              <code class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border">
-                {{ selectedItem.raw_command }}
-              </code>
+                <div class="mt-4 grid grid-cols-2 gap-4 text-xs text-foreground-muted">
+                  <div>
+                    <div class="text-foreground-muted">Intent</div>
+                    <div class="text-foreground">{{ selectedItem.intent }}</div>
+                  </div>
+                  <div>
+                    <div class="text-foreground-muted">Mode</div>
+                    <div class="text-foreground">{{ selectedItem.mode }}</div>
+                  </div>
+                  <div>
+                    <div class="text-foreground-muted">CWD</div>
+                    <div class="text-foreground">{{ selectedItem.cwd || '-' }}</div>
+                  </div>
+                  <div>
+                    <div class="text-foreground-muted">Peer</div>
+                    <div class="text-foreground">{{ selectedItem.peer }}</div>
+                  </div>
+                  <div>
+                    <div class="text-foreground-muted">Pipeline</div>
+                    <div class="text-foreground">{{ formatPipeline(selectedItem) || '-' }}</div>
+                  </div>
+                  <template v-if="activeTab === 'pending'">
+                    <div>
+                      <div class="text-foreground-muted">Timeout</div>
+                      <div class="text-foreground">{{ (selectedItem as RequestSnapshot).timeout_ms ?? '-' }} ms</div>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div>
+                      <div class="text-foreground-muted">Summary</div>
+                      <div class="text-foreground">{{ formatSummary(selectedItem as ResultSnapshot) }}</div>
+                    </div>
+                    <div>
+                      <div class="text-foreground-muted">Queued For</div>
+                      <div class="text-foreground">{{ (selectedItem as ResultSnapshot).queued_for_secs }}s</div>
+                    </div>
+                  </template>
+                </div>
+              </div>
 
-              <div class="mt-4 grid grid-cols-2 gap-4 text-xs text-foreground-muted">
-                <div>
-                  <div class="text-foreground-muted">Intent</div>
-                  <div class="text-foreground">{{ selectedItem.intent }}</div>
-                </div>
-                <div>
-                  <div class="text-foreground-muted">Mode</div>
-                  <div class="text-foreground">{{ selectedItem.mode }}</div>
-                </div>
-                <div>
-                  <div class="text-foreground-muted">CWD</div>
-                  <div class="text-foreground">{{ selectedItem.cwd || '-' }}</div>
-                </div>
-                <div>
-                  <div class="text-foreground-muted">Peer</div>
-                  <div class="text-foreground">{{ selectedItem.peer }}</div>
-                </div>
-                <div>
-                  <div class="text-foreground-muted">Pipeline</div>
-                  <div class="text-foreground">{{ formatPipeline(selectedItem) || '-' }}</div>
-                </div>
-                <template v-if="activeTab === 'pending'">
-                  <div>
-                    <div class="text-foreground-muted">Timeout</div>
-                    <div class="text-foreground">{{ (selectedItem as RequestSnapshot).timeout_ms ?? '-' }} ms</div>
-                  </div>
-                </template>
-                <template v-else>
-                  <div>
-                    <div class="text-foreground-muted">Summary</div>
-                    <div class="text-foreground">{{ formatSummary(selectedItem as ResultSnapshot) }}</div>
-                  </div>
-                  <div>
-                    <div class="text-foreground-muted">Queued For</div>
-                    <div class="text-foreground">{{ (selectedItem as ResultSnapshot).queued_for_secs }}s</div>
-                  </div>
-                </template>
+              <div v-if="activeTab === 'pending'" class="flex flex-col gap-2">
+                <button
+                  class="flex items-center gap-2 bg-success hover:bg-success/90 text-white px-4 py-2 rounded shadow"
+                  @click="emit('approve', selectedItem.id)"
+                >
+                  Approve <span class="bg-success/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.approve) }}</span>
+                </button>
+                <button
+                  class="flex items-center gap-2 bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded shadow"
+                  @click="emit('deny', selectedItem.id)"
+                >
+                  Deny <span class="bg-danger/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.deny) }}</span>
+                </button>
               </div>
             </div>
 
-            <div v-if="activeTab === 'pending'" class="flex flex-col gap-2">
-              <button
-                class="flex items-center gap-2 bg-success hover:bg-success/90 text-white px-4 py-2 rounded shadow"
-                @click="emit('approve', selectedItem.id)"
-              >
-                Approve <span class="bg-success/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.approve) }}</span>
-              </button>
-              <button
-                class="flex items-center gap-2 bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded shadow"
-                @click="emit('deny', selectedItem.id)"
-              >
-                Deny <span class="bg-danger/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.deny) }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="flex-1 flex flex-col overflow-hidden">
-            <div class="flex items-center justify-between px-6 py-2 bg-panel/80 border-b border-border">
-              <span class="text-xs font-semibold text-foreground-muted uppercase">
-                {{ activeTab === 'history' ? 'Execution Output' : 'Pending Preview' }}
-              </span>
-              <button
-                class="text-foreground-muted hover:text-foreground p-1 rounded hover:bg-panel-muted transition-colors"
-                @click="isFullScreen = !isFullScreen"
-                :aria-label="isFullScreen ? '退出全屏' : '全屏'"
-                :title="isFullScreen ? '退出全屏' : '全屏'"
-              >
-                <svg
-                  v-if="!isFullScreen"
-                  class="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+            <div class="flex-1 flex flex-col overflow-hidden">
+              <div class="flex items-center justify-between px-6 py-2 bg-panel/80 border-b border-border">
+                <span class="text-xs font-semibold text-foreground-muted uppercase">
+                  {{ activeTab === 'history' ? 'Execution Output' : 'Pending Preview' }}
+                </span>
+                <button
+                  class="text-foreground-muted hover:text-foreground p-1 rounded hover:bg-panel-muted transition-colors"
+                  @click="isFullScreen = !isFullScreen"
+                  :aria-label="isFullScreen ? '退出全屏' : '全屏'"
+                  :title="isFullScreen ? '退出全屏' : '全屏'"
                 >
-                  <polyline points="15 3 21 3 21 9" />
-                  <polyline points="9 21 3 21 3 15" />
-                  <line x1="21" y1="3" x2="14" y2="10" />
-                  <line x1="3" y1="21" x2="10" y2="14" />
-                </svg>
-                <svg
-                  v-else
-                  class="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <line x1="3" y1="3" x2="9" y2="9" />
-                  <polyline points="9 5 9 9 5 9" />
-                  <line x1="21" y1="3" x2="15" y2="9" />
-                  <polyline points="15 5 15 9 19 9" />
-                  <line x1="3" y1="21" x2="9" y2="15" />
-                  <polyline points="9 19 9 15 5 15" />
-                  <line x1="21" y1="21" x2="15" y2="15" />
-                  <polyline points="15 19 15 15 19 15" />
-                </svg>
-              </button>
+                  <svg
+                    v-if="!isFullScreen"
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                  <svg
+                    v-else
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="3" y1="3" x2="9" y2="9" />
+                    <polyline points="9 5 9 9 5 9" />
+                    <line x1="21" y1="3" x2="15" y2="9" />
+                    <polyline points="15 5 15 9 19 9" />
+                    <line x1="3" y1="21" x2="9" y2="15" />
+                    <polyline points="9 19 9 15 5 15" />
+                    <line x1="21" y1="21" x2="15" y2="15" />
+                    <polyline points="15 19 15 15 19 15" />
+                  </svg>
+                </button>
+              </div>
+              <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
+                <span v-if="activeTab === 'history'">
+                  {{ buildOutput(selectedItem as ResultSnapshot) || '无输出' }}
+                </span>
+                <span v-else class="text-foreground-muted">等待审批后输出将出现在此处。</span>
+              </div>
             </div>
-            <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
-              <span v-if="activeTab === 'history'">
-                {{ buildOutput(selectedItem as ResultSnapshot) || '无输出' }}
-              </span>
-              <span v-else class="text-foreground-muted">等待审批后输出将出现在此处。</span>
-            </div>
-          </div>
-        </template>
+          </template>
 
-        <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
-          请选择一条记录查看详情
+          <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
+            请选择一条记录查看详情
+          </div>
         </div>
-      </div>
+      </template>
     </div>
 
   </div>
