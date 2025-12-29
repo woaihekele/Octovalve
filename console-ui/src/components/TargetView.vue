@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { formatShortcut, matchesShortcut } from '../shortcuts';
 import { startWindowDrag } from '../tauriWindow';
 import type { AppSettings, ListTab, RequestSnapshot, ResultSnapshot, ServiceSnapshot, TargetInfo } from '../types';
+import TerminalPanel from './TerminalPanel.vue';
 
 const props = defineProps<{
   target: TargetInfo;
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 const activeTab = ref<ListTab>('pending');
 const selectedIndex = ref(0);
 const isFullScreen = ref(false);
+const isTerminalOpen = ref(false);
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
@@ -29,6 +31,7 @@ watch(
   () => [props.target.name, activeTab.value],
   () => {
     selectedIndex.value = 0;
+    isTerminalOpen.value = false;
   }
 );
 
@@ -91,6 +94,9 @@ function buildOutput(result: ResultSnapshot) {
 
 function handleKeyDown(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+    return;
+  }
+  if (isTerminalOpen.value) {
     return;
   }
 
@@ -163,6 +169,22 @@ function handleTitleDrag(event: MouseEvent) {
             <span>{{ props.target.hostname || props.target.ip || 'unknown' }}</span>
           </div>
         </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          class="text-xs px-3 py-1.5 rounded border transition-colors"
+          :class="
+            props.target.terminal_available
+              ? isTerminalOpen
+                ? 'bg-indigo-500/20 text-indigo-200 border-indigo-500/40'
+                : 'bg-slate-900/60 text-slate-200 border-slate-700 hover:border-indigo-500/40'
+              : 'bg-slate-900/30 text-slate-500 border-slate-800 cursor-not-allowed'
+          "
+          :disabled="!props.target.terminal_available"
+          @click="isTerminalOpen = true"
+        >
+          终端
+        </button>
       </div>
     </div>
 
@@ -344,5 +366,11 @@ function handleTitleDrag(event: MouseEvent) {
         </div>
       </div>
     </div>
+
+    <TerminalPanel
+      v-if="isTerminalOpen"
+      :target="props.target"
+      @close="isTerminalOpen = false"
+    />
   </div>
 </template>

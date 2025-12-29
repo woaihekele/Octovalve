@@ -52,6 +52,7 @@ pub(crate) struct TargetInfo {
     pub(crate) last_error: Option<String>,
     pub(crate) control_addr: String,
     pub(crate) local_addr: Option<String>,
+    pub(crate) terminal_available: bool,
     pub(crate) is_default: bool,
 }
 
@@ -87,6 +88,10 @@ impl ConsoleState {
         self.snapshots.get(name).cloned()
     }
 
+    pub(crate) fn target_spec(&self, name: &str) -> Option<TargetSpec> {
+        self.targets.get(name).cloned()
+    }
+
     pub(crate) fn target_info(&self, name: &str) -> Option<TargetInfo> {
         let target = self.targets.get(name)?;
         Some(TargetInfo {
@@ -103,6 +108,11 @@ impl ConsoleState {
                 .clone()
                 .unwrap_or_else(|| target.control_remote_addr.clone()),
             local_addr: target.control_local_addr.clone(),
+            terminal_available: target
+                .ssh
+                .as_deref()
+                .map(|ssh| !ssh.trim().is_empty())
+                .unwrap_or(false),
             is_default: self
                 .default_target
                 .as_ref()

@@ -11,6 +11,7 @@ export interface TargetInfo {
   last_error?: string | null;
   control_addr?: string | null;
   local_addr?: string | null;
+  terminal_available?: boolean;
   is_default?: boolean;
 }
 

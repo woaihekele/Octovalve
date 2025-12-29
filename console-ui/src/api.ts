@@ -20,6 +20,21 @@ export type ProxyConfigStatus = {
   example_path: string;
 };
 
+export type TerminalOutputEvent = {
+  session_id: string;
+  data: string;
+};
+
+export type TerminalExitEvent = {
+  session_id: string;
+  code?: number | null;
+};
+
+export type TerminalErrorEvent = {
+  session_id: string;
+  message: string;
+};
+
 function joinUrl(base: string, path: string) {
   const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -184,4 +199,32 @@ export async function logUiEvent(message: string) {
   } catch {
     // ignore logging failures
   }
+}
+
+export async function terminalOpen(name: string, cols: number, rows: number, term?: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('terminal only available in Tauri');
+  }
+  return invoke<string>('terminal_open', { name, cols, rows, term });
+}
+
+export async function terminalInput(sessionId: string, dataBase64: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('terminal only available in Tauri');
+  }
+  await invoke('terminal_input', { session_id: sessionId, data_base64: dataBase64 });
+}
+
+export async function terminalResize(sessionId: string, cols: number, rows: number) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('terminal only available in Tauri');
+  }
+  await invoke('terminal_resize', { session_id: sessionId, cols, rows });
+}
+
+export async function terminalClose(sessionId: string) {
+  if (!TAURI_AVAILABLE) {
+    return;
+  }
+  await invoke('terminal_close', { session_id: sessionId });
 }

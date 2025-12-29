@@ -17,6 +17,8 @@ serde_json = "1.0"
 tauri = { version = "1.5.4", features = ["window-start-dragging", "process-command-api"] }
 tokio = { version = "1.38", features = ["rt-multi-thread", "macros", "time"] }
 tokio-tungstenite = "0.23"
+urlencoding = "2.1"
+uuid = { version = "1.8", features = ["v4"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

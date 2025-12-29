@@ -5,6 +5,7 @@ mod control;
 mod events;
 mod runtime;
 mod state;
+mod terminal;
 mod tunnel;
 
 use crate::bootstrap::BootstrapConfig;
@@ -14,6 +15,7 @@ use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
+use crate::terminal::terminal_ws_handler;
 use anyhow::Context;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -87,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/snapshot", get(get_snapshot))
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
+        .route("/targets/:name/terminal", get(terminal_ws_handler))
         .route("/ws", get(ws_handler))
         .with_state(app_state)
         .layer(middleware::from_fn(log_http_request));
