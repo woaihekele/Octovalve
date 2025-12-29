@@ -19,7 +19,6 @@ use tracing::{info, warn};
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_TERM: &str = "xterm-256color";
-const DEFAULT_LOCALE: &str = "C.UTF-8";
 const ASKPASS_SCRIPT: &str = "#!/bin/sh\nprintf '%s' \"$OCTOVALVE_SSH_PASS\"\n";
 
 #[derive(Debug, Deserialize)]
@@ -135,13 +134,12 @@ async fn handle_terminal(mut socket: WebSocket, target: TerminalTarget, config: 
     };
 
     let mut cmd = CommandBuilder::new("ssh");
+    apply_locale_env(&mut cmd);
     for arg in &target.ssh_args {
         cmd.arg(arg);
     }
     cmd.arg("-tt");
     cmd.arg(&target.ssh);
-    let locale = resolve_terminal_locale();
-    cmd.arg(build_terminal_command(&locale));
     cmd.env("TERM", &config.term);
     if let Some(password) = target.ssh_password.as_deref() {
         if let Err(err) = configure_askpass(&mut cmd, password) {
@@ -372,42 +370,41 @@ fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
-fn resolve_terminal_locale() -> String {
+fn apply_locale_env(cmd: &mut CommandBuilder) {
+    if let Some(locale) = resolve_terminal_locale() {
+        cmd.env("LANG", &locale);
+        cmd.env("LC_ALL", &locale);
+        cmd.env("LC_CTYPE", &locale);
+    }
+    cmd.arg("-o");
+    cmd.arg("SendEnv=LANG");
+    cmd.arg("-o");
+    cmd.arg("SendEnv=LC_*");
+}
+
+fn resolve_terminal_locale() -> Option<String> {
     if let Ok(value) = std::env::var("OCTOVALVE_TERMINAL_LOCALE") {
         let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
+        if !trimmed.is_empty() && is_utf8_locale(trimmed) {
+            return Some(trimmed.to_string());
         }
     }
     if let Ok(value) = std::env::var("LC_ALL") {
         let trimmed = value.trim();
         if !trimmed.is_empty() && is_utf8_locale(trimmed) {
-            return trimmed.to_string();
+            return Some(trimmed.to_string());
         }
     }
     if let Ok(value) = std::env::var("LANG") {
         let trimmed = value.trim();
         if !trimmed.is_empty() && is_utf8_locale(trimmed) {
-            return trimmed.to_string();
+            return Some(trimmed.to_string());
         }
     }
-    DEFAULT_LOCALE.to_string()
+    None
 }
 
 fn is_utf8_locale(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.contains("utf-8") || lower.contains("utf8")
-}
-
-fn build_terminal_command(locale: &str) -> String {
-    let escaped = shell_escape(locale);
-    format!(
-        "export LANG={0} LC_ALL={0} LC_CTYPE={0}; exec \"${{SHELL:-/bin/sh}}\" -l",
-        escaped
-    )
-}
-
-fn shell_escape(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{}'", escaped)
 }
