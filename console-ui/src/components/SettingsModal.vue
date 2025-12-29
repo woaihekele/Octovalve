@@ -334,7 +334,7 @@ watch(
             >
               <span class="text-foreground-muted">{{ item.label }}</span>
               <div class="flex items-center gap-2">
-                <div class="w-32 flex-none">
+                <div class="w-[120px] flex-none">
                   <n-input
                     :value="shortcutDisplay(item.key)"
                     size="small"

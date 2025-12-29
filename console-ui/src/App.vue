@@ -48,32 +48,48 @@ type TerminalTargetState = {
 const terminalState = ref<Record<string, TerminalTargetState>>({});
 const resolvedTheme = ref<'dark' | 'light'>('dark');
 const naiveTheme = computed(() => (resolvedTheme.value === 'light' ? null : darkTheme));
-const naiveThemeOverrides = computed(() => ({
-  common: {
-    primaryColor: 'rgb(var(--color-accent))',
-    primaryColorHover: 'rgb(var(--color-accent))',
-    primaryColorPressed: 'rgb(var(--color-accent-soft))',
-    primaryColorSuppl: 'rgb(var(--color-accent-soft))',
-    successColor: 'rgb(var(--color-success))',
-    warningColor: 'rgb(var(--color-warning))',
-    errorColor: 'rgb(var(--color-danger))',
-    textColorBase: 'rgb(var(--color-text))',
-    textColor1: 'rgb(var(--color-text))',
-    textColor2: 'rgb(var(--color-text-muted))',
-    textColor3: 'rgb(var(--color-text-muted))',
-    placeholderColor: 'rgb(var(--color-text-muted))',
-    borderColor: 'rgb(var(--color-border))',
-    dividerColor: 'rgb(var(--color-border))',
-    bodyColor: 'rgb(var(--color-bg))',
-    cardColor: 'rgb(var(--color-panel))',
-    modalColor: 'rgb(var(--color-panel))',
-    popoverColor: 'rgb(var(--color-panel))',
-    inputColor: 'rgb(var(--color-panel-muted))',
-    actionColor: 'rgb(var(--color-panel-muted))',
-    actionColorHover: 'rgb(var(--color-panel-muted))',
-    actionColorPressed: 'rgb(var(--color-panel-muted))',
-  },
-}));
+function resolveRgbVar(name: string, fallback: string) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return `rgb(${fallback})`;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = raw || fallback;
+  if (value.startsWith('rgb')) {
+    return value;
+  }
+  const normalized = value.replace(/\s+/g, ', ');
+  return `rgb(${normalized})`;
+}
+
+const naiveThemeOverrides = computed(() => {
+  void resolvedTheme.value;
+  return {
+    common: {
+      primaryColor: resolveRgbVar('--color-accent', '99 102 241'),
+      primaryColorHover: resolveRgbVar('--color-accent', '99 102 241'),
+      primaryColorPressed: resolveRgbVar('--color-accent-soft', '67 56 202'),
+      primaryColorSuppl: resolveRgbVar('--color-accent-soft', '67 56 202'),
+      successColor: resolveRgbVar('--color-success', '52 211 153'),
+      warningColor: resolveRgbVar('--color-warning', '251 191 36'),
+      errorColor: resolveRgbVar('--color-danger', '244 63 94'),
+      textColorBase: resolveRgbVar('--color-text', '226 232 240'),
+      textColor1: resolveRgbVar('--color-text', '226 232 240'),
+      textColor2: resolveRgbVar('--color-text-muted', '100 116 139'),
+      textColor3: resolveRgbVar('--color-text-muted', '100 116 139'),
+      placeholderColor: resolveRgbVar('--color-text-muted', '100 116 139'),
+      borderColor: resolveRgbVar('--color-border', '51 65 85'),
+      dividerColor: resolveRgbVar('--color-border', '51 65 85'),
+      bodyColor: resolveRgbVar('--color-bg', '2 6 23'),
+      cardColor: resolveRgbVar('--color-panel', '15 23 42'),
+      modalColor: resolveRgbVar('--color-panel', '15 23 42'),
+      popoverColor: resolveRgbVar('--color-panel', '15 23 42'),
+      inputColor: resolveRgbVar('--color-panel-muted', '30 41 59'),
+      actionColor: resolveRgbVar('--color-panel-muted', '30 41 59'),
+      actionColorHover: resolveRgbVar('--color-panel-muted', '30 41 59'),
+      actionColorPressed: resolveRgbVar('--color-panel-muted', '30 41 59'),
+    },
+  };
+});
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
