@@ -268,7 +268,7 @@ watch(
 
 <template>
   <div v-if="hasOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-    <div class="absolute inset-0 bg-black/60" @click="emit('close')"></div>
+    <div class="absolute inset-0 bg-black/60"></div>
     <div
       class="relative w-full bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-6 flex flex-col"
       :class="isConfigTab ? 'max-w-5xl h-[80vh]' : 'max-w-lg'"
