@@ -18,6 +18,7 @@ import SettingsModal from './components/SettingsModal.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import { loadSettings, saveSettings } from './settings';
 import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
+import { startWindowDrag } from './tauriWindow';
 
 const targets = ref<TargetInfo[]>([]);
 const snapshots = ref<Record<string, ServiceSnapshot>>({});
@@ -211,6 +212,14 @@ function handleGlobalKey(event: KeyboardEvent) {
   }
 }
 
+function handleTitleDrag(event: MouseEvent) {
+  if (event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  void startWindowDrag();
+}
+
 onMounted(async () => {
   try {
     const status = await getProxyConfigStatus();
@@ -252,7 +261,12 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden">
+  <div class="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden pt-7">
+    <div
+      class="fixed top-0 left-0 right-0 h-7 z-30"
+      data-tauri-drag-region
+      @mousedown="handleTitleDrag"
+    ></div>
     <ToastNotification
       v-if="notification"
       :message="notification.message"

@@ -11,7 +11,10 @@
   },
   "tauri": {
     "allowlist": {
-      "all": false
+      "all": false,
+      "window": {
+        "startDragging": true
+      }
     },
     "security": {
       "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
@@ -22,7 +25,10 @@
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
-        "minHeight": 640
+        "minHeight": 640,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "theme": "Dark"
       }
     ],
     "bundle": {

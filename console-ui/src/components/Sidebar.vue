@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TargetInfo } from '../types';
+import { startWindowDrag } from '../tauriWindow';
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 
@@ -40,11 +41,23 @@ function statusClass(target: TargetInfo) {
   if (status === 'connecting') return 'bg-amber-400';
   return 'bg-rose-400';
 }
+
+function handleTitleDrag(event: MouseEvent) {
+  if (event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  void startWindowDrag();
+}
 </script>
 
 <template>
   <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
-    <div class="p-4 border-b border-slate-800 flex items-center gap-2">
+    <div
+      class="p-4 border-b border-slate-800 flex items-center gap-2"
+      data-tauri-drag-region
+      @mousedown="handleTitleDrag"
+    >
       <div class="w-2.5 h-2.5 rounded-full bg-indigo-400"></div>
       <h1 class="font-semibold text-lg tracking-tight">Octovalve</h1>
     </div>

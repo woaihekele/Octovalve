@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { formatShortcut, matchesShortcut } from '../shortcuts';
+import { startWindowDrag } from '../tauriWindow';
 import type { AppSettings, ListTab, RequestSnapshot, ResultSnapshot, ServiceSnapshot, TargetInfo } from '../types';
 
 const props = defineProps<{
@@ -135,11 +136,24 @@ function handleKeyDown(event: KeyboardEvent) {
 
 onMounted(() => window.addEventListener('keydown', handleKeyDown));
 onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
+
+function handleTitleDrag(event: MouseEvent) {
+  if (event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  void startWindowDrag();
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full bg-slate-950" :class="isFullScreen ? 'fixed inset-0 z-40' : 'relative'">
-    <div v-if="!isFullScreen" class="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
+    <div
+      v-if="!isFullScreen"
+      class="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50"
+      data-tauri-drag-region
+      @mousedown="handleTitleDrag"
+    >
       <div class="flex items-center gap-4">
         <div>
           <h2 class="text-xl font-semibold text-slate-100">{{ props.target.name }}</h2>
