@@ -13,10 +13,6 @@ const props = defineProps<{
   theme: 'dark' | 'light';
 }>();
 
-const emit = defineEmits<{
-  (e: 'close'): void;
-}>();
-
 const containerRef = ref<HTMLDivElement | null>(null);
 const statusMessage = ref<string | null>(null);
 
@@ -240,10 +236,6 @@ function cleanupTerminal(sendClose: boolean) {
   }
 }
 
-function handleClose() {
-  emit('close');
-}
-
 watch(
   () => props.target.name,
   () => {
@@ -287,21 +279,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="absolute inset-0 z-40 flex flex-col bg-surface">
-    <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-panel/70">
-      <div class="text-sm text-foreground">{{ props.target.name }} · 终端</div>
-      <button
-        class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
-        @click="handleClose"
-        aria-label="关闭终端"
-        title="关闭终端"
-      >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-    </div>
+  <div class="absolute inset-0 flex flex-col bg-surface">
     <div class="flex-1 min-h-0">
       <div ref="containerRef" class="h-full w-full" />
     </div>

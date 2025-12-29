@@ -30,7 +30,20 @@ const notification = ref<{ message: string; count?: number } | null>(null);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
 const pendingJumpToken = ref(0);
-const terminalState = ref<Record<string, { initialized: boolean; open: boolean }>>({});
+type TerminalTab = {
+  id: string;
+  label: string;
+  createdAt: number;
+};
+
+type TerminalTargetState = {
+  open: boolean;
+  tabs: TerminalTab[];
+  activeId: string | null;
+  nextIndex: number;
+};
+
+const terminalState = ref<Record<string, TerminalTargetState>>({});
 const resolvedTheme = ref<'dark' | 'light'>('dark');
 
 let streamHandle: ConsoleStreamHandle | null = null;
@@ -39,12 +52,22 @@ let stopSystemThemeListener: (() => void) | null = null;
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
-const selectedTerminal = computed(() => {
+const selectedTerminal = computed<TerminalTargetState>(() => {
   if (!selectedTargetName.value) {
-    return { initialized: false, open: false };
+    return { open: false, tabs: [], activeId: null, nextIndex: 1 };
   }
-  return terminalState.value[selectedTargetName.value] ?? { initialized: false, open: false };
+  return (
+    terminalState.value[selectedTargetName.value] ?? {
+      open: false,
+      tabs: [],
+      activeId: null,
+      nextIndex: 1,
+    }
+  );
 });
+const selectedTerminalOpen = computed(
+  () => selectedTerminal.value.open && selectedTerminal.value.tabs.length > 0
+);
 const selectedSnapshot = computed(() => {
   if (!selectedTargetName.value) {
     return null;
@@ -55,26 +78,116 @@ const selectedSnapshot = computed(() => {
 const terminalEntries = computed(() =>
   targets.value
     .map((target) => ({ target, state: terminalState.value[target.name] }))
-    .filter((entry) => entry.state?.initialized)
+    .filter((entry) => entry.state && entry.state.tabs.length > 0)
     .map((entry) => ({ target: entry.target, state: entry.state! }))
 );
 
-function openTerminalForTarget(name: string) {
-  terminalState.value = {
-    ...terminalState.value,
-    [name]: { initialized: true, open: true },
+function createTabId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `term-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createTerminalTab(index: number): TerminalTab {
+  return {
+    id: createTabId(),
+    label: `终端 ${index}`,
+    createdAt: Date.now(),
   };
 }
 
-function closeTerminalForTarget(name: string) {
+function setTerminalState(name: string, state: TerminalTargetState) {
+  terminalState.value = {
+    ...terminalState.value,
+    [name]: state,
+  };
+}
+
+function openTerminalForTarget(name: string) {
+  const current = terminalState.value[name];
+  if (!current) {
+    const tab = createTerminalTab(1);
+    setTerminalState(name, { open: true, tabs: [tab], activeId: tab.id, nextIndex: 2 });
+    return;
+  }
+  if (current.tabs.length === 0) {
+    const tab = createTerminalTab(current.nextIndex || 1);
+    setTerminalState(name, {
+      ...current,
+      open: true,
+      tabs: [tab],
+      activeId: tab.id,
+      nextIndex: (current.nextIndex || 1) + 1,
+    });
+    return;
+  }
+  if (!current.open) {
+    setTerminalState(name, { ...current, open: true });
+  }
+}
+
+function hideTerminalForTarget(name: string) {
   const current = terminalState.value[name];
   if (!current) {
     return;
   }
-  terminalState.value = {
-    ...terminalState.value,
-    [name]: { ...current, open: false },
+  if (current.open) {
+    setTerminalState(name, { ...current, open: false });
+  }
+}
+
+function addTerminalTab(name: string) {
+  const current = terminalState.value[name] ?? {
+    open: true,
+    tabs: [],
+    activeId: null,
+    nextIndex: 1,
   };
+  const tab = createTerminalTab(current.nextIndex || 1);
+  setTerminalState(name, {
+    ...current,
+    open: true,
+    tabs: [...current.tabs, tab],
+    activeId: tab.id,
+    nextIndex: (current.nextIndex || 1) + 1,
+  });
+}
+
+function activateTerminalTab(name: string, tabId: string) {
+  const current = terminalState.value[name];
+  if (!current || current.activeId === tabId) {
+    return;
+  }
+  setTerminalState(name, { ...current, activeId: tabId, open: true });
+}
+
+function closeTerminalTab(name: string, tabId: string) {
+  const current = terminalState.value[name];
+  if (!current) {
+    return;
+  }
+  const index = current.tabs.findIndex((tab) => tab.id === tabId);
+  if (index === -1) {
+    return;
+  }
+  const nextTabs = current.tabs.filter((tab) => tab.id !== tabId);
+  if (nextTabs.length === 0) {
+    setTerminalState(name, {
+      ...current,
+      open: false,
+      tabs: [],
+      activeId: null,
+    });
+    return;
+  }
+  const nextActiveId =
+    current.activeId === tabId ? nextTabs[Math.min(index, nextTabs.length - 1)].id : current.activeId;
+  setTerminalState(name, {
+    ...current,
+    tabs: nextTabs,
+    activeId: nextActiveId ?? nextTabs[0].id,
+  });
 }
 
 function updateResolvedTheme(resolved: 'dark' | 'light', mode: ThemeMode) {
@@ -383,7 +496,7 @@ watch(
           :snapshot="selectedSnapshot"
           :settings="settings"
           :pending-jump-token="pendingJumpToken"
-          :terminal-open="selectedTerminal.open"
+          :terminal-open="selectedTerminalOpen"
           @approve="approve"
           @deny="deny"
           @open-terminal="handleOpenTerminal"
@@ -392,15 +505,115 @@ watch(
           请选择目标开始操作。
         </div>
       </div>
-      <TerminalPanel
+      <div
         v-for="entry in terminalEntries"
         :key="entry.target.name"
-        :target="entry.target"
-        :theme="resolvedTheme"
+        class="absolute inset-0 z-40 flex flex-col bg-surface"
         v-show="entry.state.open && selectedTargetName === entry.target.name"
-        :visible="entry.state.open && selectedTargetName === entry.target.name"
-        @close="closeTerminalForTarget(entry.target.name)"
-      />
+      >
+        <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-panel/70">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="text-sm font-semibold text-foreground whitespace-nowrap">
+              {{ entry.target.name }}
+            </div>
+            <div class="h-4 w-px bg-border"></div>
+            <div class="flex items-center gap-2 overflow-x-auto min-w-0 pr-2">
+              <div
+                v-for="tab in entry.state.tabs"
+                :key="tab.id"
+                class="group flex items-center gap-2 px-3 py-1.5 rounded-t border transition-colors cursor-pointer flex-none"
+                :class="
+                  tab.id === entry.state.activeId
+                    ? 'bg-surface text-foreground border-border'
+                    : 'text-foreground-muted border-transparent hover:text-foreground hover:bg-panel/40'
+                "
+                role="tab"
+                :aria-selected="tab.id === entry.state.activeId"
+                @click="activateTerminalTab(entry.target.name, tab.id)"
+              >
+                <span class="text-sm">{{ tab.label }}</span>
+                <button
+                  class="ml-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-foreground-muted hover:text-foreground"
+                  @click.stop="closeTerminalTab(entry.target.name, tab.id)"
+                  aria-label="关闭终端"
+                  title="关闭终端"
+                >
+                  <svg
+                    class="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
+              @click="addTerminalTab(entry.target.name)"
+              aria-label="新建终端"
+              title="新建终端"
+            >
+              <svg
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+            <button
+              class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
+              @click="hideTerminalForTarget(entry.target.name)"
+              aria-label="隐藏终端"
+              title="隐藏终端"
+            >
+              <svg
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="flex-1 min-h-0 relative">
+          <TerminalPanel
+            v-for="tab in entry.state.tabs"
+            :key="tab.id"
+            :target="entry.target"
+            :theme="resolvedTheme"
+            :visible="
+              entry.state.open &&
+              selectedTargetName === entry.target.name &&
+              entry.state.activeId === tab.id
+            "
+            v-show="
+              entry.state.open &&
+              selectedTargetName === entry.target.name &&
+              entry.state.activeId === tab.id
+            "
+          />
+        </div>
+      </div>
     </div>
 
     <SettingsModal
