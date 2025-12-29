@@ -1,5 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import {
+  NAlert,
+  NButton,
+  NCard,
+  NConfigProvider,
+  NInput,
+  NModal,
+  NSelect,
+  NSpin,
+  NSwitch,
+  NTabPane,
+  NTabs,
+  darkTheme,
+  type SelectOption,
+} from 'naive-ui';
 import { readBrokerConfig, readProxyConfig, restartConsole, writeBrokerConfig, writeProxyConfig } from '../api';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
 import { DEFAULT_SETTINGS } from '../settings';
@@ -27,11 +42,11 @@ function cloneSettings(source: AppSettings): AppSettings {
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const activeTab = ref<'general' | 'shortcuts' | 'config'>('general');
-const themeOptions = [
+const themeOptions: SelectOption[] = [
   { value: 'system', label: '系统' },
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
-] as const;
+];
 const shortcutFields = [
   { key: 'prevTarget', label: '上一个目标' },
   { key: 'nextTarget', label: '下一个目标' },
@@ -68,6 +83,12 @@ const hasOpen = computed(() => props.isOpen);
 const isConfigTab = computed(() => activeTab.value === 'config');
 const proxyDirty = computed(() => proxyConfigText.value !== proxyOriginal.value);
 const brokerDirty = computed(() => brokerConfigText.value !== brokerOriginal.value);
+const naiveTheme = computed(() => (props.resolvedTheme === 'light' ? null : darkTheme));
+const cardStyle = computed(() => ({
+  width: '100%',
+  maxWidth: isConfigTab.value ? '80rem' : '32rem',
+  height: isConfigTab.value ? '80vh' : 'auto',
+}));
 
 function save() {
   emit('save', cloneSettings(localSettings.value));
@@ -224,22 +245,7 @@ function deactivateShortcut(field: ShortcutField) {
   }
 }
 
-function handleEscape(event: KeyboardEvent) {
-  if (!hasOpen.value) {
-    return;
-  }
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    emit('close');
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', handleEscape);
-});
-
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleEscape);
   if (configMessageTimer !== null) {
     window.clearTimeout(configMessageTimer);
   }
@@ -280,204 +286,156 @@ watch(
 </script>
 
 <template>
-  <div v-if="hasOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-    <div class="absolute inset-0 bg-black/60"></div>
-    <div
-      class="relative w-full bg-panel border border-border rounded-xl shadow-xl p-6 flex flex-col"
-      :class="isConfigTab ? 'max-w-5xl h-[80vh]' : 'max-w-lg'"
+  <n-config-provider :theme="naiveTheme">
+    <n-modal
+      :show="hasOpen"
+      :mask-closable="false"
+      :close-on-esc="true"
+      @update:show="(value) => { if (!value) emit('close'); }"
     >
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold">设置</h2>
-        <button
-          class="text-foreground-muted hover:text-foreground p-1 rounded hover:bg-panel-muted transition-colors"
-          @click="emit('close')"
-          aria-label="关闭"
-          title="关闭"
-        >
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
+      <n-card :bordered="true" :style="cardStyle" size="large">
+        <template #header>设置</template>
+        <template #header-extra>
+          <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </n-button>
+        </template>
 
-      <div class="mt-4 flex items-center gap-2 border-b border-border pb-2 text-sm">
-        <button
-          class="px-3 py-1.5 rounded border transition-colors"
-          :class="activeTab === 'general' ? 'border-accent text-accent bg-accent/10' : 'border-border text-foreground-muted hover:text-foreground'"
-          @click="activeTab = 'general'"
-        >
-          通用设置
-        </button>
-        <button
-          class="px-3 py-1.5 rounded border transition-colors"
-          :class="activeTab === 'shortcuts' ? 'border-accent text-accent bg-accent/10' : 'border-border text-foreground-muted hover:text-foreground'"
-          @click="activeTab = 'shortcuts'"
-        >
-          快捷键设置
-        </button>
-        <button
-          class="px-3 py-1.5 rounded border transition-colors"
-          :class="activeTab === 'config' ? 'border-accent text-accent bg-accent/10' : 'border-border text-foreground-muted hover:text-foreground'"
-          @click="activeTab = 'config'"
-        >
-          配置中心
-        </button>
-      </div>
-
-      <div class="mt-4 flex-1 min-h-0">
-        <div v-if="activeTab === 'general'" class="space-y-4">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <div class="text-sm font-medium">主题</div>
-              <div class="text-xs text-foreground-muted">系统/深色/浅色</div>
-            </div>
-            <select
-              v-model="localSettings.theme"
-              class="bg-panel-muted border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
-            >
-              <option v-for="option in themeOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm font-medium">新 Pending 通知</div>
-              <div class="text-xs text-foreground-muted">有新的待审批时弹出提示</div>
-            </div>
-            <input
-              type="checkbox"
-              v-model="localSettings.notificationsEnabled"
-              class="h-4 w-4 accent-accent"
-            />
-          </div>
-        </div>
-
-        <div v-else-if="activeTab === 'shortcuts'" class="space-y-3">
-          <div
-            v-for="item in shortcutFields"
-            :key="item.key"
-            class="flex items-center justify-between gap-4 text-sm"
-          >
-            <span class="text-foreground-muted">{{ item.label }}</span>
-            <div class="flex items-center gap-2">
-              <input
-                :value="shortcutDisplay(item.key)"
-                class="w-44 bg-panel-muted border rounded px-2 py-1 text-sm transition-colors cursor-pointer"
-                :class="shortcutInputClass(item.key)"
-                readonly
-                @focus="activateShortcut(item.key)"
-                @blur="deactivateShortcut(item.key)"
-                @keydown.prevent="captureShortcut(item.key, $event)"
-              />
-              <button
-                type="button"
-                class="h-8 w-8 flex items-center justify-center rounded border border-border text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
-                :class="shortcutHasValue(item.key) ? '' : 'opacity-40 cursor-not-allowed'"
-                :disabled="!shortcutHasValue(item.key)"
-                title="清空"
-                aria-label="清空快捷键"
-                @click="clearShortcut(item.key)"
-              >
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="h-8 w-8 flex items-center justify-center rounded border border-border text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
-                :class="shortcutIsDefault(item.key) ? 'opacity-40 cursor-not-allowed' : ''"
-                :disabled="shortcutIsDefault(item.key)"
-                title="恢复默认"
-                aria-label="恢复默认快捷键"
-                @click="resetShortcut(item.key)"
-              >
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 12a9 9 0 1 0 3-6.7" />
-                  <polyline points="3 4 3 10 9 10" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div v-else class="flex flex-col gap-4 min-h-0">
-          <div v-if="configLoading" class="text-sm text-foreground-muted">正在加载配置...</div>
-          <div v-else-if="configError" class="text-sm text-danger border border-danger/30 bg-danger/10 rounded px-3 py-2">
-            加载失败：{{ configError }}
-          </div>
-          <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-            <div class="flex flex-col gap-2 min-h-0">
-              <div class="flex items-center justify-between text-sm">
+        <n-tabs v-model:value="activeTab" type="line" size="small">
+          <n-tab-pane name="general" tab="通用设置">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between gap-4">
                 <div>
-                  <div class="font-medium">本地代理配置</div>
-                  <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
+                  <div class="text-sm font-medium">主题</div>
+                  <div class="text-xs text-foreground-muted">系统/深色/浅色</div>
                 </div>
-                <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
+                <n-select
+                  v-model:value="localSettings.theme"
+                  :options="themeOptions"
+                  size="small"
+                  class="w-32"
+                />
               </div>
-              <MonacoEditor v-model="proxyConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
-              <div class="text-xs text-foreground-muted">修改 broker_config_path 后建议点击刷新或保存并应用。</div>
-            </div>
-
-            <div class="flex flex-col gap-2 min-h-0">
-              <div class="flex items-center justify-between text-sm">
+              <div class="flex items-center justify-between">
                 <div>
-                  <div class="font-medium">远端 broker 配置（源文件）</div>
-                  <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
+                  <div class="text-sm font-medium">新 Pending 通知</div>
+                  <div class="text-xs text-foreground-muted">有新的待审批时弹出提示</div>
+                </div>
+                <n-switch v-model:value="localSettings.notificationsEnabled" size="small" />
+              </div>
+            </div>
+          </n-tab-pane>
+
+          <n-tab-pane name="shortcuts" tab="快捷键设置">
+            <div class="space-y-3">
+              <div
+                v-for="item in shortcutFields"
+                :key="item.key"
+                class="flex items-center justify-between gap-4 text-sm"
+              >
+                <span class="text-foreground-muted">{{ item.label }}</span>
+                <div class="flex items-center gap-2">
+                  <n-input
+                    :value="shortcutDisplay(item.key)"
+                    size="small"
+                    readonly
+                    class="w-44"
+                    :class="shortcutInputClass(item.key)"
+                    @focus="activateShortcut(item.key)"
+                    @blur="deactivateShortcut(item.key)"
+                    @keydown.prevent="captureShortcut(item.key, $event)"
+                  />
+                  <n-button
+                    size="small"
+                    quaternary
+                    :disabled="!shortcutHasValue(item.key)"
+                    title="清空"
+                    aria-label="清空快捷键"
+                    @click="clearShortcut(item.key)"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </n-button>
+                  <n-button
+                    size="small"
+                    quaternary
+                    :disabled="shortcutIsDefault(item.key)"
+                    title="恢复默认"
+                    aria-label="恢复默认快捷键"
+                    @click="resetShortcut(item.key)"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 12a9 9 0 1 0 3-6.7" />
+                      <polyline points="3 4 3 10 9 10" />
+                    </svg>
+                  </n-button>
                 </div>
               </div>
-              <MonacoEditor v-model="brokerConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
             </div>
+          </n-tab-pane>
+
+          <n-tab-pane name="config" tab="配置中心">
+            <div class="flex flex-col gap-4 min-h-0">
+              <div v-if="configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
+                <n-spin size="small" />
+                <span>正在加载配置...</span>
+              </div>
+              <n-alert v-else-if="configError" type="error" :bordered="false">
+                加载失败：{{ configError }}
+              </n-alert>
+              <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+                <div class="flex flex-col gap-2 min-h-0">
+                  <div class="flex items-center justify-between text-sm">
+                    <div>
+                      <div class="font-medium">本地代理配置</div>
+                      <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
+                    </div>
+                    <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
+                  </div>
+                  <MonacoEditor v-model="proxyConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
+                  <div class="text-xs text-foreground-muted">修改 broker_config_path 后建议点击刷新或保存并应用。</div>
+                </div>
+
+                <div class="flex flex-col gap-2 min-h-0">
+                  <div class="flex items-center justify-between text-sm">
+                    <div>
+                      <div class="font-medium">远端 broker 配置（源文件）</div>
+                      <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
+                    </div>
+                  </div>
+                  <MonacoEditor v-model="brokerConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
+                </div>
+              </div>
+
+              <n-alert v-if="configMessage" type="success" :bordered="false">
+                {{ configMessage }}
+              </n-alert>
+            </div>
+          </n-tab-pane>
+        </n-tabs>
+
+        <div v-if="activeTab !== 'config'" class="mt-6 flex justify-end gap-3">
+          <n-button @click="emit('close')">取消</n-button>
+          <n-button type="primary" @click="save">保存</n-button>
+        </div>
+
+        <div v-else class="mt-4 flex items-center justify-between gap-3">
+          <div class="text-xs text-foreground-muted">
+            本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
           </div>
-
-          <div v-if="configMessage" class="text-xs text-success border border-success/20 bg-success/10 rounded px-3 py-2">
-            {{ configMessage }}
+          <div class="flex items-center gap-2">
+            <n-button :disabled="configBusy" @click="loadConfigCenter">刷新</n-button>
+            <n-button :disabled="configBusy || !proxyDirty" @click="saveProxyConfig">保存本地</n-button>
+            <n-button :disabled="configBusy || !brokerDirty" @click="saveBrokerConfig">保存远端</n-button>
+            <n-button type="primary" :disabled="configBusy" @click="saveAndApply">保存并应用</n-button>
           </div>
         </div>
-      </div>
-
-      <div v-if="activeTab !== 'config'" class="mt-6 flex justify-end gap-3">
-        <button class="px-4 py-2 rounded bg-panel-muted text-foreground" @click="emit('close')">取消</button>
-        <button class="px-4 py-2 rounded bg-accent text-white" @click="save">保存</button>
-      </div>
-
-      <div v-else class="mt-4 flex items-center justify-between gap-3">
-        <div class="text-xs text-foreground-muted">
-          本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            class="px-3 py-2 rounded border border-border text-foreground hover:border-foreground-muted disabled:opacity-40"
-            :disabled="configBusy"
-            @click="loadConfigCenter"
-          >
-            刷新
-          </button>
-          <button
-            class="px-3 py-2 rounded border border-border text-foreground hover:border-foreground-muted disabled:opacity-40"
-            :disabled="configBusy || !proxyDirty"
-            @click="saveProxyConfig"
-          >
-            保存本地
-          </button>
-          <button
-            class="px-3 py-2 rounded border border-border text-foreground hover:border-foreground-muted disabled:opacity-40"
-            :disabled="configBusy || !brokerDirty"
-            @click="saveBrokerConfig"
-          >
-            保存远端
-          </button>
-          <button
-            class="px-3 py-2 rounded bg-accent text-white disabled:opacity-40"
-            :disabled="configBusy"
-            @click="saveAndApply"
-          >
-            保存并应用
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+      </n-card>
+    </n-modal>
+  </n-config-provider>
 </template>
