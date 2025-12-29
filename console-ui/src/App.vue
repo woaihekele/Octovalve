@@ -566,7 +566,7 @@ watch(
           >
             <template v-if="selectedTerminalEntry" #terminal>
               <div class="flex flex-col min-h-0 h-full">
-              <div class="px-6 pt-1 pb-0 bg-surface">
+              <div class="pt-1 pb-0 bg-surface">
                 <n-tabs
                   :value="selectedTerminalEntry.state.activeId"
                   type="card"
