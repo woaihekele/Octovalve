@@ -17,7 +17,7 @@
       }
     },
     "security": {
-      "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
+      "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;"
     },
     "windows": [
       {

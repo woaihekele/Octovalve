@@ -1,5 +1,11 @@
 export type TargetStatus = 'ready' | 'down';
 
+export interface ConfigFilePayload {
+  path: string;
+  exists: boolean;
+  content: string;
+}
+
 export interface TargetInfo {
   name: string;
   hostname?: string | null;

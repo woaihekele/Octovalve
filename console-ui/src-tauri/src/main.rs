@@ -32,7 +32,7 @@ struct ConsoleSidecar {
 
 struct ConsoleSidecarState(Mutex<Option<ConsoleSidecar>>);
 struct ConsoleStreamState(Mutex<bool>);
-struct ProxyConfigState(ProxyConfigStatus);
+struct ProxyConfigState(Mutex<ProxyConfigStatus>);
 struct TerminalSessions(Mutex<HashMap<String, TerminalSession>>);
 struct AppLogState {
     app_log: PathBuf,
@@ -43,6 +43,23 @@ struct ProxyConfigStatus {
     present: bool,
     path: String,
     example_path: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ConfigFilePayload {
+    path: String,
+    exists: bool,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct ProxyConfigOverrides {
+    broker_config_path: Option<String>,
+}
+
+struct ResolvedBrokerConfig {
+    path: PathBuf,
+    source: String,
 }
 
 const CONSOLE_HTTP_HOST: &str = "127.0.0.1:19309";
@@ -73,6 +90,11 @@ fn main() {
         .manage(TerminalSessions(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             get_proxy_config_status,
+            read_proxy_config,
+            write_proxy_config,
+            read_broker_config,
+            write_broker_config,
+            restart_console,
             log_ui_event,
             proxy_fetch_targets,
             proxy_fetch_snapshot,
@@ -97,7 +119,7 @@ fn main() {
                 app_log: app_log.clone(),
             });
             let (proxy_status, proxy_path) = prepare_proxy_config(&app_log)?;
-            app.manage(ProxyConfigState(proxy_status.clone()));
+            app.manage(ProxyConfigState(Mutex::new(proxy_status.clone())));
             if proxy_status.present {
                 if let Err(err) = start_console(&app.handle(), &proxy_path, &app_log) {
                     eprintln!("failed to start console sidecar: {err}");
@@ -132,14 +154,20 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
         .ok_or_else(|| "failed to resolve app config dir".to_string())?;
     fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
 
-    let broker_config = config_dir.join("remote-broker-config.toml");
+    let resolved_broker = resolve_broker_config_path(proxy_config, &config_dir)?;
+    let broker_config = resolved_broker.path;
     ensure_file(&broker_config, DEFAULT_BROKER_CONFIG)?;
     let logs_dir = config_dir.join("logs");
     fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
     let console_log = logs_dir.join("console.log");
     let _ = append_log_line(
         app_log,
-        &format!("console log path: {}", console_log.display()),
+        &format!(
+            "console log path: {} broker_config={} source={}",
+            console_log.display(),
+            broker_config.display(),
+            resolved_broker.source
+        ),
     );
 
     let broker_bin_linux_x86_64 = resolve_linux_broker(
@@ -334,9 +362,155 @@ fn prepare_proxy_config(log_path: &Path) -> Result<(ProxyConfigStatus, PathBuf),
     Ok((status, config_path))
 }
 
+fn resolve_broker_config_path(
+    proxy_config: &Path,
+    app_config_dir: &Path,
+) -> Result<ResolvedBrokerConfig, String> {
+    let default_path = app_config_dir.join("remote-broker-config.toml");
+    if !proxy_config.exists() {
+        return Ok(ResolvedBrokerConfig {
+            path: default_path,
+            source: "default".to_string(),
+        });
+    }
+    let raw = fs::read_to_string(proxy_config).map_err(|err| err.to_string())?;
+    let parsed: ProxyConfigOverrides = toml::from_str(&raw).map_err(|err| err.to_string())?;
+    if let Some(path) = parsed.broker_config_path {
+        let resolved = resolve_config_path(proxy_config, &path)?;
+        return Ok(ResolvedBrokerConfig {
+            path: resolved,
+            source: "config".to_string(),
+        });
+    }
+    Ok(ResolvedBrokerConfig {
+        path: default_path,
+        source: "default".to_string(),
+    })
+}
+
+fn resolve_config_path(base: &Path, value: &str) -> Result<PathBuf, String> {
+    let expanded = expand_tilde_path(value)?;
+    if expanded.is_absolute() {
+        return Ok(expanded);
+    }
+    let base_dir = base
+        .parent()
+        .ok_or_else(|| "failed to resolve config dir".to_string())?;
+    Ok(base_dir.join(expanded))
+}
+
+fn expand_tilde_path(value: &str) -> Result<PathBuf, String> {
+    if value == "~" {
+        return home_dir()
+            .map(PathBuf::from)
+            .ok_or_else(|| "failed to resolve home dir".to_string());
+    }
+    if let Some(rest) = value.strip_prefix("~/") {
+        let home = home_dir().ok_or_else(|| "failed to resolve home dir".to_string())?;
+        return Ok(home.join(rest));
+    }
+    Ok(PathBuf::from(value))
+}
+
+fn read_config_file(path: &Path, fallback: Option<&str>) -> Result<ConfigFilePayload, String> {
+    let exists = path.exists();
+    let content = if exists {
+        fs::read_to_string(path).map_err(|err| err.to_string())?
+    } else {
+        fallback.unwrap_or_default().to_string()
+    };
+    Ok(ConfigFilePayload {
+        path: path.to_string_lossy().to_string(),
+        exists,
+        content,
+    })
+}
+
+fn write_config_file(path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(path, content).map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 fn get_proxy_config_status(state: State<ProxyConfigState>) -> ProxyConfigStatus {
-    state.0.clone()
+    state.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn read_proxy_config(state: State<ProxyConfigState>) -> Result<ConfigFilePayload, String> {
+    let path = {
+        let status = state.0.lock().unwrap();
+        PathBuf::from(status.path.clone())
+    };
+    read_config_file(&path, Some(DEFAULT_PROXY_EXAMPLE))
+}
+
+#[tauri::command]
+fn write_proxy_config(content: String, state: State<ProxyConfigState>) -> Result<(), String> {
+    let path = {
+        let status = state.0.lock().unwrap();
+        PathBuf::from(status.path.clone())
+    };
+    write_config_file(&path, &content)?;
+    let mut status = state.0.lock().unwrap();
+    status.present = true;
+    Ok(())
+}
+
+#[tauri::command]
+fn read_broker_config(
+    app: AppHandle,
+    state: State<ProxyConfigState>,
+) -> Result<ConfigFilePayload, String> {
+    let config_dir = app
+        .path_resolver()
+        .app_config_dir()
+        .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+    let proxy_path = {
+        let status = state.0.lock().unwrap();
+        PathBuf::from(status.path.clone())
+    };
+    let resolved = resolve_broker_config_path(&proxy_path, &config_dir)?;
+    let existed = resolved.path.exists();
+    ensure_file(&resolved.path, DEFAULT_BROKER_CONFIG)?;
+    let mut payload = read_config_file(&resolved.path, Some(DEFAULT_BROKER_CONFIG))?;
+    payload.exists = existed;
+    Ok(payload)
+}
+
+#[tauri::command]
+fn write_broker_config(
+    content: String,
+    app: AppHandle,
+    state: State<ProxyConfigState>,
+) -> Result<(), String> {
+    let config_dir = app
+        .path_resolver()
+        .app_config_dir()
+        .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+    let proxy_path = {
+        let status = state.0.lock().unwrap();
+        PathBuf::from(status.path.clone())
+    };
+    let resolved = resolve_broker_config_path(&proxy_path, &config_dir)?;
+    write_config_file(&resolved.path, &content)
+}
+
+#[tauri::command]
+fn restart_console(
+    app: AppHandle,
+    state: State<ProxyConfigState>,
+    log_state: State<AppLogState>,
+) -> Result<(), String> {
+    stop_console(&app);
+    let status = state.0.lock().unwrap().clone();
+    if !status.present {
+        return Err("proxy config missing".to_string());
+    }
+    start_console(&app, Path::new(&status.path), &log_state.app_log)?;
+    Ok(())
 }
 
 struct HttpResponse {

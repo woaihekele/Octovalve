@@ -1809,6 +1809,7 @@ dependencies = [
  "tauri-build",
  "tokio",
  "tokio-tungstenite",
+ "toml 0.8.23",
  "urlencoding",
  "uuid",
 ]

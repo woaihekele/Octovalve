@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/tauri';
-import type { ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
+import type { ConfigFilePayload, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
@@ -199,6 +199,41 @@ export async function logUiEvent(message: string) {
   } catch {
     // ignore logging failures
   }
+}
+
+export async function readProxyConfig(): Promise<ConfigFilePayload> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('config editor only available in Tauri');
+  }
+  return invoke<ConfigFilePayload>('read_proxy_config');
+}
+
+export async function writeProxyConfig(content: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('config editor only available in Tauri');
+  }
+  await invoke('write_proxy_config', { content });
+}
+
+export async function readBrokerConfig(): Promise<ConfigFilePayload> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('config editor only available in Tauri');
+  }
+  return invoke<ConfigFilePayload>('read_broker_config');
+}
+
+export async function writeBrokerConfig(content: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('config editor only available in Tauri');
+  }
+  await invoke('write_broker_config', { content });
+}
+
+export async function restartConsole() {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('config editor only available in Tauri');
+  }
+  await invoke('restart_console');
 }
 
 export async function terminalOpen(name: string, cols: number, rows: number, term?: string) {

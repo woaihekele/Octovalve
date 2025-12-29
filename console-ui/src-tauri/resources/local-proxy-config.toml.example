@@ -8,6 +8,11 @@
 # Notes:
 # - This config defines how the console connects to remote brokers via SSH.
 # - Prefer SSH key authentication; use ssh_password only if necessary.
+# - broker_config_path lets the console sidecar load a custom broker config file.
+#   Supports absolute paths, "~", or paths relative to this file.
+
+# Optional broker config path override.
+# broker_config_path = "~/.octovalve/remote-broker-config.toml"
 
 # Default target name used when no target is specified explicitly.
 default_target = "example"
