@@ -11,7 +11,7 @@ import {
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from './api';
-import { NConfigProvider, NNotificationProvider, darkTheme } from 'naive-ui';
+import { NButton, NConfigProvider, NNotificationProvider, NTabPane, NTabs, darkTheme } from 'naive-ui';
 import { matchesShortcut } from './shortcuts';
 import Sidebar from './components/Sidebar.vue';
 import TerminalPanel from './components/TerminalPanel.vue';
@@ -537,70 +537,35 @@ watch(
             v-show="entry.state.open && selectedTargetName === entry.target.name"
           >
             <div class="flex items-center justify-between px-4 pt-1.5 pb-0.5 border-b border-border bg-panel/70">
-              <div class="flex items-center gap-3 min-w-0">
+              <div class="flex items-center gap-3 min-w-0 flex-1">
                 <div class="text-xs font-semibold text-foreground whitespace-nowrap">
                   {{ entry.target.name }}
                 </div>
                 <div class="h-3 w-px bg-border"></div>
-                <div class="flex items-end gap-2 overflow-x-auto overflow-y-hidden min-w-0 pr-2 self-end -mb-px">
-                  <div
+                <n-tabs
+                  :value="entry.state.activeId"
+                  type="card"
+                  size="small"
+                  addable
+                  closable
+                  class="min-w-0 flex-1"
+                  @add="addTerminalTab(entry.target.name)"
+                  @close="(name) => closeTerminalTab(entry.target.name, String(name))"
+                  @update:value="(value) => activateTerminalTab(entry.target.name, String(value))"
+                >
+                  <n-tab-pane
                     v-for="tab in entry.state.tabs"
                     :key="tab.id"
-                    class="group flex items-center gap-2 px-2.5 py-1 rounded-t-md border border-transparent transition-colors cursor-pointer flex-none text-xs leading-none"
-                    :class="
-                      tab.id === entry.state.activeId
-                        ? 'bg-surface text-foreground border-border'
-                        : 'text-foreground-muted hover:text-foreground hover:bg-panel/40 hover:border-border/60'
-                    "
-                    role="tab"
-                    :aria-selected="tab.id === entry.state.activeId"
-                    @click="activateTerminalTab(entry.target.name, tab.id)"
-                  >
-                    <span class="text-xs leading-none">{{ tab.label }}</span>
-                    <button
-                      class="ml-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-foreground-muted hover:text-foreground"
-                      @click.stop="closeTerminalTab(entry.target.name, tab.id)"
-                      aria-label="关闭终端"
-                      title="关闭终端"
-                    >
-                      <svg
-                        class="h-3.5 w-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+                    :name="tab.id"
+                    :tab="tab.label"
+                    closable
+                  />
+                </n-tabs>
               </div>
               <div class="flex items-center gap-2">
-                <button
-                  class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
-                  @click="addTerminalTab(entry.target.name)"
-                  aria-label="新建终端"
-                  title="新建终端"
-                >
-                  <svg
-                    class="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
-                <button
-                  class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
+                <n-button
+                  size="small"
+                  quaternary
                   @click="hideTerminalForTarget(entry.target.name)"
                   aria-label="隐藏终端"
                   title="隐藏终端"
@@ -617,7 +582,7 @@ watch(
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
-                </button>
+                </n-button>
               </div>
             </div>
             <div class="flex-1 min-h-0 relative">
