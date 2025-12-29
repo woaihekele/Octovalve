@@ -531,7 +531,7 @@ watch(
                 :aria-selected="tab.id === entry.state.activeId"
                 @click="activateTerminalTab(entry.target.name, tab.id)"
               >
-                <span class="text-sm">{{ tab.label }}</span>
+                <span class="text-xs leading-none">{{ tab.label }}</span>
                 <button
                   class="ml-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-foreground-muted hover:text-foreground"
                   @click.stop="closeTerminalTab(entry.target.name, tab.id)"
