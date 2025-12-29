@@ -212,19 +212,19 @@ export async function terminalInput(sessionId: string, dataBase64: string) {
   if (!TAURI_AVAILABLE) {
     throw new Error('terminal only available in Tauri');
   }
-  await invoke('terminal_input', { session_id: sessionId, data_base64: dataBase64 });
+  await invoke('terminal_input', { sessionId, dataBase64 });
 }
 
 export async function terminalResize(sessionId: string, cols: number, rows: number) {
   if (!TAURI_AVAILABLE) {
     throw new Error('terminal only available in Tauri');
   }
-  await invoke('terminal_resize', { session_id: sessionId, cols, rows });
+  await invoke('terminal_resize', { sessionId, cols, rows });
 }
 
 export async function terminalClose(sessionId: string) {
   if (!TAURI_AVAILABLE) {
     return;
   }
-  await invoke('terminal_close', { session_id: sessionId });
+  await invoke('terminal_close', { sessionId });
 }
