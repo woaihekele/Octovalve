@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -158,6 +158,19 @@ function flushInputBuffer() {
   void terminalInput(sessionId, payload);
 }
 
+async function syncTerminalLayout() {
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+  if (!terminal || !fitAddon || !sessionId) {
+    return;
+  }
+  fitAddon.fit();
+  terminal.focus();
+  void terminalResize(sessionId, terminal.cols, terminal.rows);
+}
+
 function cleanupTerminal(sendClose: boolean) {
   if (inputFlushTimer !== null) {
     window.clearTimeout(inputFlushTimer);
@@ -210,25 +223,23 @@ watch(
 
 watch(
   () => props.visible,
-  (visible) => {
+  async (visible) => {
     if (!visible) {
       return;
     }
     if (!sessionId) {
-      void openSession();
-      return;
+      await openSession();
     }
-    if (terminal && fitAddon && sessionId) {
-      fitAddon.fit();
-      terminal.focus();
-      void terminalResize(sessionId, terminal.cols, terminal.rows);
-    }
-  }
+    await syncTerminalLayout();
+  },
+  { flush: 'post' }
 );
 
 onMounted(() => {
   if (props.visible) {
-    void openSession();
+    void openSession().then(() => {
+      void syncTerminalLayout();
+    });
   }
 });
 
