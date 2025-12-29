@@ -11,7 +11,7 @@ import {
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from './api';
-import { NNotificationProvider } from 'naive-ui';
+import { NConfigProvider, NNotificationProvider, darkTheme } from 'naive-ui';
 import { matchesShortcut } from './shortcuts';
 import Sidebar from './components/Sidebar.vue';
 import TerminalPanel from './components/TerminalPanel.vue';
@@ -47,6 +47,33 @@ type TerminalTargetState = {
 
 const terminalState = ref<Record<string, TerminalTargetState>>({});
 const resolvedTheme = ref<'dark' | 'light'>('dark');
+const naiveTheme = computed(() => (resolvedTheme.value === 'light' ? null : darkTheme));
+const naiveThemeOverrides = computed(() => ({
+  common: {
+    primaryColor: 'rgb(var(--color-accent))',
+    primaryColorHover: 'rgb(var(--color-accent))',
+    primaryColorPressed: 'rgb(var(--color-accent-soft))',
+    primaryColorSuppl: 'rgb(var(--color-accent-soft))',
+    successColor: 'rgb(var(--color-success))',
+    warningColor: 'rgb(var(--color-warning))',
+    errorColor: 'rgb(var(--color-danger))',
+    textColorBase: 'rgb(var(--color-text))',
+    textColor1: 'rgb(var(--color-text))',
+    textColor2: 'rgb(var(--color-text-muted))',
+    textColor3: 'rgb(var(--color-text-muted))',
+    placeholderColor: 'rgb(var(--color-text-muted))',
+    borderColor: 'rgb(var(--color-border))',
+    dividerColor: 'rgb(var(--color-border))',
+    bodyColor: 'rgb(var(--color-bg))',
+    cardColor: 'rgb(var(--color-panel))',
+    modalColor: 'rgb(var(--color-panel))',
+    popoverColor: 'rgb(var(--color-panel))',
+    inputColor: 'rgb(var(--color-panel-muted))',
+    actionColor: 'rgb(var(--color-panel-muted))',
+    actionColorHover: 'rgb(var(--color-panel-muted))',
+    actionColorPressed: 'rgb(var(--color-panel-muted))',
+  },
+}));
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
@@ -458,168 +485,170 @@ watch(
 </script>
 
 <template>
-  <n-notification-provider>
-    <NotificationBridge :payload="notification" :token="notificationToken" />
-    <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
-      <div
-        class="fixed top-0 left-0 right-0 h-7 z-30"
-        data-tauri-drag-region
-        @mousedown="handleTitleDrag"
-      ></div>
-
-      <Sidebar
-        :targets="targets"
-        :selected-target-name="selectedTargetName"
-        :pending-total="pendingTotal"
-        :connection-state="connectionState"
-        @select="selectedTargetName = $event"
-        @open-settings="isSettingsOpen = true"
-      />
-
-      <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
-        <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
-          <span
-            v-if="connectionState === 'disconnected'"
-            class="text-xs px-2 py-1 rounded border bg-danger/20 text-danger border-danger/30"
-          >
-            console 异常，请重启
-          </span>
-        </div>
-
-        <div class="flex-1 min-h-0">
-          <TargetView
-            v-if="selectedTarget"
-            :target="selectedTarget"
-            :snapshot="selectedSnapshot"
-            :settings="settings"
-            :pending-jump-token="pendingJumpToken"
-            :terminal-open="selectedTerminalOpen"
-            @approve="approve"
-            @deny="deny"
-            @open-terminal="handleOpenTerminal"
-          />
-          <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
-            请选择目标开始操作。
-          </div>
-        </div>
+  <n-config-provider :theme="naiveTheme" :theme-overrides="naiveThemeOverrides">
+    <n-notification-provider>
+      <NotificationBridge :payload="notification" :token="notificationToken" />
+      <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
         <div
-          v-for="entry in terminalEntries"
-          :key="entry.target.name"
-          class="absolute inset-0 z-40 flex flex-col bg-surface"
-          v-show="entry.state.open && selectedTargetName === entry.target.name"
-        >
-          <div class="flex items-center justify-between px-4 pt-1.5 pb-0.5 border-b border-border bg-panel/70">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="text-xs font-semibold text-foreground whitespace-nowrap">
-                {{ entry.target.name }}
-              </div>
-              <div class="h-3 w-px bg-border"></div>
-              <div class="flex items-end gap-2 overflow-x-auto overflow-y-hidden min-w-0 pr-2 self-end -mb-px">
-                <div
-                  v-for="tab in entry.state.tabs"
-                  :key="tab.id"
-                  class="group flex items-center gap-2 px-2.5 py-1 rounded-t-md border border-transparent transition-colors cursor-pointer flex-none text-xs leading-none"
-                  :class="
-                    tab.id === entry.state.activeId
-                      ? 'bg-surface text-foreground border-border'
-                      : 'text-foreground-muted hover:text-foreground hover:bg-panel/40 hover:border-border/60'
-                  "
-                  role="tab"
-                  :aria-selected="tab.id === entry.state.activeId"
-                  @click="activateTerminalTab(entry.target.name, tab.id)"
-                >
-                  <span class="text-xs leading-none">{{ tab.label }}</span>
-                  <button
-                    class="ml-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-foreground-muted hover:text-foreground"
-                    @click.stop="closeTerminalTab(entry.target.name, tab.id)"
-                    aria-label="关闭终端"
-                    title="关闭终端"
+          class="fixed top-0 left-0 right-0 h-7 z-30"
+          data-tauri-drag-region
+          @mousedown="handleTitleDrag"
+        ></div>
+
+        <Sidebar
+          :targets="targets"
+          :selected-target-name="selectedTargetName"
+          :pending-total="pendingTotal"
+          :connection-state="connectionState"
+          @select="selectedTargetName = $event"
+          @open-settings="isSettingsOpen = true"
+        />
+
+        <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
+          <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
+            <span
+              v-if="connectionState === 'disconnected'"
+              class="text-xs px-2 py-1 rounded border bg-danger/20 text-danger border-danger/30"
+            >
+              console 异常，请重启
+            </span>
+          </div>
+
+          <div class="flex-1 min-h-0">
+            <TargetView
+              v-if="selectedTarget"
+              :target="selectedTarget"
+              :snapshot="selectedSnapshot"
+              :settings="settings"
+              :pending-jump-token="pendingJumpToken"
+              :terminal-open="selectedTerminalOpen"
+              @approve="approve"
+              @deny="deny"
+              @open-terminal="handleOpenTerminal"
+            />
+            <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
+              请选择目标开始操作。
+            </div>
+          </div>
+          <div
+            v-for="entry in terminalEntries"
+            :key="entry.target.name"
+            class="absolute inset-0 z-40 flex flex-col bg-surface"
+            v-show="entry.state.open && selectedTargetName === entry.target.name"
+          >
+            <div class="flex items-center justify-between px-4 pt-1.5 pb-0.5 border-b border-border bg-panel/70">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="text-xs font-semibold text-foreground whitespace-nowrap">
+                  {{ entry.target.name }}
+                </div>
+                <div class="h-3 w-px bg-border"></div>
+                <div class="flex items-end gap-2 overflow-x-auto overflow-y-hidden min-w-0 pr-2 self-end -mb-px">
+                  <div
+                    v-for="tab in entry.state.tabs"
+                    :key="tab.id"
+                    class="group flex items-center gap-2 px-2.5 py-1 rounded-t-md border border-transparent transition-colors cursor-pointer flex-none text-xs leading-none"
+                    :class="
+                      tab.id === entry.state.activeId
+                        ? 'bg-surface text-foreground border-border'
+                        : 'text-foreground-muted hover:text-foreground hover:bg-panel/40 hover:border-border/60'
+                    "
+                    role="tab"
+                    :aria-selected="tab.id === entry.state.activeId"
+                    @click="activateTerminalTab(entry.target.name, tab.id)"
                   >
-                    <svg
-                      class="h-3.5 w-3.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.6"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
+                    <span class="text-xs leading-none">{{ tab.label }}</span>
+                    <button
+                      class="ml-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-foreground-muted hover:text-foreground"
+                      @click.stop="closeTerminalTab(entry.target.name, tab.id)"
+                      aria-label="关闭终端"
+                      title="关闭终端"
                     >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
+                      <svg
+                        class="h-3.5 w-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <button
-                class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
-                @click="addTerminalTab(entry.target.name)"
-                aria-label="新建终端"
-                title="新建终端"
-              >
-                <svg
-                  class="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+              <div class="flex items-center gap-2">
+                <button
+                  class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
+                  @click="addTerminalTab(entry.target.name)"
+                  aria-label="新建终端"
+                  title="新建终端"
                 >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-              <button
-                class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
-                @click="hideTerminalForTarget(entry.target.name)"
-                aria-label="隐藏终端"
-                title="隐藏终端"
-              >
-                <svg
-                  class="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+                <button
+                  class="p-1.5 text-foreground-muted hover:text-foreground border border-border rounded"
+                  @click="hideTerminalForTarget(entry.target.name)"
+                  aria-label="隐藏终端"
+                  title="隐藏终端"
                 >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="flex-1 min-h-0 relative">
-            <TerminalPanel
-              v-for="tab in entry.state.tabs"
-              :key="tab.id"
-              :target="entry.target"
-              :theme="resolvedTheme"
-              :visible="
-                entry.state.open &&
-                selectedTargetName === entry.target.name &&
-                entry.state.activeId === tab.id
-              "
-              v-show="
-                entry.state.open &&
-                selectedTargetName === entry.target.name &&
-                entry.state.activeId === tab.id
-              "
-            />
+            <div class="flex-1 min-h-0 relative">
+              <TerminalPanel
+                v-for="tab in entry.state.tabs"
+                :key="tab.id"
+                :target="entry.target"
+                :theme="resolvedTheme"
+                :visible="
+                  entry.state.open &&
+                  selectedTargetName === entry.target.name &&
+                  entry.state.activeId === tab.id
+                "
+                v-show="
+                  entry.state.open &&
+                  selectedTargetName === entry.target.name &&
+                  entry.state.activeId === tab.id
+                "
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <SettingsModal
-        :is-open="isSettingsOpen"
-        :settings="settings"
-        :resolved-theme="resolvedTheme"
-        @close="isSettingsOpen = false"
-        @save="handleSettingsSave"
-      />
-    </div>
-  </n-notification-provider>
+        <SettingsModal
+          :is-open="isSettingsOpen"
+          :settings="settings"
+          :resolved-theme="resolvedTheme"
+          @close="isSettingsOpen = false"
+          @save="handleSettingsSave"
+        />
+      </div>
+    </n-notification-provider>
+  </n-config-provider>
 </template>

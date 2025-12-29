@@ -4,7 +4,6 @@ import {
   NAlert,
   NButton,
   NCard,
-  NConfigProvider,
   NInput,
   NModal,
   NSelect,
@@ -12,7 +11,6 @@ import {
   NSwitch,
   NTabPane,
   NTabs,
-  darkTheme,
   type SelectOption,
 } from 'naive-ui';
 import { readBrokerConfig, readProxyConfig, restartConsole, writeBrokerConfig, writeProxyConfig } from '../api';
@@ -83,7 +81,6 @@ const hasOpen = computed(() => props.isOpen);
 const isConfigTab = computed(() => activeTab.value === 'config');
 const proxyDirty = computed(() => proxyConfigText.value !== proxyOriginal.value);
 const brokerDirty = computed(() => brokerConfigText.value !== brokerOriginal.value);
-const naiveTheme = computed(() => (props.resolvedTheme === 'light' ? null : darkTheme));
 const cardStyle = computed(() => ({
   width: '100%',
   maxWidth: isConfigTab.value ? '80rem' : '32rem',
@@ -286,156 +283,156 @@ watch(
 </script>
 
 <template>
-  <n-config-provider :theme="naiveTheme">
-    <n-modal
-      :show="hasOpen"
-      :mask-closable="false"
-      :close-on-esc="true"
-      @update:show="(value) => { if (!value) emit('close'); }"
-    >
-      <n-card :bordered="true" :style="cardStyle" size="large">
-        <template #header>设置</template>
-        <template #header-extra>
-          <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </n-button>
-        </template>
+  <n-modal
+    :show="hasOpen"
+    :mask-closable="false"
+    :close-on-esc="true"
+    @update:show="(value) => { if (!value) emit('close'); }"
+  >
+    <n-card :bordered="true" :style="cardStyle" size="large">
+      <template #header>设置</template>
+      <template #header-extra>
+        <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </n-button>
+      </template>
 
-        <n-tabs v-model:value="activeTab" type="line" size="small">
-          <n-tab-pane name="general" tab="通用设置">
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <div class="text-sm font-medium">主题</div>
-                  <div class="text-xs text-foreground-muted">系统/深色/浅色</div>
-                </div>
-                <n-select
-                  v-model:value="localSettings.theme"
-                  :options="themeOptions"
-                  size="small"
-                  class="w-32"
-                />
+      <n-tabs v-model:value="activeTab" type="line" size="small">
+        <n-tab-pane name="general" tab="通用设置">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="text-sm font-medium">主题</div>
+                <div class="text-xs text-foreground-muted">系统/深色/浅色</div>
               </div>
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="text-sm font-medium">新 Pending 通知</div>
-                  <div class="text-xs text-foreground-muted">有新的待审批时弹出提示</div>
-                </div>
-                <n-switch v-model:value="localSettings.notificationsEnabled" size="small" />
-              </div>
+              <n-select
+                v-model:value="localSettings.theme"
+                :options="themeOptions"
+                size="small"
+                class="w-32"
+              />
             </div>
-          </n-tab-pane>
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-sm font-medium">新 Pending 通知</div>
+                <div class="text-xs text-foreground-muted">有新的待审批时弹出提示</div>
+              </div>
+              <n-switch v-model:value="localSettings.notificationsEnabled" size="small" />
+            </div>
+          </div>
+        </n-tab-pane>
 
-          <n-tab-pane name="shortcuts" tab="快捷键设置">
-            <div class="space-y-3">
-              <div
-                v-for="item in shortcutFields"
-                :key="item.key"
-                class="flex items-center justify-between gap-4 text-sm"
-              >
-                <span class="text-foreground-muted">{{ item.label }}</span>
-                <div class="flex items-center gap-2">
+        <n-tab-pane name="shortcuts" tab="快捷键设置">
+          <div class="space-y-3">
+            <div
+              v-for="item in shortcutFields"
+              :key="item.key"
+              class="flex items-center justify-between gap-4 text-sm"
+            >
+              <span class="text-foreground-muted">{{ item.label }}</span>
+              <div class="flex items-center gap-2">
+                <div class="w-32 flex-none">
                   <n-input
                     :value="shortcutDisplay(item.key)"
                     size="small"
                     readonly
-                    class="w-44"
+                    class="w-full"
                     :class="shortcutInputClass(item.key)"
                     @focus="activateShortcut(item.key)"
                     @blur="deactivateShortcut(item.key)"
                     @keydown.prevent="captureShortcut(item.key, $event)"
                   />
-                  <n-button
-                    size="small"
-                    quaternary
-                    :disabled="!shortcutHasValue(item.key)"
-                    title="清空"
-                    aria-label="清空快捷键"
-                    @click="clearShortcut(item.key)"
-                  >
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </n-button>
-                  <n-button
-                    size="small"
-                    quaternary
-                    :disabled="shortcutIsDefault(item.key)"
-                    title="恢复默认"
-                    aria-label="恢复默认快捷键"
-                    @click="resetShortcut(item.key)"
-                  >
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M3 12a9 9 0 1 0 3-6.7" />
-                      <polyline points="3 4 3 10 9 10" />
-                    </svg>
-                  </n-button>
                 </div>
+                <n-button
+                  size="small"
+                  quaternary
+                  :disabled="!shortcutHasValue(item.key)"
+                  title="清空"
+                  aria-label="清空快捷键"
+                  @click="clearShortcut(item.key)"
+                >
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </n-button>
+                <n-button
+                  size="small"
+                  quaternary
+                  :disabled="shortcutIsDefault(item.key)"
+                  title="恢复默认"
+                  aria-label="恢复默认快捷键"
+                  @click="resetShortcut(item.key)"
+                >
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 3-6.7" />
+                    <polyline points="3 4 3 10 9 10" />
+                  </svg>
+                </n-button>
               </div>
             </div>
-          </n-tab-pane>
+          </div>
+        </n-tab-pane>
 
-          <n-tab-pane name="config" tab="配置中心">
-            <div class="flex flex-col gap-4 min-h-0">
-              <div v-if="configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
-                <n-spin size="small" />
-                <span>正在加载配置...</span>
-              </div>
-              <n-alert v-else-if="configError" type="error" :bordered="false">
-                加载失败：{{ configError }}
-              </n-alert>
-              <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-                <div class="flex flex-col gap-2 min-h-0">
-                  <div class="flex items-center justify-between text-sm">
-                    <div>
-                      <div class="font-medium">本地代理配置</div>
-                      <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
-                    </div>
-                    <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
-                  </div>
-                  <MonacoEditor v-model="proxyConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
-                  <div class="text-xs text-foreground-muted">修改 broker_config_path 后建议点击刷新或保存并应用。</div>
-                </div>
-
-                <div class="flex flex-col gap-2 min-h-0">
-                  <div class="flex items-center justify-between text-sm">
-                    <div>
-                      <div class="font-medium">远端 broker 配置（源文件）</div>
-                      <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
-                    </div>
-                  </div>
-                  <MonacoEditor v-model="brokerConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
-                </div>
-              </div>
-
-              <n-alert v-if="configMessage" type="success" :bordered="false">
-                {{ configMessage }}
-              </n-alert>
+        <n-tab-pane name="config" tab="配置中心">
+          <div class="flex flex-col gap-4 min-h-0">
+            <div v-if="configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
+              <n-spin size="small" />
+              <span>正在加载配置...</span>
             </div>
-          </n-tab-pane>
-        </n-tabs>
+            <n-alert v-else-if="configError" type="error" :bordered="false">
+              加载失败：{{ configError }}
+            </n-alert>
+            <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+              <div class="flex flex-col gap-2 min-h-0">
+                <div class="flex items-center justify-between text-sm">
+                  <div>
+                    <div class="font-medium">本地代理配置</div>
+                    <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
+                  </div>
+                  <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
+                </div>
+                <MonacoEditor v-model="proxyConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
+                <div class="text-xs text-foreground-muted">修改 broker_config_path 后建议点击刷新或保存并应用。</div>
+              </div>
 
-        <div v-if="activeTab !== 'config'" class="mt-6 flex justify-end gap-3">
-          <n-button @click="emit('close')">取消</n-button>
-          <n-button type="primary" @click="save">保存</n-button>
-        </div>
+              <div class="flex flex-col gap-2 min-h-0">
+                <div class="flex items-center justify-between text-sm">
+                  <div>
+                    <div class="font-medium">远端 broker 配置（源文件）</div>
+                    <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
+                  </div>
+                </div>
+                <MonacoEditor v-model="brokerConfigText" language="toml" height="280px" :theme="props.resolvedTheme" />
+              </div>
+            </div>
 
-        <div v-else class="mt-4 flex items-center justify-between gap-3">
-          <div class="text-xs text-foreground-muted">
-            本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
+            <n-alert v-if="configMessage" type="success" :bordered="false">
+              {{ configMessage }}
+            </n-alert>
           </div>
-          <div class="flex items-center gap-2">
-            <n-button :disabled="configBusy" @click="loadConfigCenter">刷新</n-button>
-            <n-button :disabled="configBusy || !proxyDirty" @click="saveProxyConfig">保存本地</n-button>
-            <n-button :disabled="configBusy || !brokerDirty" @click="saveBrokerConfig">保存远端</n-button>
-            <n-button type="primary" :disabled="configBusy" @click="saveAndApply">保存并应用</n-button>
-          </div>
+        </n-tab-pane>
+      </n-tabs>
+
+      <div v-if="activeTab !== 'config'" class="mt-6 flex justify-end gap-3">
+        <n-button @click="emit('close')">取消</n-button>
+        <n-button type="primary" @click="save">保存</n-button>
+      </div>
+
+      <div v-else class="mt-4 flex items-center justify-between gap-3">
+        <div class="text-xs text-foreground-muted">
+          本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
         </div>
-      </n-card>
-    </n-modal>
-  </n-config-provider>
+        <div class="flex items-center gap-2">
+          <n-button :disabled="configBusy" @click="loadConfigCenter">刷新</n-button>
+          <n-button :disabled="configBusy || !proxyDirty" @click="saveProxyConfig">保存本地</n-button>
+          <n-button :disabled="configBusy || !brokerDirty" @click="saveBrokerConfig">保存远端</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="saveAndApply">保存并应用</n-button>
+        </div>
+      </div>
+    </n-card>
+  </n-modal>
 </template>
