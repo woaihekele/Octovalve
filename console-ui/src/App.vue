@@ -90,10 +90,10 @@ const naiveThemeOverrides = computed(() => {
     },
     Tabs: {
       tabFontSizeSmall: '12px',
-      tabHeightSmall: '28px',
-      tabPaddingSmall: '0 12px',
-      cardPaddingSmall: '0 8px',
-      cardGapSmall: '6px',
+      tabHeightSmall: '26px',
+      tabPaddingSmall: '0 10px',
+      cardPaddingSmall: '0 6px',
+      cardGapSmall: '4px',
     },
   };
 });
@@ -289,6 +289,13 @@ function handleOpenTerminal() {
     return;
   }
   openTerminalForTarget(selectedTargetName.value);
+}
+
+function handleCloseTerminal() {
+  if (!selectedTargetName.value) {
+    return;
+  }
+  hideTerminalForTarget(selectedTargetName.value);
 }
 
 function showNotification(message: string, count?: number) {
@@ -559,10 +566,11 @@ watch(
             @approve="approve"
             @deny="deny"
             @open-terminal="handleOpenTerminal"
+            @close-terminal="handleCloseTerminal"
           >
             <template v-if="selectedTerminalEntry" #terminal>
               <div class="flex flex-col min-h-0 h-full">
-                <div class="border-b border-border px-6 pt-2 pb-1 bg-panel/50">
+                <div class="border-b border-border px-6 pt-1 pb-0.5 bg-surface">
                   <n-tabs
                     :value="selectedTerminalEntry.state.activeId"
                     type="card"

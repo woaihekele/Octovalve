@@ -15,6 +15,7 @@ const emit = defineEmits<{
   (e: 'approve', id: string): void;
   (e: 'deny', id: string): void;
   (e: 'open-terminal'): void;
+  (e: 'close-terminal'): void;
 }>();
 
 const activeTab = ref<ListTab>('pending');
@@ -148,6 +149,14 @@ function handleTitleDrag(event: MouseEvent) {
   event.preventDefault();
   void startWindowDrag();
 }
+
+function handleTerminalToggle() {
+  if (props.terminalOpen) {
+    emit('close-terminal');
+    return;
+  }
+  emit('open-terminal');
+}
 </script>
 
 <template>
@@ -174,19 +183,41 @@ function handleTitleDrag(event: MouseEvent) {
           :class="
             props.target.terminal_available
               ? props.terminalOpen
-                ? 'bg-accent/20 text-accent border-accent/40'
+                ? 'bg-danger/20 text-danger border-danger/40'
                 : 'bg-panel/60 text-foreground border-border hover:border-accent/40'
               : 'bg-panel/30 text-foreground-muted border-border/60 cursor-not-allowed'
           "
           :disabled="!props.target.terminal_available"
-          @click="emit('open-terminal')"
-          aria-label="终端"
-          title="终端"
+          @click="handleTerminalToggle"
+          :aria-label="props.terminalOpen ? '关闭终端' : '终端'"
+          :title="props.terminalOpen ? '关闭终端' : '终端'"
         >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            v-if="!props.terminalOpen"
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <rect x="3" y="4" width="18" height="16" rx="2"></rect>
             <polyline points="8 9 11 12 8 15"></polyline>
             <line x1="13" y1="15" x2="17" y2="15"></line>
+          </svg>
+          <svg
+            v-else
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </div>

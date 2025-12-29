@@ -53,10 +53,20 @@ body {
 
 .terminal-tabs .n-tabs-nav {
   padding-bottom: 0;
+  margin-bottom: 0;
 }
 
 .terminal-tabs .n-tabs-pane-wrapper {
   display: none;
+}
+
+.terminal-tabs .n-tabs-nav--card-type {
+  border-bottom: none;
+  background-color: transparent;
+}
+
+.terminal-tabs .n-tabs-nav__add {
+  height: 26px;
 }
 
 html,
