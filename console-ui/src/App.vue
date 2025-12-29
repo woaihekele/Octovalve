@@ -88,6 +88,13 @@ const naiveThemeOverrides = computed(() => {
       actionColorHover: resolveRgbVar('--color-panel-muted', '30 41 59'),
       actionColorPressed: resolveRgbVar('--color-panel-muted', '30 41 59'),
     },
+    Tabs: {
+      tabFontSizeSmall: '12px',
+      tabHeightSmall: '28px',
+      tabPaddingSmall: '0 12px',
+      cardPaddingSmall: '0 8px',
+      cardGapSmall: '6px',
+    },
   };
 });
 
@@ -126,6 +133,17 @@ const terminalEntries = computed(() =>
     .filter((entry) => entry.state && entry.state.tabs.length > 0)
     .map((entry) => ({ target: entry.target, state: entry.state! }))
 );
+
+const selectedTerminalEntry = computed(() => {
+  if (!selectedTargetName.value) {
+    return null;
+  }
+  const entry = terminalEntries.value.find((item) => item.target.name === selectedTargetName.value) ?? null;
+  if (!entry || !entry.state.open) {
+    return null;
+  }
+  return entry;
+});
 
 function createTabId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -530,96 +548,86 @@ watch(
             </span>
           </div>
 
-          <div class="flex-1 min-h-0">
-            <TargetView
-              v-if="selectedTarget"
-              :target="selectedTarget"
-              :snapshot="selectedSnapshot"
-              :settings="settings"
-              :pending-jump-token="pendingJumpToken"
-              :terminal-open="selectedTerminalOpen"
-              @approve="approve"
-              @deny="deny"
-              @open-terminal="handleOpenTerminal"
-            />
-            <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
-              请选择目标开始操作。
-            </div>
+        <div class="flex-1 min-h-0">
+          <TargetView
+            v-if="selectedTarget"
+            :target="selectedTarget"
+            :snapshot="selectedSnapshot"
+            :settings="settings"
+            :pending-jump-token="pendingJumpToken"
+            :terminal-open="selectedTerminalOpen"
+            @approve="approve"
+            @deny="deny"
+            @open-terminal="handleOpenTerminal"
+          />
+          <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
+            请选择目标开始操作。
           </div>
-          <div
-            v-for="entry in terminalEntries"
-            :key="entry.target.name"
-            class="absolute inset-0 z-40 flex flex-col bg-surface"
-            v-show="entry.state.open && selectedTargetName === entry.target.name"
-          >
-            <div class="flex items-center justify-between px-4 pt-1.5 pb-0.5 border-b border-border bg-panel/70">
-              <div class="flex items-center gap-3 min-w-0 flex-1">
-                <div class="text-xs font-semibold text-foreground whitespace-nowrap">
-                  {{ entry.target.name }}
-                </div>
-                <div class="h-3 w-px bg-border"></div>
-                <n-tabs
-                  :value="entry.state.activeId"
-                  type="card"
-                  size="small"
-                  addable
+        </div>
+        <div v-if="selectedTerminalEntry" class="absolute inset-0 z-40 flex flex-col bg-surface">
+          <div class="h-16 border-b border-border flex items-center justify-between px-6 bg-panel/50">
+            <div class="flex items-center gap-2">
+              <n-tabs
+                :value="selectedTerminalEntry.state.activeId"
+                type="card"
+                size="small"
+                addable
+                closable
+                :pane-style="{ display: 'none' }"
+                class="min-w-0"
+                @add="addTerminalTab(selectedTerminalEntry.target.name)"
+                @close="(name) => closeTerminalTab(selectedTerminalEntry.target.name, String(name))"
+                @update:value="(value) => activateTerminalTab(selectedTerminalEntry.target.name, String(value))"
+              >
+                <n-tab-pane
+                  v-for="tab in selectedTerminalEntry.state.tabs"
+                  :key="tab.id"
+                  :name="tab.id"
+                  :tab="tab.label"
                   closable
-                  class="min-w-0 flex-1"
-                  @add="addTerminalTab(entry.target.name)"
-                  @close="(name) => closeTerminalTab(entry.target.name, String(name))"
-                  @update:value="(value) => activateTerminalTab(entry.target.name, String(value))"
-                >
-                  <n-tab-pane
-                    v-for="tab in entry.state.tabs"
-                    :key="tab.id"
-                    :name="tab.id"
-                    :tab="tab.label"
-                    closable
-                  />
-                </n-tabs>
-              </div>
-              <div class="flex items-center gap-2">
-                <n-button
-                  size="small"
-                  quaternary
-                  @click="hideTerminalForTarget(entry.target.name)"
-                  aria-label="隐藏终端"
-                  title="隐藏终端"
-                >
-                  <svg
-                    class="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </n-button>
-              </div>
+                />
+              </n-tabs>
             </div>
-            <div class="flex-1 min-h-0 relative">
-              <TerminalPanel
-                v-for="tab in entry.state.tabs"
-                :key="tab.id"
-                :target="entry.target"
-                :theme="resolvedTheme"
-                :visible="
-                  entry.state.open &&
-                  selectedTargetName === entry.target.name &&
-                  entry.state.activeId === tab.id
-                "
-                v-show="
-                  entry.state.open &&
-                  selectedTargetName === entry.target.name &&
-                  entry.state.activeId === tab.id
-                "
-              />
+            <div class="flex items-center gap-2">
+              <n-button
+                size="small"
+                quaternary
+                @click="hideTerminalForTarget(selectedTerminalEntry.target.name)"
+                aria-label="隐藏终端"
+                title="隐藏终端"
+              >
+                <svg
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </n-button>
             </div>
           </div>
+          <div class="flex-1 min-h-0 relative">
+            <TerminalPanel
+              v-for="tab in selectedTerminalEntry.state.tabs"
+              :key="tab.id"
+              :target="selectedTerminalEntry.target"
+              :theme="resolvedTheme"
+              :visible="
+                selectedTerminalEntry.state.open &&
+                selectedTerminalEntry.state.activeId === tab.id
+              "
+              v-show="
+                selectedTerminalEntry.state.open &&
+                selectedTerminalEntry.state.activeId === tab.id
+              "
+            />
+          </div>
+        </div>
         </div>
 
         <SettingsModal
