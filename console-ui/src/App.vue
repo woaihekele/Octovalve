@@ -352,6 +352,7 @@ watch(
         v-for="entry in terminalEntries"
         :key="entry.target.name"
         :target="entry.target"
+        v-show="entry.state.open && selectedTargetName === entry.target.name"
         :visible="entry.state.open && selectedTargetName === entry.target.name"
         @close="closeTerminalForTarget(entry.target.name)"
       />
