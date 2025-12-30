@@ -1,26 +1,33 @@
 {
+  "productName": "Octovalve",
+  "version": "0.1.0",
+  "identifier": "com.octovalve.console",
   "build": {
     "beforeDevCommand": "bash ../scripts/prepare_tauri_sidecars.sh && npm run dev",
     "beforeBuildCommand": "bash ../scripts/prepare_tauri_sidecars.sh && npm run build",
-    "devPath": "http://localhost:15173",
-    "distDir": "../dist"
+    "devUrl": "http://localhost:15173",
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "Octovalve",
-    "version": "0.1.0"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "window": {
-        "startDragging": true
-      }
-    },
+  "app": {
     "security": {
-      "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;"
+      "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;",
+      "capabilities": [
+        {
+          "identifier": "main",
+          "description": "Main window permissions",
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            "core:default",
+            "core:window:allow-start-dragging"
+          ]
+        }
+      ]
     },
     "windows": [
       {
+        "label": "main",
         "title": "Octovalve",
         "width": 1280,
         "height": 800,
@@ -32,19 +39,19 @@
         "hiddenTitle": true
       }
     ],
-    "bundle": {
-      "active": false,
-      "identifier": "com.octovalve.console",
-      "resources": [
-        "remote-broker/linux-x86_64"
-      ],
-      "externalBin": [
-        "../../target/release/console"
-      ],
-      "icon": [
-        "icons/icon.icns",
-        "icons/icon.png"
-      ]
-    }
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": false,
+    "resources": [
+      "remote-broker/linux-x86_64"
+    ],
+    "externalBin": [
+      "../../target/release/console"
+    ],
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.png"
+    ]
   }
 }

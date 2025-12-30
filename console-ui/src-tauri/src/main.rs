@@ -13,9 +13,12 @@ use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::api::path::home_dir;
-use tauri::api::process::{Command, CommandChild, CommandEvent};
-use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_shell::{
+    process::{CommandChild, CommandEvent},
+    ShellExt,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -134,10 +137,11 @@ fn main() {
             terminal_close
         ])
         .setup(|app| {
-            let config_dir = app
-                .path_resolver()
+            let app_handle = app.handle();
+            let config_dir = app_handle
+                .path()
                 .app_config_dir()
-                .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+                .map_err(|err| err.to_string())?;
             fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
             let logs_dir = config_dir.join("logs");
             fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
@@ -145,10 +149,10 @@ fn main() {
             app.manage(AppLogState {
                 app_log: app_log.clone(),
             });
-            let (proxy_status, proxy_path) = prepare_proxy_config(&app_log)?;
+            let (proxy_status, proxy_path) = prepare_proxy_config(&app_handle, &app_log)?;
             app.manage(ProxyConfigState(Mutex::new(proxy_status.clone())));
             if proxy_status.present {
-                if let Err(err) = start_console(&app.handle(), &proxy_path, &app_log) {
+                if let Err(err) = start_console(&app_handle, &proxy_path, &app_log) {
                     eprintln!("failed to start console sidecar: {err}");
                     let _ = append_log_line(&app_log, &format!("console start failed: {err}"));
                 }
@@ -160,6 +164,17 @@ fn main() {
             }
             Ok(())
         })
+        .plugin(tauri_plugin_shell::init())
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            #[cfg(target_os = "macos")]
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| match event {
@@ -168,20 +183,38 @@ fn main() {
             }
             RunEvent::Exit => {
                 stop_console(app_handle);
-                tauri::api::process::kill_children();
+            }
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                }
             }
             _ => {}
         });
 }
 
+fn format_command_output(line: &[u8]) -> String {
+    String::from_utf8_lossy(line)
+        .trim_end_matches(&['\r', '\n'][..])
+        .to_string()
+}
+
 fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result<(), String> {
     let config_dir = app
-        .path_resolver()
+        .path()
         .app_config_dir()
-        .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+        .map_err(|err| err.to_string())?;
     fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
 
-    let resolved_broker = resolve_broker_config_path(proxy_config, &config_dir)?;
+    let resolved_broker = resolve_broker_config_path(app, proxy_config, &config_dir)?;
     let broker_config = resolved_broker.path;
     ensure_file(&broker_config, DEFAULT_BROKER_CONFIG)?;
     let logs_dir = config_dir.join("logs");
@@ -224,7 +257,9 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
         console_args.push(path.to_string_lossy().to_string());
     }
 
-    let (mut rx, child) = Command::new_sidecar("console")
+    let (mut rx, child) = app
+        .shell()
+        .sidecar("console")
         .map_err(|err| err.to_string())?
         .args(console_args)
         .envs(envs)
@@ -257,10 +292,10 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    let _ = writeln!(file, "[stdout] {line}");
+                    let _ = writeln!(file, "[stdout] {}", format_command_output(&line));
                 }
                 CommandEvent::Stderr(line) => {
-                    let _ = writeln!(file, "[stderr] {line}");
+                    let _ = writeln!(file, "[stderr] {}", format_command_output(&line));
                 }
                 CommandEvent::Error(err) => {
                     let _ = writeln!(file, "[error] {err}");
@@ -340,13 +375,15 @@ fn resolve_linux_broker(
     override_name: &str,
     resource_path: &str,
 ) -> Option<PathBuf> {
-    if let Ok(dir) = octovalve_dir() {
+    if let Ok(dir) = octovalve_dir(app) {
         let candidate = dir.join(override_name);
         if candidate.exists() {
             return Some(candidate);
         }
     }
-    app.path_resolver().resolve_resource(resource_path)
+    app.path()
+        .resolve(resource_path, BaseDirectory::Resource)
+        .ok()
 }
 
 fn build_console_path() -> String {
@@ -358,13 +395,16 @@ fn build_console_path() -> String {
     }
 }
 
-fn octovalve_dir() -> Result<PathBuf, String> {
-    let home = home_dir().ok_or_else(|| "failed to resolve home dir".to_string())?;
+fn octovalve_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let home = app.path().home_dir().map_err(|err| err.to_string())?;
     Ok(home.join(".octovalve"))
 }
 
-fn prepare_proxy_config(log_path: &Path) -> Result<(ProxyConfigStatus, PathBuf), String> {
-    let config_dir = octovalve_dir()?;
+fn prepare_proxy_config(
+    app: &AppHandle,
+    log_path: &Path,
+) -> Result<(ProxyConfigStatus, PathBuf), String> {
+    let config_dir = octovalve_dir(app)?;
     fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
     let config_path = config_dir.join("local-proxy-config.toml");
     let example_path = config_dir.join("local-proxy-config.toml.example");
@@ -390,6 +430,7 @@ fn prepare_proxy_config(log_path: &Path) -> Result<(ProxyConfigStatus, PathBuf),
 }
 
 fn resolve_broker_config_path(
+    app: &AppHandle,
     proxy_config: &Path,
     app_config_dir: &Path,
 ) -> Result<ResolvedBrokerConfig, String> {
@@ -403,7 +444,7 @@ fn resolve_broker_config_path(
     let raw = fs::read_to_string(proxy_config).map_err(|err| err.to_string())?;
     let parsed: ProxyConfigOverrides = toml::from_str(&raw).map_err(|err| err.to_string())?;
     if let Some(path) = parsed.broker_config_path {
-        let resolved = resolve_config_path(proxy_config, &path)?;
+        let resolved = resolve_config_path(app, proxy_config, &path)?;
         return Ok(ResolvedBrokerConfig {
             path: resolved,
             source: "config".to_string(),
@@ -415,8 +456,8 @@ fn resolve_broker_config_path(
     })
 }
 
-fn resolve_config_path(base: &Path, value: &str) -> Result<PathBuf, String> {
-    let expanded = expand_tilde_path(value)?;
+fn resolve_config_path(app: &AppHandle, base: &Path, value: &str) -> Result<PathBuf, String> {
+    let expanded = expand_tilde_path(app, value)?;
     if expanded.is_absolute() {
         return Ok(expanded);
     }
@@ -426,14 +467,12 @@ fn resolve_config_path(base: &Path, value: &str) -> Result<PathBuf, String> {
     Ok(base_dir.join(expanded))
 }
 
-fn expand_tilde_path(value: &str) -> Result<PathBuf, String> {
+fn expand_tilde_path(app: &AppHandle, value: &str) -> Result<PathBuf, String> {
     if value == "~" {
-        return home_dir()
-            .map(PathBuf::from)
-            .ok_or_else(|| "failed to resolve home dir".to_string());
+        return app.path().home_dir().map_err(|err| err.to_string());
     }
     if let Some(rest) = value.strip_prefix("~/") {
-        let home = home_dir().ok_or_else(|| "failed to resolve home dir".to_string())?;
+        let home = app.path().home_dir().map_err(|err| err.to_string())?;
         return Ok(home.join(rest));
     }
     Ok(PathBuf::from(value))
@@ -492,14 +531,14 @@ fn read_broker_config(
     state: State<ProxyConfigState>,
 ) -> Result<ConfigFilePayload, String> {
     let config_dir = app
-        .path_resolver()
+        .path()
         .app_config_dir()
-        .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+        .map_err(|err| err.to_string())?;
     let proxy_path = {
         let status = state.0.lock().unwrap();
         PathBuf::from(status.path.clone())
     };
-    let resolved = resolve_broker_config_path(&proxy_path, &config_dir)?;
+    let resolved = resolve_broker_config_path(&app, &proxy_path, &config_dir)?;
     let existed = resolved.path.exists();
     ensure_file(&resolved.path, DEFAULT_BROKER_CONFIG)?;
     let mut payload = read_config_file(&resolved.path, Some(DEFAULT_BROKER_CONFIG))?;
@@ -514,14 +553,14 @@ fn write_broker_config(
     state: State<ProxyConfigState>,
 ) -> Result<(), String> {
     let config_dir = app
-        .path_resolver()
+        .path()
         .app_config_dir()
-        .ok_or_else(|| "failed to resolve app config dir".to_string())?;
+        .map_err(|err| err.to_string())?;
     let proxy_path = {
         let status = state.0.lock().unwrap();
         PathBuf::from(status.path.clone())
     };
-    let resolved = resolve_broker_config_path(&proxy_path, &config_dir)?;
+    let resolved = resolve_broker_config_path(&app, &proxy_path, &config_dir)?;
     write_config_file(&resolved.path, &content)
 }
 
@@ -799,7 +838,7 @@ async fn ai_risk_assess(request: AiRiskRequest) -> Result<AiRiskResponse, String
 }
 
 fn emit_ws_status(app: &AppHandle, log_path: &Path, status: &str) {
-    let _ = app.emit_all("console_ws_status", status.to_string());
+    let _ = app.emit("console_ws_status", status.to_string());
     let _ = append_log_line(log_path, &format!("ws {status}"));
 }
 
@@ -877,7 +916,7 @@ async fn start_console_stream(
                             Ok(Message::Text(text)) => match serde_json::from_str::<Value>(&text) {
                                 Ok(payload) => {
                                     log_ws_event(&log_path, &payload);
-                                    let _ = app_handle.emit_all("console_event", payload);
+                                    let _ = app_handle.emit("console_event", payload);
                                 }
                                 Err(err) => {
                                     let _ = append_log_line(
@@ -968,13 +1007,13 @@ async fn terminal_open(
             match message {
                 Ok(Message::Text(text)) => match serde_json::from_str::<TerminalMessage>(&text) {
                     Ok(TerminalMessage::Output { data }) => {
-                        let _ = app_handle_for_read.emit_all(
+                        let _ = app_handle_for_read.emit(
                             "terminal_output",
                             json!({ "session_id": &session_id_for_read, "data": data }),
                         );
                     }
                     Ok(TerminalMessage::Exit { code }) => {
-                        let _ = app_handle_for_read.emit_all(
+                        let _ = app_handle_for_read.emit(
                             "terminal_exit",
                             json!({ "session_id": &session_id_for_read, "code": code }),
                         );
@@ -982,7 +1021,7 @@ async fn terminal_open(
                         break;
                     }
                     Ok(TerminalMessage::Error { message }) => {
-                        let _ = app_handle_for_read.emit_all(
+                        let _ = app_handle_for_read.emit(
                             "terminal_error",
                             json!({ "session_id": &session_id_for_read, "message": message }),
                         );
@@ -1006,7 +1045,7 @@ async fn terminal_open(
                 Ok(Message::Binary(_)) | Ok(Message::Ping(_)) | Ok(Message::Pong(_)) => {}
                 Ok(Message::Frame(_)) => {}
                 Err(err) => {
-                    let _ = app_handle_for_read.emit_all(
+                    let _ = app_handle_for_read.emit(
                         "terminal_error",
                         json!({ "session_id": &session_id_for_read, "message": err.to_string() }),
                     );
@@ -1016,7 +1055,7 @@ async fn terminal_open(
             }
         }
         if !closed {
-            let _ = app_handle_for_read.emit_all(
+            let _ = app_handle_for_read.emit(
                 "terminal_error",
                 json!({ "session_id": &session_id_for_read, "message": "terminal disconnected" }),
             );
