@@ -2,7 +2,7 @@
   "build": {
     "beforeDevCommand": "bash ../scripts/prepare_tauri_sidecars.sh && npm run dev",
     "beforeBuildCommand": "bash ../scripts/prepare_tauri_sidecars.sh && npm run build",
-    "devPath": "http://localhost:5173",
+    "devPath": "http://localhost:15173",
     "distDir": "../dist"
   },
   "package": {

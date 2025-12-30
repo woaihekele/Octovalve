@@ -29,6 +29,55 @@ let inputFlushTimer: number | null = null;
 const termName = 'xterm-256color';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+function buildExtendedAnsi(overrides: Record<number, string>): string[] {
+  const colors: string[] = [];
+  for (const [index, value] of Object.entries(overrides)) {
+    const parsed = Number(index);
+    if (Number.isNaN(parsed) || parsed < 16 || parsed > 255) {
+      continue;
+    }
+    colors[parsed - 16] = value;
+  }
+  return colors;
+}
+
+const EXTENDED_ANSI_LIGHT = buildExtendedAnsi({
+  3: '#9a6700',
+  5: '#8250df',
+  9: '#cf222e',
+  10: '#2da44e',
+  11: '#bf8700',
+  13: '#8250df',
+  15: '#ffffff',
+  16: '#24292f',
+  21: '#0969da',
+  27: '#0969da',
+  34: '#1a7f37',
+  45: '#1b7c83',
+  51: '#3192aa',
+  196: '#a40e26',
+  226: '#bf8700',
+  232: '#24292f',
+});
+
+const EXTENDED_ANSI_DARK = buildExtendedAnsi({
+  3: '#d29922',
+  5: '#bc8cff',
+  9: '#ff7b72',
+  10: '#3fb950',
+  11: '#e3b341',
+  13: '#bc8cff',
+  15: '#f0f6fc',
+  16: '#0d1117',
+  21: '#1f6feb',
+  27: '#58a6ff',
+  34: '#3fb950',
+  45: '#39c5cf',
+  51: '#56d4dd',
+  196: '#da3633',
+  226: '#e3b341',
+  232: '#161b22',
+});
 
 const GITHUB_LIGHT_THEME: ITheme = {
   background: '#ffffff',
@@ -54,6 +103,7 @@ const GITHUB_LIGHT_THEME: ITheme = {
   brightMagenta: '#a475f9',
   brightCyan: '#3192aa',
   brightWhite: '#ffffff',
+  extendedAnsi: EXTENDED_ANSI_LIGHT,
 };
 
 const GITHUB_DARK_THEME: ITheme = {
@@ -80,6 +130,7 @@ const GITHUB_DARK_THEME: ITheme = {
   brightMagenta: '#d2a8ff',
   brightCyan: '#56d4dd',
   brightWhite: '#f0f6fc',
+  extendedAnsi: EXTENDED_ANSI_DARK,
 };
 
 function resolveTerminalTheme() {
