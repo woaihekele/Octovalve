@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { Terminal } from 'xterm';
+import { Terminal, type ITheme } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { terminalClose, terminalInput, terminalOpen, terminalResize } from '../api';
@@ -30,24 +30,60 @@ const termName = 'xterm-256color';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-function readCssVar(name: string, fallback: string) {
-  if (typeof window === 'undefined') {
-    return fallback;
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
+const GITHUB_LIGHT_THEME: ITheme = {
+  background: '#ffffff',
+  foreground: '#24292f',
+  cursor: '#8250df',
+  cursorAccent: '#ffffff',
+  selectionBackground: 'rgba(130, 80, 223, 0.22)',
+  selectionInactiveBackground: 'rgba(130, 80, 223, 0.16)',
+  selectionForeground: '#24292f',
+  black: '#24292f',
+  red: '#cf222e',
+  green: '#1a7f37',
+  yellow: '#9a6700',
+  blue: '#0969da',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#d0d7de',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#2da44e',
+  brightYellow: '#bf8700',
+  brightBlue: '#218bff',
+  brightMagenta: '#a475f9',
+  brightCyan: '#3192aa',
+  brightWhite: '#ffffff',
+};
+
+const GITHUB_DARK_THEME: ITheme = {
+  background: '#0d1117',
+  foreground: '#c9d1d9',
+  cursor: '#8957e5',
+  cursorAccent: '#0d1117',
+  selectionBackground: 'rgba(137, 87, 229, 0.35)',
+  selectionInactiveBackground: 'rgba(137, 87, 229, 0.22)',
+  selectionForeground: '#c9d1d9',
+  black: '#484f58',
+  red: '#ff7b72',
+  green: '#3fb950',
+  yellow: '#d29922',
+  blue: '#58a6ff',
+  magenta: '#bc8cff',
+  cyan: '#39c5cf',
+  white: '#b1bac4',
+  brightBlack: '#6e7681',
+  brightRed: '#ffa198',
+  brightGreen: '#56d364',
+  brightYellow: '#e3b341',
+  brightBlue: '#79c0ff',
+  brightMagenta: '#d2a8ff',
+  brightCyan: '#56d4dd',
+  brightWhite: '#f0f6fc',
+};
 
 function resolveTerminalTheme() {
-  const background = `rgb(${readCssVar('--color-bg', '2 6 23')})`;
-  const foreground = `rgb(${readCssVar('--color-text', '226 232 240')})`;
-  const cursor = `rgb(${readCssVar('--color-accent', '99 102 241')})`;
-  return {
-    background,
-    foreground,
-    cursor,
-    cursorAccent: background,
-  };
+  return props.theme === 'light' ? GITHUB_LIGHT_THEME : GITHUB_DARK_THEME;
 }
 
 function applyTerminalTheme() {
