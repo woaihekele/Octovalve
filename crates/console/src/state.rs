@@ -416,6 +416,7 @@ mod tests {
                 local_bind: None,
                 ssh_args: None,
                 ssh_password: None,
+                terminal_locale: None,
                 control_remote_addr: None,
                 control_local_port: None,
                 control_local_bind: None,
