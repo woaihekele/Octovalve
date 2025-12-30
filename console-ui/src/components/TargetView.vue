@@ -26,6 +26,14 @@ const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
 const currentList = computed(() => (activeTab.value === 'pending' ? pendingList.value : historyList.value));
 const selectedItem = computed(() => currentList.value[selectedIndex.value] ?? null);
+const hostDisplay = computed(() => {
+  const hostname = props.target.hostname?.trim();
+  const ip = props.target.ip?.trim();
+  if (hostname && ip && hostname !== ip) {
+    return `${hostname} / ${ip}`;
+  }
+  return hostname || ip || 'unknown';
+});
 
 watch(
   () => [props.target.name, activeTab.value],
@@ -167,14 +175,15 @@ function handleTerminalToggle() {
       data-tauri-drag-region
       @mousedown="handleTitleDrag"
     >
-      <div class="flex items-center gap-4">
-        <div>
-          <h2 class="text-xl font-semibold text-foreground">{{ props.target.name }}</h2>
-          <div class="flex items-center gap-2 text-sm text-foreground-muted">
-            <span>{{ props.target.desc }}</span>
-            <span class="w-1 h-1 bg-foreground-muted rounded-full"></span>
-            <span>{{ props.target.hostname || props.target.ip || 'unknown' }}</span>
+      <div class="flex items-center gap-4 min-w-0">
+        <div class="min-w-0">
+          <div class="flex items-baseline gap-3 min-w-0">
+            <h2 class="text-xl font-semibold text-foreground">{{ props.target.name }}</h2>
+            <span class="text-sm text-foreground-muted truncate max-w-[360px]" :title="hostDisplay">
+              {{ hostDisplay }}
+            </span>
           </div>
+          <div class="text-sm text-foreground-muted">{{ props.target.desc }}</div>
         </div>
       </div>
       <div class="flex items-center gap-2">

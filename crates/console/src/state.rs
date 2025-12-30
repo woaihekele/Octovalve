@@ -70,6 +70,24 @@ pub(crate) struct ConsoleState {
 }
 
 impl ConsoleState {
+    pub(crate) fn update_target_ip(&mut self, name: &str, ip: String) -> Option<TargetInfo> {
+        if ip.trim().is_empty() {
+            return None;
+        }
+        let should_update = self
+            .targets
+            .get(name)
+            .map(|target| target.ip.is_none())
+            .unwrap_or(false);
+        if !should_update {
+            return None;
+        }
+        if let Some(target) = self.targets.get_mut(name) {
+            target.ip = Some(ip);
+        }
+        self.target_info(name)
+    }
+
     pub(crate) fn list_targets(&self) -> Vec<TargetInfo> {
         self.order
             .iter()
@@ -350,7 +368,7 @@ fn derive_control_addr(remote_addr: &str) -> anyhow::Result<String> {
     Ok(format!("{host}:{control_port}"))
 }
 
-fn parse_ssh_host(value: &str) -> Option<&str> {
+pub(crate) fn parse_ssh_host(value: &str) -> Option<&str> {
     if value.is_empty() {
         return None;
     }

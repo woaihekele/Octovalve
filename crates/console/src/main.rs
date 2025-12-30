@@ -14,7 +14,7 @@ use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
-use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
+use crate::state::{build_console_state, parse_ssh_host, ConsoleState, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
 use anyhow::Context;
 use axum::body::Body;
@@ -31,6 +31,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use clap::Parser;
 use serde::Deserialize;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -82,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
     };
+    spawn_target_ip_resolution(Arc::clone(&shared_state), event_tx.clone());
 
     let app = Router::new()
         .route("/health", get(health))
@@ -368,4 +370,72 @@ fn expand_tilde(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+fn spawn_target_ip_resolution(
+    state: Arc<RwLock<ConsoleState>>,
+    event_tx: broadcast::Sender<ConsoleEvent>,
+) {
+    tokio::spawn(async move {
+        let targets = {
+            let guard = state.read().await;
+            guard.target_specs()
+        };
+        for target in targets {
+            if target.ip.is_some() {
+                continue;
+            }
+            let mut candidates = Vec::new();
+            if let Some(hostname) = target.hostname.as_deref().map(str::trim) {
+                if !hostname.is_empty() {
+                    candidates.push(hostname.to_string());
+                }
+            }
+            if let Some(ssh) = target.ssh.as_deref().and_then(parse_ssh_host) {
+                let ssh = ssh.trim();
+                if !ssh.is_empty() && !candidates.iter().any(|host| host == ssh) {
+                    candidates.push(ssh.to_string());
+                }
+            }
+            let mut resolved = None;
+            for host in candidates {
+                if let Some(ip) = resolve_host_ip(&host).await {
+                    resolved = Some(ip);
+                    break;
+                }
+            }
+            let Some(ip) = resolved else {
+                continue;
+            };
+            let updated = {
+                let mut guard = state.write().await;
+                guard.update_target_ip(&target.name, ip)
+            };
+            if let Some(target) = updated {
+                let _ = event_tx.send(ConsoleEvent::TargetUpdated { target });
+            }
+        }
+    });
+}
+
+async fn resolve_host_ip(host: &str) -> Option<String> {
+    let trimmed = host.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.parse::<IpAddr>().is_ok() {
+        return Some(trimmed.to_string());
+    }
+    let addrs = tokio::net::lookup_host((trimmed, 0)).await.ok()?;
+    let mut fallback = None;
+    for addr in addrs {
+        let ip = addr.ip();
+        if matches!(ip, IpAddr::V4(_)) {
+            return Some(ip.to_string());
+        }
+        if fallback.is_none() {
+            fallback = Some(ip.to_string());
+        }
+    }
+    fallback
 }
