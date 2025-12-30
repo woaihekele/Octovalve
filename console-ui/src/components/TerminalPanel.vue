@@ -274,9 +274,13 @@ async function syncTerminalLayout() {
   await new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
   });
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
   if (!terminal || !fitAddon || !sessionId) {
     return;
   }
+  terminal.clearSelection();
   fitAddon.fit();
   if (terminal.rows > 0) {
     terminal.refresh(0, terminal.rows - 1);
@@ -342,6 +346,10 @@ watch(
   () => props.visible,
   async (visible) => {
     if (!visible) {
+      if (terminal) {
+        terminal.clearSelection();
+        terminal.blur();
+      }
       return;
     }
     if (!sessionId) {
