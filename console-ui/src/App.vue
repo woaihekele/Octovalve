@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   approveCommand,
+  aiRiskAssess,
   denyCommand,
   fetchSnapshot,
   fetchTargets,
@@ -19,7 +20,16 @@ import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NotificationBridge from './components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from './settings';
-import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo, ThemeMode } from './types';
+import type {
+  AiRiskEntry,
+  AiRiskApiResponse,
+  AppSettings,
+  ConsoleEvent,
+  RequestSnapshot,
+  ServiceSnapshot,
+  TargetInfo,
+  ThemeMode,
+} from './types';
 import { startWindowDrag } from './tauriWindow';
 
 const targets = ref<TargetInfo[]>([]);
@@ -101,6 +111,20 @@ const naiveThemeOverrides = computed(() => {
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
 let stopSystemThemeListener: (() => void) | null = null;
+const AI_RISK_CACHE_KEY = 'octovalve.console.ai_risk_cache';
+const AI_RISK_CACHE_LIMIT = 2000;
+
+type AiTask = {
+  target: string;
+  request: RequestSnapshot;
+};
+
+const aiRiskMap = ref<Record<string, AiRiskEntry>>(loadAiRiskCache());
+const aiQueue = ref<AiTask[]>([]);
+const aiQueuedKeys = new Set<string>();
+const aiInFlightKeys = new Set<string>();
+let aiRunning = 0;
+let aiPersistTimer: number | null = null;
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
@@ -326,15 +350,223 @@ function showNotification(message: string, count?: number) {
   notificationToken.value += 1;
 }
 
+function loadAiRiskCache(): Record<string, AiRiskEntry> {
+  if (typeof localStorage === 'undefined') {
+    return {};
+  }
+  try {
+    const raw = localStorage.getItem(AI_RISK_CACHE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as Record<string, AiRiskEntry>;
+    if (!parsed || typeof parsed !== 'object') {
+      return {};
+    }
+    const normalized: Record<string, AiRiskEntry> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== 'object') {
+        continue;
+      }
+      if (typeof value.updatedAt !== 'number') {
+        continue;
+      }
+      normalized[key] = value;
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function scheduleAiRiskPersist() {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  if (aiPersistTimer !== null) {
+    return;
+  }
+  aiPersistTimer = window.setTimeout(() => {
+    aiPersistTimer = null;
+    persistAiRiskCache();
+  }, 500);
+}
+
+function persistAiRiskCache() {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  const entries = Object.entries(aiRiskMap.value);
+  if (entries.length > AI_RISK_CACHE_LIMIT) {
+    entries.sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    const trimmed = Object.fromEntries(entries.slice(0, AI_RISK_CACHE_LIMIT));
+    aiRiskMap.value = trimmed;
+  }
+  localStorage.setItem(AI_RISK_CACHE_KEY, JSON.stringify(aiRiskMap.value));
+}
+
+function setAiRisk(key: string, entry: AiRiskEntry) {
+  aiRiskMap.value = {
+    ...aiRiskMap.value,
+    [key]: entry,
+  };
+  scheduleAiRiskPersist();
+}
+
+function buildAiKey(targetName: string, requestId: string) {
+  return `${targetName}:${requestId}`;
+}
+
+function formatAiPipeline(request: RequestSnapshot) {
+  return request.pipeline.map((stage) => stage.argv.join(' ')).join(' | ');
+}
+
+function buildAiPrompt(template: string, targetName: string, request: RequestSnapshot) {
+  const replacements: Record<string, string> = {
+    target: targetName,
+    client: request.client,
+    peer: request.peer,
+    intent: request.intent,
+    mode: request.mode,
+    raw_command: request.raw_command,
+    pipeline: formatAiPipeline(request),
+    cwd: request.cwd ?? '-',
+    timeout_ms: request.timeout_ms?.toString() ?? '-',
+    max_output_bytes: request.max_output_bytes?.toString() ?? '-',
+  };
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    if (key in replacements) {
+      return replacements[key];
+    }
+    return match;
+  });
+}
+
+function enqueueAiTask(targetName: string, request: RequestSnapshot) {
+  if (!settings.value.ai.enabled) {
+    return;
+  }
+  const key = buildAiKey(targetName, request.id);
+  const existing = aiRiskMap.value[key];
+  if (aiQueuedKeys.has(key) || aiInFlightKeys.has(key)) {
+    return;
+  }
+  if (!settings.value.ai.apiKey.trim()) {
+    if (!existing || existing.status !== 'done') {
+      setAiRisk(key, { status: 'error', error: '未配置 API Key', updatedAt: Date.now() });
+    }
+    return;
+  }
+  aiQueuedKeys.add(key);
+  aiQueue.value = [...aiQueue.value, { target: targetName, request }];
+  setAiRisk(key, { status: 'pending', updatedAt: Date.now() });
+  processAiQueue();
+}
+
+function processAiQueue() {
+  if (!settings.value.ai.enabled) {
+    aiQueue.value = [];
+    aiQueuedKeys.clear();
+    return;
+  }
+  const maxConcurrency = Math.max(1, settings.value.ai.maxConcurrency);
+  while (aiRunning < maxConcurrency && aiQueue.value.length > 0) {
+    const [task, ...rest] = aiQueue.value;
+    aiQueue.value = rest;
+    const key = buildAiKey(task.target, task.request.id);
+    aiQueuedKeys.delete(key);
+    aiInFlightKeys.add(key);
+    aiRunning += 1;
+    void runAiTask(task)
+      .catch(() => {
+        // errors handled in runAiTask
+      })
+      .finally(() => {
+        aiRunning -= 1;
+        aiInFlightKeys.delete(key);
+        processAiQueue();
+      });
+  }
+}
+
+async function runAiTask(task: AiTask) {
+  const key = buildAiKey(task.target, task.request.id);
+  const now = Date.now();
+  if (!settings.value.ai.apiKey.trim()) {
+    setAiRisk(key, { status: 'error', error: '未配置 API Key', updatedAt: now });
+    return;
+  }
+  try {
+    const prompt = buildAiPrompt(settings.value.ai.prompt, task.target, task.request);
+    const response = await aiRiskAssess({
+      base_url: settings.value.ai.baseUrl,
+      chat_path: settings.value.ai.chatPath,
+      model: settings.value.ai.model,
+      api_key: settings.value.ai.apiKey,
+      prompt,
+      timeout_ms: settings.value.ai.timeoutMs,
+    });
+    applyAiResult(key, response);
+  } catch (err) {
+    setAiRisk(key, { status: 'error', error: String(err), updatedAt: now });
+  }
+}
+
+function applyAiResult(key: string, response: AiRiskApiResponse) {
+  setAiRisk(key, {
+    status: 'done',
+    risk: response.risk,
+    reason: response.reason,
+    keyPoints: response.key_points ?? [],
+    updatedAt: Date.now(),
+  });
+}
+
+function scheduleAiForSnapshot(targetName: string, snapshot: ServiceSnapshot) {
+  if (!settings.value.ai.enabled) {
+    return;
+  }
+  const pending = snapshot.queue ?? [];
+  if (pending.length === 0) {
+    return;
+  }
+  pending.forEach((item) => {
+    const key = buildAiKey(targetName, item.id);
+    const existing = aiRiskMap.value[key];
+    if (
+      !existing ||
+      (existing.status === 'error' && existing.error?.includes('API Key') && settings.value.ai.apiKey.trim())
+    ) {
+      enqueueAiTask(targetName, item);
+    }
+  });
+}
+
+function scheduleAiForAllTargets() {
+  if (!settings.value.ai.enabled) {
+    return;
+  }
+  targets.value.forEach((target) => {
+    if (target.pending_count > 0) {
+      void refreshSnapshot(target.name);
+    }
+  });
+}
+
 function updateTargets(list: TargetInfo[]) {
   targets.value = list;
   if (!selectedTargetName.value && list.length > 0) {
     selectedTargetName.value = list[0].name;
   }
   list.forEach((target) => {
-    if (!(target.name in lastPendingCounts.value)) {
-      lastPendingCounts.value[target.name] = target.pending_count;
+    const previous = lastPendingCounts.value[target.name] ?? 0;
+    if (settings.value.ai.enabled) {
+      const hasSnapshot = Boolean(snapshots.value[target.name]);
+      if (target.pending_count > 0 && (target.pending_count > previous || !hasSnapshot)) {
+        void refreshSnapshot(target.name);
+      }
     }
+    lastPendingCounts.value[target.name] = target.pending_count;
   });
 }
 
@@ -352,7 +584,9 @@ function applyTargetUpdate(target: TargetInfo) {
   }
   lastPendingCounts.value[target.name] = target.pending_count;
 
-  if (selectedTargetName.value === target.name) {
+  if (settings.value.ai.enabled && target.pending_count > previous) {
+    void refreshSnapshot(target.name);
+  } else if (selectedTargetName.value === target.name) {
     refreshSnapshot(target.name);
   }
 }
@@ -407,6 +641,7 @@ async function refreshSnapshot(name: string) {
     const snapshot = await fetchSnapshot(name);
     snapshots.value = { ...snapshots.value, [name]: snapshot };
     lastPendingCounts.value[name] = snapshot.queue.length;
+    scheduleAiForSnapshot(name, snapshot);
   } catch {
     void logUiEvent(`fetch snapshot failed target=${name}`);
     // ignore fetch errors; connection status handled by websocket
@@ -431,6 +666,16 @@ async function deny(id: string) {
   } catch (err) {
     showNotification('拒绝失败，请检查 console 服务');
   }
+}
+
+function refreshAiRisk(payload: { target: string; id: string }) {
+  const snapshot = snapshots.value[payload.target];
+  const request = snapshot?.queue.find((item) => item.id === payload.id);
+  if (request) {
+    enqueueAiTask(payload.target, request);
+    return;
+  }
+  void refreshSnapshot(payload.target);
 }
 
 function handleSettingsSave(value: AppSettings) {
@@ -522,6 +767,9 @@ onBeforeUnmount(() => {
   if (stopSystemThemeListener) {
     stopSystemThemeListener();
   }
+  if (aiPersistTimer !== null) {
+    window.clearTimeout(aiPersistTimer);
+  }
   window.removeEventListener('keydown', handleGlobalKey);
 });
 
@@ -535,6 +783,17 @@ watch(
   settings,
   (value) => {
     saveSettings(value);
+  },
+  { deep: true }
+);
+
+watch(
+  () => settings.value.ai,
+  (value, previous) => {
+    if (value.enabled && (!previous?.enabled || previous?.apiKey !== value.apiKey)) {
+      scheduleAiForAllTargets();
+    }
+    processAiQueue();
   },
   { deep: true }
 );
@@ -586,8 +845,11 @@ watch(
             :settings="settings"
             :pending-jump-token="pendingJumpToken"
             :terminal-open="selectedTerminalOpen"
+            :ai-risk-map="aiRiskMap"
+            :ai-enabled="settings.ai.enabled"
             @approve="approve"
             @deny="deny"
+            @refresh-risk="refreshAiRisk"
             @open-terminal="handleOpenTerminal"
             @close-terminal="handleCloseTerminal"
           >

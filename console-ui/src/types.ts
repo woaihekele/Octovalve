@@ -73,9 +73,40 @@ export type ConsoleEvent =
 
 export type ListTab = 'pending' | 'history';
 
+export type AiRiskLevel = 'low' | 'medium' | 'high';
+export type AiRiskStatus = 'pending' | 'done' | 'error';
+
+export interface AiRiskEntry {
+  status: AiRiskStatus;
+  risk?: AiRiskLevel;
+  reason?: string;
+  keyPoints?: string[];
+  updatedAt: number;
+  error?: string;
+}
+
+export interface AiRiskApiResponse {
+  risk: AiRiskLevel;
+  reason: string;
+  key_points: string[];
+}
+
+export interface AiSettings {
+  enabled: boolean;
+  provider: 'openai';
+  baseUrl: string;
+  chatPath: string;
+  model: string;
+  apiKey: string;
+  prompt: string;
+  timeoutMs: number;
+  maxConcurrency: number;
+}
+
 export interface AppSettings {
   notificationsEnabled: boolean;
   theme: ThemeMode;
+  ai: AiSettings;
   shortcuts: {
     prevTarget: string;
     nextTarget: string;

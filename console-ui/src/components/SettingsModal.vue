@@ -5,6 +5,7 @@ import {
   NButton,
   NCard,
   NInput,
+  NInputNumber,
   NModal,
   NSelect,
   NSpin,
@@ -34,17 +35,19 @@ function cloneSettings(source: AppSettings): AppSettings {
   return {
     notificationsEnabled: source.notificationsEnabled,
     theme: source.theme,
+    ai: { ...source.ai },
     shortcuts: { ...source.shortcuts },
   };
 }
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
-const activeTab = ref<'general' | 'shortcuts' | 'config'>('general');
+const activeTab = ref<'general' | 'shortcuts' | 'ai' | 'config'>('general');
 const themeOptions: SelectOption[] = [
   { value: 'system', label: '系统' },
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
 ];
+const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
 const shortcutFields = [
   { key: 'prevTarget', label: '上一个目标' },
   { key: 'nextTarget', label: '下一个目标' },
@@ -388,6 +391,103 @@ watch(
                   </svg>
                 </n-button>
               </div>
+            </div>
+          </div>
+        </n-tab-pane>
+
+        <n-tab-pane name="ai" tab="AI 检查">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="text-sm font-medium">启用 AI 检查</div>
+                <div class="text-xs text-foreground-muted">对所有 Pending 命令进行风险评估</div>
+              </div>
+              <n-switch v-model:value="localSettings.ai.enabled" size="small" />
+            </div>
+
+            <div class="grid grid-cols-1 gap-3">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">Provider</div>
+                  <div class="text-xs text-foreground-muted">兼容 OpenAI 的接口</div>
+                </div>
+                <n-select v-model:value="localSettings.ai.provider" :options="aiProviderOptions" size="small" class="w-36" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">Base URL</div>
+                  <div class="text-xs text-foreground-muted">模型服务地址</div>
+                </div>
+                <n-input v-model:value="localSettings.ai.baseUrl" size="small" class="w-72" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">Chat Path</div>
+                  <div class="text-xs text-foreground-muted">请求路径</div>
+                </div>
+                <n-input v-model:value="localSettings.ai.chatPath" size="small" class="w-72" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">Model</div>
+                  <div class="text-xs text-foreground-muted">模型名称</div>
+                </div>
+                <n-input v-model:value="localSettings.ai.model" size="small" class="w-48" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">API Key</div>
+                  <div class="text-xs text-foreground-muted">仅保存在本地设置</div>
+                </div>
+                <n-input v-model:value="localSettings.ai.apiKey" size="small" class="w-72" type="password" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">Timeout (ms)</div>
+                  <div class="text-xs text-foreground-muted">超时后视为失败</div>
+                </div>
+                <n-input-number
+                  :value="localSettings.ai.timeoutMs"
+                  size="small"
+                  class="w-40"
+                  :min="1000"
+                  :max="60000"
+                  @update:value="(value) => { localSettings.ai.timeoutMs = value ?? DEFAULT_SETTINGS.ai.timeoutMs; }"
+                />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium">最大并发</div>
+                  <div class="text-xs text-foreground-muted">同时评估的请求数</div>
+                </div>
+                <n-input-number
+                  :value="localSettings.ai.maxConcurrency"
+                  size="small"
+                  class="w-32"
+                  :min="1"
+                  :max="10"
+                  @update:value="(value) => { localSettings.ai.maxConcurrency = value ?? DEFAULT_SETTINGS.ai.maxConcurrency; }"
+                />
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-sm font-medium">Prompt</div>
+                  <div class="text-xs text-foreground-muted" v-pre>支持 {{field}} 占位</div>
+                </div>
+                <n-button size="small" quaternary @click="localSettings.ai.prompt = DEFAULT_SETTINGS.ai.prompt">
+                  恢复默认
+                </n-button>
+              </div>
+              <n-input v-model:value="localSettings.ai.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 14 }" />
             </div>
           </div>
         </n-tab-pane>

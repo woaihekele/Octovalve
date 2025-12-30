@@ -1,11 +1,40 @@
-import type { AppSettings } from './types';
+import type { AiSettings, AppSettings } from './types';
 import { normalizeShortcut } from './shortcuts';
 
 const SETTINGS_KEY = 'octovalve.console.settings';
+const DEFAULT_AI_PROMPT = [
+  '你是命令风险评估助手。根据给定命令上下文评估风险，仅返回严格 JSON。',
+  '要求：risk 为 low|medium|high；reason 一句话；key_points 为数组(可空)。',
+  '输入:',
+  'target={{target}}',
+  'client={{client}}',
+  'peer={{peer}}',
+  'intent={{intent}}',
+  'mode={{mode}}',
+  'raw_command={{raw_command}}',
+  'pipeline={{pipeline}}',
+  'cwd={{cwd}}',
+  'timeout_ms={{timeout_ms}}',
+  'max_output_bytes={{max_output_bytes}}',
+  '仅输出 JSON，不要输出解释。',
+].join('\n');
+
+const DEFAULT_AI_SETTINGS: AiSettings = {
+  enabled: false,
+  provider: 'openai',
+  baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+  chatPath: '/chat/completions',
+  model: 'glm-4.7',
+  apiKey: '',
+  prompt: DEFAULT_AI_PROMPT,
+  timeoutMs: 10000,
+  maxConcurrency: 2,
+};
 
 export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   theme: 'system',
+  ai: DEFAULT_AI_SETTINGS,
   shortcuts: {
     prevTarget: 'KeyW',
     nextTarget: 'KeyS',
@@ -28,6 +57,7 @@ export function loadSettings(): AppSettings {
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const parsedShortcuts: Partial<AppSettings['shortcuts']> = parsed.shortcuts ?? {};
+    const parsedAi = (parsed.ai ?? {}) as Partial<AiSettings>;
     const normalizeTheme = (value: unknown) => {
       if (value === 'dark' || value === 'light' || value === 'system') {
         return value;
@@ -43,6 +73,20 @@ export function loadSettings(): AppSettings {
       }
       return normalizeShortcut(value) ?? fallback;
     };
+    const normalizeAiProvider = (value: unknown) => (value === 'openai' ? 'openai' : DEFAULT_AI_SETTINGS.provider);
+    const normalizeText = (value: unknown, fallback: string) => (typeof value === 'string' ? value : fallback);
+    const normalizeNumber = (value: unknown, fallback: number, min: number, max: number) => {
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        return fallback;
+      }
+      if (value < min) {
+        return min;
+      }
+      if (value > max) {
+        return max;
+      }
+      return value;
+    };
     const normalizedShortcuts = {
       prevTarget: normalizeWithFallback(parsedShortcuts.prevTarget, DEFAULT_SETTINGS.shortcuts.prevTarget),
       nextTarget: normalizeWithFallback(parsedShortcuts.nextTarget, DEFAULT_SETTINGS.shortcuts.nextTarget),
@@ -55,10 +99,22 @@ export function loadSettings(): AppSettings {
       fullScreen: normalizeWithFallback(parsedShortcuts.fullScreen, DEFAULT_SETTINGS.shortcuts.fullScreen),
       toggleList: normalizeWithFallback(parsedShortcuts.toggleList, DEFAULT_SETTINGS.shortcuts.toggleList),
     };
+    const normalizedAi: AiSettings = {
+      enabled: Boolean(parsedAi.enabled),
+      provider: normalizeAiProvider(parsedAi.provider),
+      baseUrl: normalizeText(parsedAi.baseUrl, DEFAULT_AI_SETTINGS.baseUrl),
+      chatPath: normalizeText(parsedAi.chatPath, DEFAULT_AI_SETTINGS.chatPath),
+      model: normalizeText(parsedAi.model, DEFAULT_AI_SETTINGS.model),
+      apiKey: normalizeText(parsedAi.apiKey, DEFAULT_AI_SETTINGS.apiKey),
+      prompt: normalizeText(parsedAi.prompt, DEFAULT_AI_SETTINGS.prompt),
+      timeoutMs: normalizeNumber(parsedAi.timeoutMs, DEFAULT_AI_SETTINGS.timeoutMs, 1000, 60000),
+      maxConcurrency: normalizeNumber(parsedAi.maxConcurrency, DEFAULT_AI_SETTINGS.maxConcurrency, 1, 10),
+    };
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
       theme: normalizeTheme(parsed.theme),
+      ai: normalizedAi,
       shortcuts: normalizedShortcuts,
     };
   } catch {

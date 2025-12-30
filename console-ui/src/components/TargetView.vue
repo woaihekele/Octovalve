@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { NButton, NPopover, NTag } from 'naive-ui';
 import { formatShortcut, matchesShortcut } from '../shortcuts';
 import { startWindowDrag } from '../tauriWindow';
-import type { AppSettings, ListTab, RequestSnapshot, ResultSnapshot, ServiceSnapshot, TargetInfo } from '../types';
+import type {
+  AiRiskEntry,
+  AppSettings,
+  ListTab,
+  RequestSnapshot,
+  ResultSnapshot,
+  ServiceSnapshot,
+  TargetInfo,
+} from '../types';
 const props = defineProps<{
   target: TargetInfo;
   snapshot: ServiceSnapshot | null;
   settings: AppSettings;
   pendingJumpToken: number;
   terminalOpen: boolean;
+  aiRiskMap: Record<string, AiRiskEntry>;
+  aiEnabled: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -16,6 +27,7 @@ const emit = defineEmits<{
   (e: 'deny', id: string): void;
   (e: 'open-terminal'): void;
   (e: 'close-terminal'): void;
+  (e: 'refresh-risk', payload: { target: string; id: string }): void;
 }>();
 
 const activeTab = ref<ListTab>('pending');
@@ -82,6 +94,65 @@ function formatSummary(result: ResultSnapshot) {
     return 'error';
   }
   return result.status;
+}
+
+function aiKey(id: string) {
+  return `${props.target.name}:${id}`;
+}
+
+function getAiEntry(id: string) {
+  return props.aiRiskMap[aiKey(id)];
+}
+
+function aiLabel(entry?: AiRiskEntry) {
+  if (!entry) {
+    return '未检测';
+  }
+  if (entry.status === 'pending') {
+    return '检测中';
+  }
+  if (entry.status === 'error') {
+    if (entry.error?.includes('API Key')) {
+      return '未配置';
+    }
+    return '检测失败';
+  }
+  if (entry.risk === 'low') {
+    return '低风险';
+  }
+  if (entry.risk === 'medium') {
+    return '中风险';
+  }
+  if (entry.risk === 'high') {
+    return '高风险';
+  }
+  return '未知';
+}
+
+function aiTagType(entry?: AiRiskEntry) {
+  if (!entry) {
+    return 'default';
+  }
+  if (entry.status === 'pending') {
+    return 'info';
+  }
+  if (entry.status === 'error') {
+    return entry.error?.includes('API Key') ? 'warning' : 'error';
+  }
+  if (entry.risk === 'low') {
+    return 'success';
+  }
+  if (entry.risk === 'medium') {
+    return 'warning';
+  }
+  if (entry.risk === 'high') {
+    return 'error';
+  }
+  return 'default';
+}
+
+function refreshRisk(id: string) {
+  emit('refresh-risk', { target: props.target.name, id });
 }
 
 function buildOutput(result: ResultSnapshot) {
@@ -266,7 +337,7 @@ function handleTerminalToggle() {
               :class="index === selectedIndex ? 'bg-accent/20 border-l-4 border-l-accent' : 'hover:bg-panel-muted/30 border-l-4 border-l-transparent'"
               @click="selectedIndex = index"
             >
-              <div class="flex justify-between items-start mb-1">
+              <div class="flex justify-between items-start mb-1 gap-2">
                 <span class="font-mono text-sm line-clamp-1" :class="index === selectedIndex ? 'text-accent' : 'text-foreground'">
                   {{ item.raw_command }}
                 </span>
@@ -277,6 +348,44 @@ function handleTerminalToggle() {
                 >
                   {{ (item as ResultSnapshot).status }}
                 </span>
+                <n-popover v-else-if="props.aiEnabled" trigger="hover" placement="left" :delay="120">
+                  <template #trigger>
+                    <n-tag size="small" :type="aiTagType(getAiEntry(item.id))" :bordered="false">
+                      {{ aiLabel(getAiEntry(item.id)) }}
+                    </n-tag>
+                  </template>
+                  <div class="space-y-2 text-xs max-w-[260px]">
+                    <div class="font-medium text-foreground">AI 风险评估</div>
+                    <div v-if="getAiEntry(item.id)?.status === 'pending'" class="text-foreground-muted">检测中...</div>
+                    <div v-else-if="getAiEntry(item.id)?.status === 'error'" class="text-danger">
+                      {{ getAiEntry(item.id)?.error || '检测失败' }}
+                    </div>
+                    <template v-else>
+                      <div>
+                        <span class="text-foreground-muted">等级：</span>
+                        <span class="text-foreground">{{ aiLabel(getAiEntry(item.id)) }}</span>
+                      </div>
+                      <div v-if="getAiEntry(item.id)?.reason">
+                        <span class="text-foreground-muted">原因：</span>
+                        <span class="text-foreground">{{ getAiEntry(item.id)?.reason }}</span>
+                      </div>
+                      <div v-if="getAiEntry(item.id)?.keyPoints?.length">
+                        <div class="text-foreground-muted mb-1">要点：</div>
+                        <div class="space-y-1">
+                          <div v-for="(point, pIndex) in getAiEntry(item.id)?.keyPoints" :key="pIndex">
+                            - {{ point }}
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <div class="text-foreground-muted">
+                      更新时间：{{ getAiEntry(item.id)?.updatedAt ? formatTime(getAiEntry(item.id)!.updatedAt) : '-' }}
+                    </div>
+                    <div class="flex justify-end">
+                      <n-button size="tiny" @click.stop="refreshRisk(item.id)">刷新</n-button>
+                    </div>
+                  </div>
+                </n-popover>
               </div>
               <div class="flex justify-between items-center text-xs text-foreground-muted">
                 <span>

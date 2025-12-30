@@ -10,7 +10,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use futures_util::{SinkExt, StreamExt};
-use serde::Deserialize;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::api::path::home_dir;
 use tauri::api::process::{Command, CommandChild, CommandEvent};
@@ -83,6 +84,31 @@ enum TerminalMessage {
     Error { message: String },
 }
 
+#[derive(Debug, Deserialize)]
+struct AiRiskRequest {
+    base_url: String,
+    chat_path: String,
+    model: String,
+    api_key: String,
+    prompt: String,
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AiRiskModelResponse {
+    risk: String,
+    reason: Option<String>,
+    #[serde(default)]
+    key_points: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct AiRiskResponse {
+    risk: String,
+    reason: String,
+    key_points: Vec<String>,
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(ConsoleSidecarState(Mutex::new(None)))
@@ -100,6 +126,7 @@ fn main() {
             proxy_fetch_snapshot,
             proxy_approve,
             proxy_deny,
+            ai_risk_assess,
             start_console_stream,
             terminal_open,
             terminal_input,
@@ -727,6 +754,50 @@ async fn proxy_deny(
     console_post(&path, json!({ "id": id }), &log_state.app_log).await
 }
 
+#[tauri::command]
+async fn ai_risk_assess(request: AiRiskRequest) -> Result<AiRiskResponse, String> {
+    if request.api_key.trim().is_empty() {
+        return Err("missing api key".to_string());
+    }
+    let url = join_base_path(&request.base_url, &request.chat_path)?;
+    let timeout_ms = request.timeout_ms.unwrap_or(10000);
+    let client = Client::new();
+    let payload = json!({
+        "model": request.model,
+        "messages": [
+            { "role": "user", "content": request.prompt }
+        ],
+        "temperature": 0.2,
+    });
+
+    let response = client
+        .post(url)
+        .bearer_auth(request.api_key)
+        .timeout(Duration::from_millis(timeout_ms))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let status = response.status();
+    let body = response.text().await.map_err(|err| err.to_string())?;
+    if !status.is_success() {
+        return Err(format!("ai request failed status={} body={}", status, body));
+    }
+
+    let value: Value = serde_json::from_str(&body).map_err(|err| err.to_string())?;
+    let content = value
+        .pointer("/choices/0/message/content")
+        .and_then(|val| val.as_str())
+        .or_else(|| value.pointer("/choices/0/text").and_then(|val| val.as_str()))
+        .unwrap_or("")
+        .trim();
+    if content.is_empty() {
+        return Err("ai response missing content".to_string());
+    }
+    parse_ai_risk_content(content)
+}
+
 fn emit_ws_status(app: &AppHandle, log_path: &Path, status: &str) {
     let _ = app.emit_all("console_ws_status", status.to_string());
     let _ = append_log_line(log_path, &format!("ws {status}"));
@@ -1002,6 +1073,48 @@ fn terminal_close(session_id: String, sessions: State<'_, TerminalSessions>) -> 
 #[tauri::command]
 fn log_ui_event(message: String, state: State<AppLogState>) -> Result<(), String> {
     append_log_line(&state.app_log, &message)
+}
+
+fn join_base_path(base: &str, path: &str) -> Result<String, String> {
+    if base.trim().is_empty() {
+        return Err("base_url is empty".to_string());
+    }
+    let normalized_base = base.trim_end_matches('/');
+    let normalized_path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    Ok(format!("{normalized_base}{normalized_path}"))
+}
+
+fn parse_ai_risk_content(content: &str) -> Result<AiRiskResponse, String> {
+    let payload = extract_json_block(content).unwrap_or(content);
+    let parsed: AiRiskModelResponse = serde_json::from_str(payload).map_err(|err| err.to_string())?;
+    let risk = normalize_ai_risk(&parsed.risk)
+        .ok_or_else(|| "risk must be low|medium|high".to_string())?;
+    Ok(AiRiskResponse {
+        risk,
+        reason: parsed.reason.unwrap_or_default(),
+        key_points: parsed.key_points.unwrap_or_default(),
+    })
+}
+
+fn extract_json_block(input: &str) -> Option<&str> {
+    let start = input.find('{')?;
+    let end = input.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    Some(&input[start..=end])
+}
+
+fn normalize_ai_risk(value: &str) -> Option<String> {
+    let normalized = value.trim().to_lowercase();
+    match normalized.as_str() {
+        "low" | "medium" | "high" => Some(normalized),
+        _ => None,
+    }
 }
 
 fn append_log_line(path: &Path, message: &str) -> Result<(), String> {

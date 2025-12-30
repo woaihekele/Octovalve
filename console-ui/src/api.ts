@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/tauri';
-import type { ConfigFilePayload, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
+import type { AiRiskApiResponse, ConfigFilePayload, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
@@ -262,4 +262,20 @@ export async function terminalClose(sessionId: string) {
     return;
   }
   await invoke('terminal_close', { sessionId });
+}
+
+export type AiRiskRequestPayload = {
+  base_url: string;
+  chat_path: string;
+  model: string;
+  api_key: string;
+  prompt: string;
+  timeout_ms?: number;
+};
+
+export async function aiRiskAssess(request: AiRiskRequestPayload): Promise<AiRiskApiResponse> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('AI 检查仅支持 Tauri');
+  }
+  return invoke<AiRiskApiResponse>('ai_risk_assess', { request });
 }
