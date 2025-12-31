@@ -70,6 +70,7 @@ const configLoading = ref(false);
 const configBusy = ref(false);
 const configError = ref<string | null>(null);
 const configMessage = ref<string | null>(null);
+const configMessageType = ref<'success' | 'error' | 'warning' | 'info'>('success');
 const confirmApplyOpen = ref(false);
 const proxyConfig = ref<ConfigFilePayload | null>(null);
 const brokerConfig = ref<ConfigFilePayload | null>(null);
@@ -180,8 +181,9 @@ function save() {
   emit('save', cloneSettings(localSettings.value));
 }
 
-function showConfigMessage(message: string) {
+function showConfigMessage(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') {
   configMessage.value = message;
+  configMessageType.value = type;
   if (configMessageTimer !== null) {
     window.clearTimeout(configMessageTimer);
   }
@@ -224,10 +226,10 @@ async function saveProxyConfig() {
     if (!brokerDirty.value) {
       await loadConfigCenter();
     } else {
-      showConfigMessage('本地配置已保存，远端配置有未保存改动，未自动刷新。');
+      showConfigMessage('本地配置已保存，远端配置有未保存改动，未自动刷新。', 'warning');
     }
   } catch (err) {
-    showConfigMessage(`保存本地配置失败：${String(err)}`);
+    showConfigMessage(`保存本地配置失败：${String(err)}`, 'error');
   } finally {
     configBusy.value = false;
   }
@@ -243,7 +245,7 @@ async function saveBrokerConfig() {
     brokerOriginal.value = brokerConfigText.value;
     showConfigMessage('远端配置已保存。');
   } catch (err) {
-    showConfigMessage(`保存远端配置失败：${String(err)}`);
+    showConfigMessage(`保存远端配置失败：${String(err)}`, 'error');
   } finally {
     configBusy.value = false;
   }
@@ -268,10 +270,10 @@ async function saveAndApply() {
       await reloadRemoteBrokers();
       showConfigMessage('已保存并重启远端 broker，同步全部目标。');
     } else {
-      showConfigMessage('配置未改动。');
+      showConfigMessage('配置未改动。', 'info');
     }
   } catch (err) {
-    showConfigMessage(`保存并应用失败：${String(err)}`);
+    showConfigMessage(`保存并应用失败：${String(err)}`, 'error');
   } finally {
     configBusy.value = false;
   }
@@ -392,6 +394,7 @@ watch(
       configLoaded.value = false;
       configError.value = null;
       configMessage.value = null;
+      configMessageType.value = 'success';
       confirmApplyOpen.value = false;
       proxyConfig.value = null;
       brokerConfig.value = null;
@@ -683,7 +686,7 @@ watch(
                   </div>
                 </div>
 
-                <n-alert v-if="configMessage" type="success" :bordered="false">
+                <n-alert v-if="configMessage" :type="configMessageType" :bordered="false">
                   {{ configMessage }}
                 </n-alert>
               </div>

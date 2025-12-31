@@ -72,6 +72,7 @@ const DEFAULT_TERM: &str = "xterm-256color";
 const WS_RECONNECT_DELAY: Duration = Duration::from_secs(3);
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const HTTP_IO_TIMEOUT: Duration = Duration::from_secs(5);
+const HTTP_RELOAD_TIMEOUT: Duration = Duration::from_secs(120);
 static HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 struct TerminalSession {
@@ -586,7 +587,8 @@ struct HttpResponse {
 }
 
 async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
-    let response = console_http_request("GET", path, None, log_path).await?;
+    let response = console_http_request_with_timeout("GET", path, None, log_path, HTTP_IO_TIMEOUT)
+        .await?;
     if response.status / 100 != 2 {
         return Err(format!(
             "console http GET status {} for {}",
@@ -600,9 +602,20 @@ async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
 }
 
 async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(), String> {
+    console_post_with_timeout(path, payload, log_path, HTTP_IO_TIMEOUT).await
+}
+
+async fn console_post_with_timeout(
+    path: &str,
+    payload: Value,
+    log_path: &Path,
+    io_timeout: Duration,
+) -> Result<(), String> {
     let payload = payload.to_string();
     let _ = append_log_line(log_path, &format!("console http POST payload: {}", payload));
-    let response = console_http_request("POST", path, Some(&payload), log_path).await?;
+    let response =
+        console_http_request_with_timeout("POST", path, Some(&payload), log_path, io_timeout)
+            .await?;
     if response.status / 100 != 2 {
         return Err(format!(
             "console http POST status {} for {}",
@@ -612,11 +625,12 @@ async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result<(),
     Ok(())
 }
 
-async fn console_http_request(
+async fn console_http_request_with_timeout(
     method: &str,
     path: &str,
     body: Option<&str>,
     log_path: &Path,
+    io_timeout: Duration,
 ) -> Result<HttpResponse, String> {
     let request_id = HTTP_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
     let body_len = body.map(|value| value.len()).unwrap_or(0);
@@ -639,12 +653,12 @@ async fn console_http_request(
     } else {
         request.push_str("\r\n");
     }
-    timeout(HTTP_IO_TIMEOUT, stream.write_all(request.as_bytes()))
+    timeout(io_timeout, stream.write_all(request.as_bytes()))
         .await
         .map_err(|_| "console http write timed out".to_string())?
         .map_err(|err| err.to_string())?;
     let mut buffer = Vec::new();
-    timeout(HTTP_IO_TIMEOUT, stream.read_to_end(&mut buffer))
+    timeout(io_timeout, stream.read_to_end(&mut buffer))
         .await
         .map_err(|_| "console http read timed out".to_string())?
         .map_err(|err| err.to_string())?;
@@ -796,7 +810,13 @@ async fn proxy_deny(
 
 #[tauri::command]
 async fn proxy_reload_remote_brokers(log_state: State<'_, AppLogState>) -> Result<(), String> {
-    console_post("/targets/reload-brokers", json!({}), &log_state.app_log).await
+    console_post_with_timeout(
+        "/targets/reload-brokers",
+        json!({}),
+        &log_state.app_log,
+        HTTP_RELOAD_TIMEOUT,
+    )
+    .await
 }
 
 #[tauri::command]
