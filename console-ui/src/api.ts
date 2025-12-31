@@ -1,6 +1,13 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { AiRiskApiResponse, ConfigFilePayload, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
+import type {
+  AiRiskApiResponse,
+  ConfigFilePayload,
+  ConsoleEvent,
+  ProfilesStatus,
+  ServiceSnapshot,
+  TargetInfo,
+} from './types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
@@ -119,6 +126,62 @@ export async function getProxyConfigStatus(): Promise<ProxyConfigStatus> {
     return invoke<ProxyConfigStatus>('get_proxy_config_status');
   }
   return { present: true, path: '', example_path: '' };
+}
+
+export async function listProfiles(): Promise<ProfilesStatus> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  return invoke<ProfilesStatus>('list_profiles');
+}
+
+export async function createProfile(name: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  await invoke('create_profile', { name });
+}
+
+export async function deleteProfile(name: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  await invoke('delete_profile', { name });
+}
+
+export async function selectProfile(name: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  await invoke('select_profile', { name });
+}
+
+export async function readProfileProxyConfig(name: string): Promise<ConfigFilePayload> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  return invoke<ConfigFilePayload>('read_profile_proxy_config', { name });
+}
+
+export async function writeProfileProxyConfig(name: string, content: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  await invoke('write_profile_proxy_config', { name, content });
+}
+
+export async function readProfileBrokerConfig(name: string): Promise<ConfigFilePayload> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  return invoke<ConfigFilePayload>('read_profile_broker_config', { name });
+}
+
+export async function writeProfileBrokerConfig(name: string, content: string) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('profiles only available in Tauri');
+  }
+  await invoke('write_profile_broker_config', { name, content });
 }
 
 export async function openConsoleStream(

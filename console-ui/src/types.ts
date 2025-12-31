@@ -7,6 +7,15 @@ export interface ConfigFilePayload {
   content: string;
 }
 
+export interface ProfileSummary {
+  name: string;
+}
+
+export interface ProfilesStatus {
+  current: string;
+  profiles: ProfileSummary[];
+}
+
 export interface TargetInfo {
   name: string;
   hostname?: string | null;

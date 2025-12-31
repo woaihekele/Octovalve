@@ -18,17 +18,21 @@ import {
   type SelectOption,
 } from 'naive-ui';
 import {
-  readBrokerConfig,
+  createProfile,
+  deleteProfile,
+  listProfiles,
   readConsoleLog,
-  readProxyConfig,
+  readProfileBrokerConfig,
+  readProfileProxyConfig,
   reloadRemoteBrokers,
   restartConsole,
-  writeBrokerConfig,
-  writeProxyConfig,
+  selectProfile,
+  writeProfileBrokerConfig,
+  writeProfileProxyConfig,
 } from '../api';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
 import { DEFAULT_SETTINGS } from '../settings';
-import type { AppSettings, ConfigFilePayload } from '../types';
+import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../types';
 import MonacoEditor from './MonacoEditor.vue';
 
 const props = defineProps<{
@@ -75,6 +79,16 @@ const configBusy = ref(false);
 const configError = ref<string | null>(null);
 const configMessage = ref<string | null>(null);
 const configMessageType = ref<'success' | 'error' | 'warning' | 'info'>('success');
+const profiles = ref<ProfileSummary[]>([]);
+const activeProfile = ref<string | null>(null);
+const selectedProfile = ref<string | null>(null);
+const pendingProfile = ref<string | null>(null);
+const switchProfileOpen = ref(false);
+const createProfileOpen = ref(false);
+const createProfileName = ref('');
+const deleteProfileOpen = ref(false);
+const deleteProfileName = ref<string | null>(null);
+const refreshConfirmOpen = ref(false);
 const confirmApplyOpen = ref(false);
 const proxyConfig = ref<ConfigFilePayload | null>(null);
 const brokerConfig = ref<ConfigFilePayload | null>(null);
@@ -82,9 +96,12 @@ const proxyConfigText = ref('');
 const brokerConfigText = ref('');
 const proxyOriginal = ref('');
 const brokerOriginal = ref('');
+const proxyApplied = ref<string | null>(null);
+const brokerApplied = ref<string | null>(null);
 const configLoaded = ref(false);
 const logModalOpen = ref(false);
 const logInProgress = ref(false);
+const logContext = ref<'remote-broker' | 'console'>('remote-broker');
 const logStatusMessage = ref('');
 const logHasOutput = ref(false);
 const logOffset = ref(0);
@@ -112,6 +129,23 @@ const hasOpen = computed(() => props.isOpen);
 const isConfigTab = computed(() => activeTab.value === 'config');
 const proxyDirty = computed(() => proxyConfigText.value !== proxyOriginal.value);
 const brokerDirty = computed(() => brokerConfigText.value !== brokerOriginal.value);
+const profileOptions = computed<SelectOption[]>(() =>
+  profiles.value.map((profile) => ({ value: profile.name, label: profile.name }))
+);
+const deletableProfileOptions = computed<SelectOption[]>(() =>
+  profiles.value
+    .filter((profile) => profile.name !== activeProfile.value)
+    .map((profile) => ({ value: profile.name, label: profile.name }))
+);
+const canDeleteProfile = computed(() => deletableProfileOptions.value.length > 0);
+const createProfileValid = computed(() => /^[A-Za-z0-9_-]{1,48}$/.test(createProfileName.value.trim()));
+const logTitle = computed(() => (logContext.value === 'console' ? 'Console 重启日志' : '远端重启日志'));
+const logFooterText = computed(() => {
+  if (logContext.value === 'console') {
+    return logInProgress.value ? '正在重启 console…' : 'console 重启流程已结束';
+  }
+  return logInProgress.value ? '正在重启远端 broker…' : '远端重启流程已结束';
+});
 const isAiTab = computed(() => activeTab.value === 'ai');
 const cardMaxWidth = computed(() => (isConfigTab.value ? '80rem' : isAiTab.value ? '64rem' : '32rem'));
 const cardShellStyle = computed<CSSProperties>(() => ({
@@ -328,19 +362,77 @@ function disposeLogTerminal() {
   logTerminal = null;
 }
 
-async function reloadRemoteBrokersWithLog() {
+async function reloadRemoteBrokersWithLog(message?: string) {
+  logContext.value = 'remote-broker';
   logStatusMessage.value = '正在重启远端 broker，请稍候…';
   await startLogPolling();
   try {
     await reloadRemoteBrokers();
     logStatusMessage.value = '远端 broker 重启完成。';
-    showConfigMessage('已保存并重启远端 broker，同步全部目标。');
+    if (message) {
+      showConfigMessage(message);
+    }
   } catch (err) {
-    const message = `远端 broker 重启失败：${String(err)}`;
-    logStatusMessage.value = message;
-    showConfigMessage(`保存并应用失败：${String(err)}`, 'error');
+    const errorMessage = `远端 broker 重启失败：${String(err)}`;
+    logStatusMessage.value = errorMessage;
+    showConfigMessage(`应用失败：${String(err)}`, 'error');
   } finally {
     stopLogPolling();
+  }
+}
+
+async function restartConsoleWithLog(message?: string) {
+  logContext.value = 'console';
+  logStatusMessage.value = '正在重启 console，请稍候…';
+  await startLogPolling();
+  try {
+    await restartConsole();
+    logStatusMessage.value = 'console 重启完成。';
+    if (message) {
+      showConfigMessage(message);
+    }
+  } catch (err) {
+    const msg = `console 重启失败：${String(err)}`;
+    logStatusMessage.value = msg;
+    showConfigMessage(msg, 'error');
+  } finally {
+    stopLogPolling();
+  }
+}
+
+async function loadProfiles(syncSelection = true) {
+  const data = await listProfiles();
+  profiles.value = data.profiles;
+  activeProfile.value = data.current;
+  if (syncSelection) {
+    selectedProfile.value = data.current;
+  } else {
+    const keepSelected = data.profiles.some((profile) => profile.name === selectedProfile.value);
+    selectedProfile.value = keepSelected ? selectedProfile.value : data.current;
+  }
+  if (deletableProfileOptions.value.length > 0) {
+    if (!deleteProfileName.value) {
+      deleteProfileName.value = String(deletableProfileOptions.value[0]?.value ?? '');
+    }
+  } else {
+    deleteProfileName.value = null;
+  }
+}
+
+async function loadConfigFiles(profileName: string, syncApplied = false) {
+  const [proxy, broker] = await Promise.all([
+    readProfileProxyConfig(profileName),
+    readProfileBrokerConfig(profileName),
+  ]);
+  proxyConfig.value = proxy;
+  brokerConfig.value = broker;
+  proxyConfigText.value = proxy.content;
+  brokerConfigText.value = broker.content;
+  proxyOriginal.value = proxy.content;
+  brokerOriginal.value = broker.content;
+  if (syncApplied) {
+    proxyApplied.value = proxy.content;
+    brokerApplied.value = broker.content;
   }
 }
 
@@ -351,13 +443,10 @@ async function loadConfigCenter() {
   configLoading.value = true;
   configError.value = null;
   try {
-    const [proxy, broker] = await Promise.all([readProxyConfig(), readBrokerConfig()]);
-    proxyConfig.value = proxy;
-    brokerConfig.value = broker;
-    proxyConfigText.value = proxy.content;
-    brokerConfigText.value = broker.content;
-    proxyOriginal.value = proxy.content;
-    brokerOriginal.value = broker.content;
+    await loadProfiles(true);
+    if (selectedProfile.value) {
+      await loadConfigFiles(selectedProfile.value, true);
+    }
     configLoaded.value = true;
   } catch (err) {
     configError.value = String(err);
@@ -366,78 +455,198 @@ async function loadConfigCenter() {
   }
 }
 
-async function saveProxyConfig() {
+function requestProfileChange(value: string | null) {
+  if (!value || configBusy.value) {
+    return;
+  }
+  if (proxyDirty.value || brokerDirty.value) {
+    pendingProfile.value = value;
+    switchProfileOpen.value = true;
+    return;
+  }
+  void applyProfileSelection(value);
+}
+
+async function applyProfileSelection(value: string) {
   if (configBusy.value) {
+    return;
+  }
+  const previous = selectedProfile.value;
+  configBusy.value = true;
+  try {
+    selectedProfile.value = value;
+    await loadConfigFiles(value);
+  } catch (err) {
+    selectedProfile.value = previous;
+    showConfigMessage(`读取环境配置失败：${String(err)}`, 'error');
+  } finally {
+    configBusy.value = false;
+  }
+}
+
+function cancelProfileSwitch() {
+  pendingProfile.value = null;
+  switchProfileOpen.value = false;
+}
+
+function confirmProfileSwitch() {
+  const value = pendingProfile.value;
+  pendingProfile.value = null;
+  switchProfileOpen.value = false;
+  if (value) {
+    void applyProfileSelection(value);
+  }
+}
+
+function openCreateProfile() {
+  if (proxyDirty.value || brokerDirty.value) {
+    showConfigMessage('当前配置有未保存改动，请先保存再新建环境。', 'warning');
+    return;
+  }
+  createProfileName.value = '';
+  createProfileOpen.value = true;
+}
+
+async function confirmCreateProfile() {
+  if (!createProfileValid.value || configBusy.value) {
     return;
   }
   configBusy.value = true;
   try {
-    await writeProxyConfig(proxyConfigText.value);
-    proxyOriginal.value = proxyConfigText.value;
-    if (!brokerDirty.value) {
-      await loadConfigCenter();
-    } else {
-      showConfigMessage('本地配置已保存，远端配置有未保存改动，未自动刷新。', 'warning');
+    const name = createProfileName.value.trim();
+    await createProfile(name);
+    await loadProfiles(false);
+    selectedProfile.value = name;
+    await loadConfigFiles(name);
+    showConfigMessage(`已创建环境 ${name}，需要点击应用完成切换。`, 'info');
+  } catch (err) {
+    showConfigMessage(`新建环境失败：${String(err)}`, 'error');
+  } finally {
+    configBusy.value = false;
+    createProfileOpen.value = false;
+    createProfileName.value = '';
+  }
+}
+
+function openDeleteProfile() {
+  if (!canDeleteProfile.value || configBusy.value) {
+    return;
+  }
+  deleteProfileName.value = String(deletableProfileOptions.value[0]?.value ?? '');
+  deleteProfileOpen.value = true;
+}
+
+async function confirmDeleteProfile() {
+  if (!deleteProfileName.value || configBusy.value) {
+    return;
+  }
+  configBusy.value = true;
+  try {
+    await deleteProfile(deleteProfileName.value);
+    await loadProfiles(false);
+    if (selectedProfile.value) {
+      await loadConfigFiles(selectedProfile.value);
     }
+    showConfigMessage(`已删除环境 ${deleteProfileName.value}。`);
   } catch (err) {
-    showConfigMessage(`保存本地配置失败：${String(err)}`, 'error');
+    showConfigMessage(`删除环境失败：${String(err)}`, 'error');
   } finally {
     configBusy.value = false;
+    deleteProfileOpen.value = false;
+    deleteProfileName.value = null;
   }
 }
 
-async function saveBrokerConfig() {
-  if (configBusy.value) {
+function requestRefreshConfig() {
+  if (configBusy.value || configLoading.value) {
+    return;
+  }
+  if (proxyDirty.value || brokerDirty.value) {
+    refreshConfirmOpen.value = true;
+    return;
+  }
+  void refreshConfigNow();
+}
+
+async function refreshConfigNow() {
+  configBusy.value = true;
+  try {
+    const previousSelection = selectedProfile.value;
+    await loadProfiles(false);
+    const profileName = selectedProfile.value ?? previousSelection;
+    if (profileName) {
+      await loadConfigFiles(profileName);
+    }
+    showConfigMessage('已刷新配置。');
+  } catch (err) {
+    showConfigMessage(`刷新配置失败：${String(err)}`, 'error');
+  } finally {
+    configBusy.value = false;
+    refreshConfirmOpen.value = false;
+  }
+}
+
+function cancelRefreshConfirm() {
+  refreshConfirmOpen.value = false;
+}
+
+function confirmRefresh() {
+  void refreshConfigNow();
+}
+
+async function saveConfigFiles() {
+  if (configBusy.value || configLoading.value) {
+    return;
+  }
+  const profileName = selectedProfile.value;
+  if (!profileName) {
+    showConfigMessage('请先选择环境。', 'warning');
+    return;
+  }
+  if (!proxyDirty.value && !brokerDirty.value) {
+    showConfigMessage('配置未改动。', 'info');
     return;
   }
   configBusy.value = true;
   try {
-    await writeBrokerConfig(brokerConfigText.value);
-    brokerOriginal.value = brokerConfigText.value;
-    showConfigMessage('远端配置已保存。');
-  } catch (err) {
-    showConfigMessage(`保存远端配置失败：${String(err)}`, 'error');
-  } finally {
-    configBusy.value = false;
-  }
-}
-
-async function saveAndApply() {
-  if (configBusy.value) {
-    return;
-  }
-  const shouldRestartConsole = proxyDirty.value;
-  const shouldReloadRemoteBrokers = brokerDirty.value && !shouldRestartConsole;
-  configBusy.value = true;
-  try {
-    await writeProxyConfig(proxyConfigText.value);
-    await writeBrokerConfig(brokerConfigText.value);
+    const tasks: Promise<void>[] = [];
+    if (proxyDirty.value) {
+      tasks.push(writeProfileProxyConfig(profileName, proxyConfigText.value));
+    }
+    if (brokerDirty.value) {
+      tasks.push(writeProfileBrokerConfig(profileName, brokerConfigText.value));
+    }
+    await Promise.all(tasks);
     proxyOriginal.value = proxyConfigText.value;
     brokerOriginal.value = brokerConfigText.value;
-    if (shouldRestartConsole) {
-      await restartConsole();
-      showConfigMessage('已保存并重启 console，同步全部目标。');
-    } else if (shouldReloadRemoteBrokers) {
-      await reloadRemoteBrokersWithLog();
-    } else {
-      showConfigMessage('配置未改动。', 'info');
-    }
+    showConfigMessage('配置已保存。');
   } catch (err) {
-    showConfigMessage(`保存并应用失败：${String(err)}`, 'error');
+    showConfigMessage(`保存配置失败：${String(err)}`, 'error');
   } finally {
     configBusy.value = false;
   }
 }
 
-function requestSaveAndApply() {
-  if (configBusy.value) {
+function requestApplyConfig() {
+  if (configBusy.value || configLoading.value) {
     return;
   }
-  if (brokerDirty.value) {
+  if (!selectedProfile.value) {
+    showConfigMessage('请先选择环境。', 'warning');
+    return;
+  }
+  if (proxyDirty.value || brokerDirty.value) {
+    showConfigMessage('配置有未保存改动，请先保存再应用。', 'warning');
+    return;
+  }
+  const switching = selectedProfile.value !== activeProfile.value;
+  const brokerChanged =
+    brokerApplied.value !== null && brokerApplied.value !== brokerConfigText.value;
+  if (!switching && brokerChanged) {
     confirmApplyOpen.value = true;
     return;
   }
-  void saveAndApply();
+  void applyConfig();
 }
 
 function cancelApplyConfirm() {
@@ -446,7 +655,59 @@ function cancelApplyConfirm() {
 
 function confirmApply() {
   confirmApplyOpen.value = false;
-  void saveAndApply();
+  void applyConfig();
+}
+
+async function applyConfig() {
+  if (configBusy.value || configLoading.value) {
+    return;
+  }
+  const profileName = selectedProfile.value;
+  if (!profileName) {
+    showConfigMessage('请先选择环境。', 'warning');
+    return;
+  }
+  if (proxyDirty.value || brokerDirty.value) {
+    showConfigMessage('配置有未保存改动，请先保存再应用。', 'warning');
+    return;
+  }
+  const switching = profileName !== activeProfile.value;
+  const proxyChanged = proxyApplied.value !== null && proxyApplied.value !== proxyConfigText.value;
+  const brokerChanged = brokerApplied.value !== null && brokerApplied.value !== brokerConfigText.value;
+  const shouldRestartConsole = switching || proxyChanged;
+  const shouldReloadRemoteBrokers = brokerChanged;
+  configBusy.value = true;
+  try {
+    if (switching) {
+      await selectProfile(profileName);
+      activeProfile.value = profileName;
+    }
+    if (shouldRestartConsole) {
+      const message = shouldReloadRemoteBrokers
+        ? undefined
+        : switching
+          ? `已切换到环境 ${profileName}。`
+          : '本地配置已应用，console 已重启。';
+      await restartConsoleWithLog(message);
+      proxyApplied.value = proxyConfigText.value;
+    }
+    if (shouldReloadRemoteBrokers) {
+      const message = switching
+        ? `已切换到环境 ${profileName}，远端 broker 已重启。`
+        : '远端配置已应用，远端 broker 已重启。';
+      await reloadRemoteBrokersWithLog(message);
+      brokerApplied.value = brokerConfigText.value;
+    } else if (switching) {
+      brokerApplied.value = brokerConfigText.value;
+    }
+    if (!shouldRestartConsole && !shouldReloadRemoteBrokers) {
+      showConfigMessage('配置未改动。', 'info');
+    }
+  } catch (err) {
+    showConfigMessage(`应用失败：${String(err)}`, 'error');
+  } finally {
+    configBusy.value = false;
+  }
 }
 
 function closeLogModal() {
@@ -557,12 +818,25 @@ watch(
       confirmApplyOpen.value = false;
       logModalOpen.value = false;
       logStatusMessage.value = '';
+      logContext.value = 'remote-broker';
+      profiles.value = [];
+      activeProfile.value = null;
+      selectedProfile.value = null;
+      pendingProfile.value = null;
+      switchProfileOpen.value = false;
+      createProfileOpen.value = false;
+      createProfileName.value = '';
+      deleteProfileOpen.value = false;
+      deleteProfileName.value = null;
+      refreshConfirmOpen.value = false;
       proxyConfig.value = null;
       brokerConfig.value = null;
       proxyConfigText.value = '';
       brokerConfigText.value = '';
       proxyOriginal.value = '';
       brokerOriginal.value = '';
+      proxyApplied.value = null;
+      brokerApplied.value = null;
       logHasOutput.value = false;
       logOffset.value = 0;
       activeTab.value = 'general';
@@ -839,29 +1113,60 @@ watch(
                 <n-alert v-else-if="configError" type="error" :bordered="false">
                   加载失败：{{ configError }}
                 </n-alert>
-                <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">
-                  <div class="flex flex-col gap-2 min-h-0 flex-1">
-                    <div class="flex items-center justify-between text-sm">
-                      <div>
-                        <div class="font-medium">本地代理配置</div>
-                        <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
-                      </div>
-                      <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
+                <div v-else class="flex flex-col gap-3 min-h-0 flex-1">
+                  <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
+                    <div>
+                      <div class="font-medium">环境</div>
+                      <div class="text-xs text-foreground-muted">选择需要编辑的配置</div>
                     </div>
-                    <div class="flex-1 min-h-0">
-                      <MonacoEditor v-model="proxyConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
+                    <div class="flex items-center gap-2">
+                      <n-select
+                        :value="selectedProfile"
+                        :options="profileOptions"
+                        size="small"
+                        class="w-40"
+                        placeholder="请选择环境"
+                        :disabled="configBusy || logModalOpen || configLoading"
+                        @update:value="requestProfileChange"
+                      />
+                      <n-button size="small" :disabled="configBusy || logModalOpen || configLoading" @click="openCreateProfile">
+                        新建
+                      </n-button>
+                      <n-button
+                        size="small"
+                        quaternary
+                        :disabled="configBusy || logModalOpen || configLoading || !canDeleteProfile"
+                        @click="openDeleteProfile"
+                      >
+                        删除
+                      </n-button>
                     </div>
                   </div>
 
-                  <div class="flex flex-col gap-2 min-h-0 flex-1">
-                    <div class="flex items-center justify-between text-sm">
-                      <div>
-                        <div class="font-medium">远端 broker 配置（源文件）</div>
-                        <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">
+                    <div class="flex flex-col gap-2 min-h-0 flex-1">
+                      <div class="flex items-center justify-between text-sm">
+                        <div>
+                          <div class="font-medium">本地代理配置</div>
+                          <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
+                        </div>
+                        <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
+                      </div>
+                      <div class="flex-1 min-h-0">
+                        <MonacoEditor v-model="proxyConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
                       </div>
                     </div>
-                    <div class="flex-1 min-h-0">
-                      <MonacoEditor v-model="brokerConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
+
+                    <div class="flex flex-col gap-2 min-h-0 flex-1">
+                      <div class="flex items-center justify-between text-sm">
+                        <div>
+                          <div class="font-medium">远端 broker 配置（源文件）</div>
+                          <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
+                        </div>
+                      </div>
+                      <div class="flex-1 min-h-0">
+                        <MonacoEditor v-model="brokerConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -880,11 +1185,26 @@ watch(
 
           <div v-else class="mt-4 flex items-center justify-between gap-3">
             <div class="text-xs text-foreground-muted">
-              本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
+              当前环境 {{ activeProfile || '-' }} · 已选择 {{ selectedProfile || '-' }} · 本地配置
+              {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
             </div>
             <div class="flex items-center gap-2">
+              <n-button
+                quaternary
+                :disabled="configBusy || logModalOpen || configLoading"
+                @click="requestRefreshConfig"
+              >
+                刷新
+              </n-button>
               <n-button :disabled="configBusy || logModalOpen" @click="emit('close')">取消</n-button>
-              <n-button type="primary" :disabled="configBusy" @click="requestSaveAndApply">保存并应用</n-button>
+              <n-button :disabled="configBusy || logModalOpen || configLoading" @click="saveConfigFiles">保存</n-button>
+              <n-button
+                type="primary"
+                :disabled="configBusy || logModalOpen || configLoading"
+                @click="requestApplyConfig"
+              >
+                应用
+              </n-button>
             </div>
           </div>
         </n-card>
@@ -894,12 +1214,81 @@ watch(
 
   <n-modal v-model:show="confirmApplyOpen" :mask-closable="false" :close-on-esc="true">
     <n-card size="small" class="w-[22rem]" :bordered="true">
-      <template #header>确认保存</template>
-      <div class="text-sm text-foreground-muted">远端配置修改会导致重新连接，请确认。</div>
+      <template #header>确认应用</template>
+      <div class="text-sm text-foreground-muted">远端配置应用会导致重新连接，请确认。</div>
       <template #footer>
         <div class="flex justify-end gap-2">
           <n-button @click="cancelApplyConfirm">取消</n-button>
-          <n-button type="primary" :disabled="configBusy" @click="confirmApply">继续保存</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmApply">继续应用</n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="switchProfileOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>切换配置</template>
+      <div class="text-sm text-foreground-muted">当前配置有未保存改动，切换会丢失，是否继续？</div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="cancelProfileSwitch">取消</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmProfileSwitch">
+            放弃改动并切换
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="createProfileOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>新建环境</template>
+      <div class="space-y-2">
+        <n-input v-model:value="createProfileName" size="small" placeholder="例如 dev" />
+        <div class="text-xs text-foreground-muted">名称仅支持字母、数字、- 或 _</div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="createProfileOpen = false">取消</n-button>
+          <n-button type="primary" :disabled="!createProfileValid || configBusy" @click="confirmCreateProfile">
+            创建
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="deleteProfileOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>删除环境</template>
+      <div class="space-y-2">
+        <n-select
+          v-model:value="deleteProfileName"
+          :options="deletableProfileOptions"
+          size="small"
+          placeholder="选择要删除的环境"
+        />
+        <div class="text-xs text-warning">删除后无法恢复，请谨慎操作。</div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="deleteProfileOpen = false">取消</n-button>
+          <n-button type="error" :disabled="!deleteProfileName || configBusy" @click="confirmDeleteProfile">
+            确认删除
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="refreshConfirmOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>刷新配置</template>
+      <div class="text-sm text-foreground-muted">当前配置有未保存改动，刷新会丢失，是否继续？</div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="cancelRefreshConfirm">取消</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmRefresh">继续刷新</n-button>
         </div>
       </template>
     </n-card>
@@ -907,7 +1296,7 @@ watch(
 
   <n-modal v-model:show="logModalOpen" :mask-closable="false" :close-on-esc="false">
     <n-card size="small" class="w-[36rem]" :bordered="true">
-      <template #header>远端重启日志</template>
+      <template #header>{{ logTitle }}</template>
       <div class="text-sm text-foreground-muted">
         {{ logStatusMessage || '正在准备日志...' }}
       </div>
@@ -924,7 +1313,7 @@ watch(
         <div class="flex items-center justify-between gap-3">
           <div class="flex items-center gap-2 text-xs text-foreground-muted">
             <n-spin v-if="logInProgress" size="small" />
-            <span>{{ logInProgress ? '正在重启远端 broker…' : '远端重启流程已结束' }}</span>
+            <span>{{ logFooterText }}</span>
           </div>
           <n-button type="primary" :disabled="logInProgress" @click="closeLogModal">完成</n-button>
         </div>
