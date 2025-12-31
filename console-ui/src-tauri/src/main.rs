@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -56,6 +56,13 @@ struct ConfigFilePayload {
     content: String,
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LogChunk {
+    content: String,
+    next_offset: u64,
+}
+
 #[derive(Deserialize)]
 struct ProxyConfigOverrides {
     broker_config_path: Option<String>,
@@ -64,6 +71,14 @@ struct ProxyConfigOverrides {
 struct ResolvedBrokerConfig {
     path: PathBuf,
     source: String,
+}
+
+fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| err.to_string())?;
+    Ok(config_dir.join("logs").join("console.log"))
 }
 
 const CONSOLE_HTTP_HOST: &str = "127.0.0.1:19309";
@@ -131,6 +146,7 @@ fn main() {
             proxy_approve,
             proxy_deny,
             proxy_reload_remote_brokers,
+            read_console_log,
             ai_risk_assess,
             start_console_stream,
             terminal_open,
@@ -564,6 +580,39 @@ fn write_broker_config(
     };
     let resolved = resolve_broker_config_path(&app, &proxy_path, &config_dir)?;
     write_config_file(&resolved.path, &content)
+}
+
+#[tauri::command]
+fn read_console_log(offset: u64, max_bytes: u64, app: AppHandle) -> Result<LogChunk, String> {
+    let path = console_log_path(&app)?;
+    if !path.exists() {
+        return Ok(LogChunk {
+            content: String::new(),
+            next_offset: 0,
+        });
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open(&path)
+        .map_err(|err| err.to_string())?;
+    let len = file.metadata().map_err(|err| err.to_string())?.len();
+    let start = if offset > len { 0 } else { offset };
+    file.seek(SeekFrom::Start(start))
+        .map_err(|err| err.to_string())?;
+    if max_bytes == 0 {
+        return Ok(LogChunk {
+            content: String::new(),
+            next_offset: len,
+        });
+    }
+    let capped = max_bytes.min(256 * 1024) as usize;
+    let mut buffer = vec![0u8; capped];
+    let read = file.read(&mut buffer).map_err(|err| err.to_string())?;
+    buffer.truncate(read);
+    Ok(LogChunk {
+        content: String::from_utf8_lossy(&buffer).to_string(),
+        next_offset: start + read as u64,
+    })
 }
 
 #[tauri::command]

@@ -34,6 +34,11 @@ export type TerminalErrorEvent = {
   message: string;
 };
 
+export type ConsoleLogChunk = {
+  content: string;
+  nextOffset: number;
+};
+
 function joinUrl(base: string, path: string) {
   const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -240,6 +245,13 @@ export async function reloadRemoteBrokers() {
     throw new Error('config editor only available in Tauri');
   }
   await invoke('proxy_reload_remote_brokers');
+}
+
+export async function readConsoleLog(offset: number, maxBytes: number): Promise<ConsoleLogChunk> {
+  if (!TAURI_AVAILABLE) {
+    return { content: '', nextOffset: 0 };
+  }
+  return invoke<ConsoleLogChunk>('read_console_log', { offset, maxBytes });
 }
 
 export async function terminalOpen(name: string, cols: number, rows: number, term?: string) {

@@ -16,6 +16,7 @@ import {
 } from 'naive-ui';
 import {
   readBrokerConfig,
+  readConsoleLog,
   readProxyConfig,
   reloadRemoteBrokers,
   restartConsole,
@@ -79,6 +80,13 @@ const brokerConfigText = ref('');
 const proxyOriginal = ref('');
 const brokerOriginal = ref('');
 const configLoaded = ref(false);
+const logModalOpen = ref(false);
+const logInProgress = ref(false);
+const logStatusMessage = ref('');
+const logContent = ref('');
+const logOffset = ref(0);
+const logViewportRef = ref<HTMLDivElement | null>(null);
+let logPollTimer: number | null = null;
 let configMessageTimer: number | null = null;
 const cardShellRef = ref<HTMLDivElement | null>(null);
 const cardInnerRef = ref<HTMLDivElement | null>(null);
@@ -193,6 +201,81 @@ function showConfigMessage(message: string, type: 'success' | 'error' | 'warning
   }, 4000);
 }
 
+function resetLogState() {
+  logContent.value = '';
+  logOffset.value = 0;
+  logStatusMessage.value = '';
+}
+
+function appendLogChunk(chunk: string) {
+  if (!chunk) {
+    return;
+  }
+  logContent.value += chunk;
+  if (logContent.value.length > 20000) {
+    logContent.value = logContent.value.slice(-20000);
+  }
+  void nextTick(() => {
+    const viewport = logViewportRef.value;
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
+  });
+}
+
+async function pollConsoleLog() {
+  try {
+    const chunk = await readConsoleLog(logOffset.value, 4096);
+    logOffset.value = chunk.nextOffset;
+    appendLogChunk(chunk.content);
+  } catch {
+    // ignore polling errors; next tick may succeed
+  }
+}
+
+async function startLogPolling() {
+  resetLogState();
+  logInProgress.value = true;
+  logModalOpen.value = true;
+  try {
+    const chunk = await readConsoleLog(0, 0);
+    logOffset.value = chunk.nextOffset;
+  } catch {
+    logOffset.value = 0;
+  }
+  await pollConsoleLog();
+  if (logPollTimer !== null) {
+    return;
+  }
+  logPollTimer = window.setInterval(() => {
+    void pollConsoleLog();
+  }, 800);
+}
+
+function stopLogPolling() {
+  if (logPollTimer !== null) {
+    window.clearInterval(logPollTimer);
+    logPollTimer = null;
+  }
+  logInProgress.value = false;
+}
+
+async function reloadRemoteBrokersWithLog() {
+  logStatusMessage.value = '正在重启远端 broker，请稍候…';
+  await startLogPolling();
+  try {
+    await reloadRemoteBrokers();
+    logStatusMessage.value = '远端 broker 重启完成。';
+    showConfigMessage('已保存并重启远端 broker，同步全部目标。');
+  } catch (err) {
+    const message = `远端 broker 重启失败：${String(err)}`;
+    logStatusMessage.value = message;
+    showConfigMessage(`保存并应用失败：${String(err)}`, 'error');
+  } finally {
+    stopLogPolling();
+  }
+}
+
 async function loadConfigCenter() {
   if (configLoading.value) {
     return;
@@ -267,8 +350,7 @@ async function saveAndApply() {
       await restartConsole();
       showConfigMessage('已保存并重启 console，同步全部目标。');
     } else if (shouldReloadRemoteBrokers) {
-      await reloadRemoteBrokers();
-      showConfigMessage('已保存并重启远端 broker，同步全部目标。');
+      await reloadRemoteBrokersWithLog();
     } else {
       showConfigMessage('配置未改动。', 'info');
     }
@@ -297,6 +379,13 @@ function cancelApplyConfirm() {
 function confirmApply() {
   confirmApplyOpen.value = false;
   void saveAndApply();
+}
+
+function closeLogModal() {
+  if (logInProgress.value) {
+    return;
+  }
+  logModalOpen.value = false;
 }
 
 function captureShortcut(field: ShortcutField, event: KeyboardEvent) {
@@ -366,6 +455,7 @@ onBeforeUnmount(() => {
   if (configMessageTimer !== null) {
     window.clearTimeout(configMessageTimer);
   }
+  stopLogPolling();
   stopCardObserver();
 });
 
@@ -396,17 +486,30 @@ watch(
       configMessage.value = null;
       configMessageType.value = 'success';
       confirmApplyOpen.value = false;
+      logModalOpen.value = false;
+      logStatusMessage.value = '';
       proxyConfig.value = null;
       brokerConfig.value = null;
       proxyConfigText.value = '';
       brokerConfigText.value = '';
       proxyOriginal.value = '';
       brokerOriginal.value = '';
+      logContent.value = '';
+      logOffset.value = 0;
       activeTab.value = 'general';
       activeShortcut.value = null;
       cardHeight.value = null;
       cardShellReady.value = false;
       stopCardObserver();
+    }
+  }
+);
+
+watch(
+  () => logModalOpen.value,
+  (open) => {
+    if (!open) {
+      stopLogPolling();
     }
   }
 );
@@ -425,8 +528,8 @@ watch(
   <n-modal
     :show="hasOpen"
     :mask-closable="false"
-    :close-on-esc="true"
-    @update:show="(value) => { if (!value) emit('close'); }"
+    :close-on-esc="!logModalOpen"
+    @update:show="(value) => { if (!value && !logModalOpen) emit('close'); }"
   >
     <div
       ref="cardShellRef"
@@ -438,7 +541,7 @@ watch(
         <n-card :bordered="true" :style="cardStyle" :content-style="cardContentStyle" size="large">
           <template #header>设置</template>
           <template #header-extra>
-            <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
+            <n-button text :disabled="logModalOpen" @click="emit('close')" aria-label="关闭" title="关闭">
               <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -719,6 +822,30 @@ watch(
         <div class="flex justify-end gap-2">
           <n-button @click="cancelApplyConfirm">取消</n-button>
           <n-button type="primary" :disabled="configBusy" @click="confirmApply">继续保存</n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="logModalOpen" :mask-closable="false" :close-on-esc="false">
+    <n-card size="small" class="w-[36rem]" :bordered="true">
+      <template #header>远端重启日志</template>
+      <div class="text-sm text-foreground-muted">
+        {{ logStatusMessage || '正在准备日志...' }}
+      </div>
+      <div
+        ref="logViewportRef"
+        class="mt-3 h-64 overflow-auto rounded border border-border bg-panel-muted p-3 text-xs font-mono whitespace-pre-wrap"
+      >
+        {{ logContent || '暂无日志输出' }}
+      </div>
+      <template #footer>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2 text-xs text-foreground-muted">
+            <n-spin v-if="logInProgress" size="small" />
+            <span>{{ logInProgress ? '正在重启远端 broker…' : '远端重启流程已结束' }}</span>
+          </div>
+          <n-button type="primary" :disabled="logInProgress" @click="closeLogModal">完成</n-button>
         </div>
       </template>
     </n-card>
