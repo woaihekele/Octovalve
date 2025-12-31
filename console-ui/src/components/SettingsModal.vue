@@ -63,6 +63,7 @@ const configLoading = ref(false);
 const configBusy = ref(false);
 const configError = ref<string | null>(null);
 const configMessage = ref<string | null>(null);
+const confirmApplyOpen = ref(false);
 const proxyConfig = ref<ConfigFilePayload | null>(null);
 const brokerConfig = ref<ConfigFilePayload | null>(null);
 const proxyConfigText = ref('');
@@ -260,6 +261,26 @@ async function saveAndApply() {
   }
 }
 
+function requestSaveAndApply() {
+  if (configBusy.value) {
+    return;
+  }
+  if (brokerDirty.value) {
+    confirmApplyOpen.value = true;
+    return;
+  }
+  void saveAndApply();
+}
+
+function cancelApplyConfirm() {
+  confirmApplyOpen.value = false;
+}
+
+function confirmApply() {
+  confirmApplyOpen.value = false;
+  void saveAndApply();
+}
+
 function captureShortcut(field: ShortcutField, event: KeyboardEvent) {
   if (event.code === 'Escape') {
     activeShortcut.value = null;
@@ -355,6 +376,7 @@ watch(
       configLoaded.value = false;
       configError.value = null;
       configMessage.value = null;
+      confirmApplyOpen.value = false;
       proxyConfig.value = null;
       brokerConfig.value = null;
       proxyConfigText.value = '';
@@ -662,15 +684,25 @@ watch(
               本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
             </div>
             <div class="flex items-center gap-2">
-              <n-button :disabled="configBusy" @click="loadConfigCenter">刷新</n-button>
-              <n-button :disabled="configBusy || !proxyDirty" @click="saveProxyConfig">保存本地</n-button>
-              <n-button :disabled="configBusy || !brokerDirty" @click="saveBrokerConfig">保存远端</n-button>
-              <n-button type="primary" :disabled="configBusy" @click="saveAndApply">保存并应用</n-button>
+              <n-button type="primary" :disabled="configBusy" @click="requestSaveAndApply">保存并应用</n-button>
             </div>
           </div>
         </n-card>
       </div>
     </div>
+  </n-modal>
+
+  <n-modal v-model:show="confirmApplyOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>确认保存</template>
+      <div class="text-sm text-foreground-muted">远端配置修改会导致重新连接，请确认。</div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="cancelApplyConfirm">取消</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmApply">继续保存</n-button>
+        </div>
+      </template>
+    </n-card>
   </n-modal>
 </template>
 
