@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue';
+import { Terminal, type ITheme } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
+import 'xterm/css/xterm.css';
 import {
   NAlert,
   NButton,
@@ -83,10 +86,13 @@ const configLoaded = ref(false);
 const logModalOpen = ref(false);
 const logInProgress = ref(false);
 const logStatusMessage = ref('');
-const logContent = ref('');
+const logHasOutput = ref(false);
 const logOffset = ref(0);
-const logViewportRef = ref<HTMLDivElement | null>(null);
+const logTerminalRef = ref<HTMLDivElement | null>(null);
 let logPollTimer: number | null = null;
+let logTerminal: Terminal | null = null;
+let logFitAddon: FitAddon | null = null;
+let logResizeObserver: ResizeObserver | null = null;
 let configMessageTimer: number | null = null;
 const cardShellRef = ref<HTMLDivElement | null>(null);
 const cardInnerRef = ref<HTMLDivElement | null>(null);
@@ -202,25 +208,73 @@ function showConfigMessage(message: string, type: 'success' | 'error' | 'warning
 }
 
 function resetLogState() {
-  logContent.value = '';
+  logHasOutput.value = false;
   logOffset.value = 0;
   logStatusMessage.value = '';
+  logTerminal?.reset();
+}
+
+function resolveRgbVar(name: string, fallback: string) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return `rgb(${fallback})`;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = raw || fallback;
+  if (value.startsWith('rgb')) {
+    return value;
+  }
+  const normalized = value.replace(/\s+/g, ', ');
+  return `rgb(${normalized})`;
+}
+
+function resolveLogTheme(): ITheme {
+  return {
+    background: resolveRgbVar('--color-panel-muted', '30 41 59'),
+    foreground: resolveRgbVar('--color-text', '226 232 240'),
+    cursor: resolveRgbVar('--color-accent', '99 102 241'),
+    selectionBackground: 'rgba(99, 102, 241, 0.35)',
+  };
+}
+
+function ensureLogTerminal() {
+  if (logTerminal || !logTerminalRef.value) {
+    return;
+  }
+  logTerminal = new Terminal({
+    disableStdin: true,
+    convertEol: true,
+    fontSize: 12,
+    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+    theme: resolveLogTheme(),
+    scrollback: 2000,
+  });
+  logFitAddon = new FitAddon();
+  logTerminal.loadAddon(logFitAddon);
+  logTerminal.open(logTerminalRef.value);
+  logFitAddon.fit();
+  logResizeObserver = new ResizeObserver(() => {
+    logFitAddon?.fit();
+  });
+  logResizeObserver.observe(logTerminalRef.value);
+}
+
+function applyLogTheme() {
+  if (!logTerminal) {
+    return;
+  }
+  logTerminal.options.theme = resolveLogTheme();
+  if (logTerminal.rows > 0) {
+    logTerminal.refresh(0, logTerminal.rows - 1);
+  }
 }
 
 function appendLogChunk(chunk: string) {
   if (!chunk) {
     return;
   }
-  logContent.value += chunk;
-  if (logContent.value.length > 20000) {
-    logContent.value = logContent.value.slice(-20000);
-  }
-  void nextTick(() => {
-    const viewport = logViewportRef.value;
-    if (viewport) {
-      viewport.scrollTop = viewport.scrollHeight;
-    }
-  });
+  ensureLogTerminal();
+  logTerminal?.write(chunk);
+  logHasOutput.value = true;
 }
 
 async function pollConsoleLog() {
@@ -237,6 +291,10 @@ async function startLogPolling() {
   resetLogState();
   logInProgress.value = true;
   logModalOpen.value = true;
+  await nextTick();
+  ensureLogTerminal();
+  applyLogTheme();
+  logFitAddon?.fit();
   try {
     const chunk = await readConsoleLog(0, 0);
     logOffset.value = chunk.nextOffset;
@@ -258,6 +316,16 @@ function stopLogPolling() {
     logPollTimer = null;
   }
   logInProgress.value = false;
+}
+
+function disposeLogTerminal() {
+  if (logResizeObserver) {
+    logResizeObserver.disconnect();
+    logResizeObserver = null;
+  }
+  logFitAddon = null;
+  logTerminal?.dispose();
+  logTerminal = null;
 }
 
 async function reloadRemoteBrokersWithLog() {
@@ -456,6 +524,7 @@ onBeforeUnmount(() => {
     window.clearTimeout(configMessageTimer);
   }
   stopLogPolling();
+  disposeLogTerminal();
   stopCardObserver();
 });
 
@@ -494,7 +563,7 @@ watch(
       brokerConfigText.value = '';
       proxyOriginal.value = '';
       brokerOriginal.value = '';
-      logContent.value = '';
+      logHasOutput.value = false;
       logOffset.value = 0;
       activeTab.value = 'general';
       activeShortcut.value = null;
@@ -510,7 +579,15 @@ watch(
   (open) => {
     if (!open) {
       stopLogPolling();
+      disposeLogTerminal();
     }
+  }
+);
+
+watch(
+  () => props.resolvedTheme,
+  () => {
+    applyLogTheme();
   }
 );
 
@@ -806,6 +883,7 @@ watch(
               本地配置 {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
             </div>
             <div class="flex items-center gap-2">
+              <n-button :disabled="configBusy || logModalOpen" @click="emit('close')">取消</n-button>
               <n-button type="primary" :disabled="configBusy" @click="requestSaveAndApply">保存并应用</n-button>
             </div>
           </div>
@@ -833,11 +911,14 @@ watch(
       <div class="text-sm text-foreground-muted">
         {{ logStatusMessage || '正在准备日志...' }}
       </div>
-      <div
-        ref="logViewportRef"
-        class="mt-3 h-64 overflow-auto rounded border border-border bg-panel-muted p-3 text-xs font-mono whitespace-pre-wrap"
-      >
-        {{ logContent || '暂无日志输出' }}
+      <div class="relative mt-3 h-64 overflow-hidden rounded border border-border bg-panel-muted">
+        <div ref="logTerminalRef" class="h-full w-full" />
+        <div
+          v-if="!logHasOutput"
+          class="absolute inset-0 flex items-center justify-center text-xs text-foreground-muted pointer-events-none"
+        >
+          暂无日志输出
+        </div>
       </div>
       <template #footer>
         <div class="flex items-center justify-between gap-3">
