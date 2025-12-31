@@ -31,13 +31,25 @@ const emit = defineEmits<{
 }>();
 
 const activeTab = ref<ListTab>('pending');
-const selectedIndex = ref(0);
+const selectedId = ref<string | null>(null);
 const isFullScreen = ref(false);
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
 const currentList = computed(() => (activeTab.value === 'pending' ? pendingList.value : historyList.value));
-const selectedItem = computed(() => currentList.value[selectedIndex.value] ?? null);
+const selectedIndex = computed(() => {
+  if (!selectedId.value) {
+    return currentList.value.length > 0 ? 0 : -1;
+  }
+  return currentList.value.findIndex((item) => item.id === selectedId.value);
+});
+const selectedItem = computed(() => {
+  const index = selectedIndex.value;
+  if (index < 0) {
+    return null;
+  }
+  return currentList.value[index] ?? null;
+});
 const hostDisplay = computed(() => {
   const hostname = props.target.hostname?.trim();
   const ip = props.target.ip?.trim();
@@ -50,7 +62,7 @@ const hostDisplay = computed(() => {
 watch(
   () => [props.target.name, activeTab.value],
   () => {
-    selectedIndex.value = 0;
+    selectByIndex(0);
   }
 );
 
@@ -58,19 +70,19 @@ watch(
   () => props.pendingJumpToken,
   () => {
     activeTab.value = 'pending';
-    selectedIndex.value = 0;
+    selectByIndex(0);
   }
 );
 
 watch(
-  () => currentList.value.length,
-  (length) => {
-    if (length === 0) {
-      selectedIndex.value = 0;
+  () => currentList.value,
+  (list) => {
+    if (list.length === 0) {
+      selectedId.value = null;
       return;
     }
-    if (selectedIndex.value >= length) {
-      selectedIndex.value = length - 1;
+    if (!selectedId.value || !list.some((item) => item.id === selectedId.value)) {
+      selectedId.value = list[0].id;
     }
   }
 );
@@ -155,6 +167,11 @@ function refreshRisk(id: string) {
   emit('refresh-risk', { target: props.target.name, id });
 }
 
+function selectByIndex(index: number) {
+  const item = currentList.value[index];
+  selectedId.value = item ? item.id : null;
+}
+
 function buildOutput(result: ResultSnapshot) {
   const stdout = result.stdout?.trim();
   const stderr = result.stderr?.trim();
@@ -182,13 +199,21 @@ function handleKeyDown(event: KeyboardEvent) {
 
   if (key === 'j' || key === 'ArrowDown') {
     event.preventDefault();
-    selectedIndex.value = Math.min(selectedIndex.value + 1, currentList.value.length - 1);
+    if (currentList.value.length === 0) {
+      return;
+    }
+    const nextIndex = Math.min(Math.max(selectedIndex.value, 0) + 1, currentList.value.length - 1);
+    selectByIndex(nextIndex);
     return;
   }
 
   if (key === 'k' || key === 'ArrowUp') {
     event.preventDefault();
-    selectedIndex.value = Math.max(selectedIndex.value - 1, 0);
+    if (currentList.value.length === 0) {
+      return;
+    }
+    const nextIndex = Math.max(Math.max(selectedIndex.value, 0) - 1, 0);
+    selectByIndex(nextIndex);
     return;
   }
 
@@ -334,11 +359,11 @@ function handleTerminalToggle() {
               v-for="(item, index) in currentList"
               :key="item.id"
               class="p-4 border-b border-border cursor-pointer transition-colors"
-              :class="index === selectedIndex ? 'bg-accent/20 border-l-4 border-l-accent' : 'hover:bg-panel-muted/30 border-l-4 border-l-transparent'"
-              @click="selectedIndex = index"
+              :class="item.id === selectedId ? 'bg-accent/20 border-l-4 border-l-accent' : 'hover:bg-panel-muted/30 border-l-4 border-l-transparent'"
+              @click="selectedId = item.id"
             >
               <div class="flex justify-between items-start mb-1 gap-2">
-                <span class="font-mono text-sm line-clamp-1" :class="index === selectedIndex ? 'text-accent' : 'text-foreground'">
+                <span class="font-mono text-sm line-clamp-1" :class="item.id === selectedId ? 'text-accent' : 'text-foreground'">
                   {{ item.raw_command }}
                 </span>
                 <span
