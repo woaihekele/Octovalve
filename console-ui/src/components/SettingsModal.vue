@@ -965,8 +965,7 @@ watch(
   display: grid;
   gap: 0.75rem;
   align-items: center;
-  min-height: 2.5rem;
-  max-height: 2.5rem;
+  height: 2.5rem;
 }
 
 @media (min-width: 640px) {
