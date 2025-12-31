@@ -123,7 +123,8 @@ const aiRiskMap = ref<Record<string, AiRiskEntry>>(loadAiRiskCache());
 const aiQueue = ref<AiTask[]>([]);
 const aiQueuedKeys = new Set<string>();
 const aiInFlightKeys = new Set<string>();
-let aiRunning = 0;
+const aiRunning = ref(0);
+let aiPumpScheduled = false;
 let aiPersistTimer: number | null = null;
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
@@ -460,31 +461,48 @@ function enqueueAiTask(targetName: string, request: RequestSnapshot) {
   aiQueuedKeys.add(key);
   aiQueue.value = [...aiQueue.value, { target: targetName, request }];
   setAiRisk(key, { status: 'pending', updatedAt: Date.now() });
-  processAiQueue();
+  scheduleAiQueue();
+}
+
+function scheduleAiQueue() {
+  if (aiPumpScheduled) {
+    return;
+  }
+  aiPumpScheduled = true;
+  Promise.resolve().then(() => {
+    aiPumpScheduled = false;
+    processAiQueue();
+  });
+}
+
+function resetAiQueue() {
+  aiQueue.value = [];
+  aiQueuedKeys.clear();
 }
 
 function processAiQueue() {
   if (!settings.value.ai.enabled) {
-    aiQueue.value = [];
-    aiQueuedKeys.clear();
+    resetAiQueue();
     return;
   }
   const maxConcurrency = Math.max(1, settings.value.ai.maxConcurrency);
-  while (aiRunning < maxConcurrency && aiQueue.value.length > 0) {
-    const [task, ...rest] = aiQueue.value;
-    aiQueue.value = rest;
+  while (aiRunning.value < maxConcurrency && aiQueue.value.length > 0) {
+    const task = aiQueue.value.shift();
+    if (!task) {
+      break;
+    }
     const key = buildAiKey(task.target, task.request.id);
     aiQueuedKeys.delete(key);
     aiInFlightKeys.add(key);
-    aiRunning += 1;
+    aiRunning.value += 1;
     void runAiTask(task)
       .catch(() => {
         // errors handled in runAiTask
       })
       .finally(() => {
-        aiRunning -= 1;
+        aiRunning.value -= 1;
         aiInFlightKeys.delete(key);
-        processAiQueue();
+        scheduleAiQueue();
       });
   }
 }
