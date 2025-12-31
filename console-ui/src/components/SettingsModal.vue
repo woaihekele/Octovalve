@@ -14,7 +14,14 @@ import {
   NTabs,
   type SelectOption,
 } from 'naive-ui';
-import { readBrokerConfig, readProxyConfig, restartConsole, writeBrokerConfig, writeProxyConfig } from '../api';
+import {
+  readBrokerConfig,
+  readProxyConfig,
+  reloadRemoteBrokers,
+  restartConsole,
+  writeBrokerConfig,
+  writeProxyConfig,
+} from '../api';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { AppSettings, ConfigFilePayload } from '../types';
@@ -246,14 +253,23 @@ async function saveAndApply() {
   if (configBusy.value) {
     return;
   }
+  const shouldRestartConsole = proxyDirty.value;
+  const shouldReloadRemoteBrokers = brokerDirty.value && !shouldRestartConsole;
   configBusy.value = true;
   try {
     await writeProxyConfig(proxyConfigText.value);
     await writeBrokerConfig(brokerConfigText.value);
     proxyOriginal.value = proxyConfigText.value;
     brokerOriginal.value = brokerConfigText.value;
-    await restartConsole();
-    showConfigMessage('已保存并重启 console，同步全部目标。');
+    if (shouldRestartConsole) {
+      await restartConsole();
+      showConfigMessage('已保存并重启 console，同步全部目标。');
+    } else if (shouldReloadRemoteBrokers) {
+      await reloadRemoteBrokers();
+      showConfigMessage('已保存并重启远端 broker，同步全部目标。');
+    } else {
+      showConfigMessage('配置未改动。');
+    }
   } catch (err) {
     showConfigMessage(`保存并应用失败：${String(err)}`);
   } finally {

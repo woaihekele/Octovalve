@@ -235,6 +235,13 @@ export async function restartConsole() {
   await invoke('restart_console');
 }
 
+export async function reloadRemoteBrokers() {
+  if (!TAURI_AVAILABLE) {
+    throw new Error('config editor only available in Tauri');
+  }
+  await invoke('proxy_reload_remote_brokers');
+}
+
 export async function terminalOpen(name: string, cols: number, rows: number, term?: string) {
   if (!TAURI_AVAILABLE) {
     throw new Error('terminal only available in Tauri');

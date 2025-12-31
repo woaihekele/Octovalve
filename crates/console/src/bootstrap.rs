@@ -225,6 +225,11 @@ pub(crate) async fn stop_remote_broker(
     ));
     let stop_cmd = format!("pkill -f {} >/dev/null 2>&1 || true", pgrep_pattern);
     run_ssh_with_timeout(target, &stop_cmd, REMOTE_STOP_TIMEOUT).await?;
+    let wait_cmd = format!(
+        "i=0; while [ $i -lt 25 ]; do pgrep -f {} >/dev/null 2>&1 || exit 0; i=$((i+1)); sleep 0.2; done; exit 1",
+        pgrep_pattern
+    );
+    run_ssh_with_timeout(target, &wait_cmd, REMOTE_STOP_TIMEOUT).await?;
     Ok(())
 }
 

@@ -8,7 +8,7 @@ mod state;
 mod terminal;
 mod tunnel;
 
-use crate::bootstrap::BootstrapConfig;
+use crate::bootstrap::{bootstrap_remote_broker, stop_remote_broker, BootstrapConfig};
 use crate::cli::Args;
 use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
@@ -16,6 +16,7 @@ use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, parse_ssh_host, ConsoleState, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
+use crate::tunnel::TargetRuntime;
 use anyhow::Context;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -46,6 +47,7 @@ use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 struct AppState {
     state: Arc<RwLock<crate::state::ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
+    bootstrap: BootstrapConfig,
 }
 
 const CONSOLE_TUNNEL_CLIENT_ID: &str = "console";
@@ -82,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
+        bootstrap: bootstrap.clone(),
     };
     spawn_target_ip_resolution(Arc::clone(&shared_state), event_tx.clone());
 
@@ -89,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/targets", get(list_targets))
         .route("/targets/:name/snapshot", get(get_snapshot))
+        .route("/targets/reload-brokers", post(reload_remote_brokers))
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
         .route("/targets/:name/terminal", get(terminal_ws_handler))
@@ -251,6 +255,50 @@ async fn deny_command(
     Ok(Json(ActionResponse {
         message: "deny queued".to_string(),
     }))
+}
+
+async fn reload_remote_brokers(State(state): State<AppState>) -> Result<Json<ActionResponse>, StatusCode> {
+    let targets = {
+        let state = state.state.read().await;
+        state.target_specs()
+    };
+    if targets.is_empty() {
+        return Ok(Json(ActionResponse {
+            message: "no targets to reload".to_string(),
+        }));
+    }
+    let bootstrap = state.bootstrap.clone();
+    let mut failures = Vec::new();
+    for spec in targets {
+        let runtime = runtime_from_spec(spec);
+        if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
+            failures.push(format!("{} stop failed: {err}", runtime.name));
+        }
+        if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
+            failures.push(format!("{} start failed: {err}", runtime.name));
+        }
+    }
+    if failures.is_empty() {
+        Ok(Json(ActionResponse {
+            message: "remote brokers reloaded".to_string(),
+        }))
+    } else {
+        warn!(event = "remote_broker.reload_failed", errors = ?failures, "remote broker reload failed");
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
+fn runtime_from_spec(spec: crate::state::TargetSpec) -> TargetRuntime {
+    TargetRuntime {
+        name: spec.name,
+        ssh: spec.ssh,
+        ssh_args: spec.ssh_args,
+        ssh_password: spec.ssh_password,
+        control_remote_addr: spec.control_remote_addr,
+        control_local_bind: spec.control_local_bind,
+        control_local_port: spec.control_local_port,
+        control_local_addr: spec.control_local_addr,
+    }
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

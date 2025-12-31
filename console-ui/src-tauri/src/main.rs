@@ -129,6 +129,7 @@ fn main() {
             proxy_fetch_snapshot,
             proxy_approve,
             proxy_deny,
+            proxy_reload_remote_brokers,
             ai_risk_assess,
             start_console_stream,
             terminal_open,
@@ -791,6 +792,11 @@ async fn proxy_deny(
 ) -> Result<(), String> {
     let path = format!("/targets/{name}/deny");
     console_post(&path, json!({ "id": id }), &log_state.app_log).await
+}
+
+#[tauri::command]
+async fn proxy_reload_remote_brokers(log_state: State<'_, AppLogState>) -> Result<(), String> {
+    console_post("/targets/reload-brokers", json!({}), &log_state.app_log).await
 }
 
 #[tauri::command]
