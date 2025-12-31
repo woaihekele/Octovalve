@@ -4,6 +4,7 @@ mod mcp;
 mod state;
 mod tunnel;
 
+use anyhow::Context;
 use clap::Parser;
 use cli::Args;
 use mcp::ProxyHandler;
@@ -13,7 +14,7 @@ use rust_mcp_sdk::schema::{
     LATEST_PROTOCOL_VERSION,
 };
 use rust_mcp_sdk::{McpServer, StdioTransport, TransportOptions};
-use state::build_proxy_state;
+use state::{build_proxy_state, ProxyState};
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,6 +43,9 @@ async fn main() -> anyhow::Result<()> {
     {
         let mut guard = state.write().await;
         guard.set_tunnel_manager(tunnel_manager.clone());
+    }
+    if let Some(manager) = tunnel_manager.clone() {
+        precheck_tunnels(Arc::clone(&state), manager, &args.client_id).await?;
     }
     spawn_shutdown_handler(Arc::clone(&state), shutdown.clone());
 
@@ -79,6 +83,35 @@ fn init_tracing() {
         .with_writer(io::stderr)
         .with_target(false);
     tracing_subscriber::registry().with(layer).init();
+}
+
+async fn precheck_tunnels(
+    state: Arc<RwLock<ProxyState>>,
+    manager: Arc<TunnelManager>,
+    client_id: &str,
+) -> anyhow::Result<()> {
+    let target_names = {
+        let state = state.read().await;
+        state.target_names()
+    };
+    for name in target_names {
+        let forward = {
+            let state = state.read().await;
+            state.forward_spec(&name)?
+        };
+        if let Some(forward) = forward {
+            tracing::info!(target = %name, "prechecking ssh tunnel forward");
+            manager
+                .ensure_forward(client_id, &forward)
+                .await
+                .with_context(|| format!("tunnel precheck failed for target {name}"))?;
+        } else {
+            tracing::info!(target = %name, "prechecking local target");
+        }
+        let mut state = state.write().await;
+        state.note_tunnel_ready(&name);
+    }
+    Ok(())
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
