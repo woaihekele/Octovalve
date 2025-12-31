@@ -257,7 +257,9 @@ async fn deny_command(
     }))
 }
 
-async fn reload_remote_brokers(State(state): State<AppState>) -> Result<Json<ActionResponse>, StatusCode> {
+async fn reload_remote_brokers(
+    State(state): State<AppState>,
+) -> Result<Json<ActionResponse>, StatusCode> {
     let targets = {
         let state = state.state.read().await;
         state.target_specs()

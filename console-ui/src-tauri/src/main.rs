@@ -99,10 +99,7 @@ struct ResolvedBrokerConfig {
 }
 
 fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| err.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
     Ok(config_dir.join("logs").join("console.log"))
 }
 
@@ -261,10 +258,7 @@ fn format_command_output(line: &[u8]) -> String {
 }
 
 fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result<(), String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| err.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
     fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
 
     let profiles = app.state::<ProfilesState>().0.lock().unwrap().clone();
@@ -630,16 +624,9 @@ fn prepare_profiles(
         load_profiles_file(&index_path)?
     } else {
         let legacy_path = legacy_proxy_config_path(app)?;
-        let app_config_dir = app
-            .path()
-            .app_config_dir()
-            .map_err(|err| err.to_string())?;
-        let default_profile = create_default_profile(
-            app,
-            &profiles_base,
-            &legacy_path,
-            &app_config_dir,
-        )?;
+        let app_config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
+        let default_profile =
+            create_default_profile(app, &profiles_base, &legacy_path, &app_config_dir)?;
         let profiles = ProfilesFile {
             current: default_profile.name.clone(),
             profiles: vec![default_profile],
@@ -997,10 +984,7 @@ fn read_broker_config(
     state: State<ProxyConfigState>,
     profiles_state: State<ProfilesState>,
 ) -> Result<ConfigFilePayload, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| err.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
     let proxy_path = {
         let status = state.0.lock().unwrap();
         PathBuf::from(status.path.clone())
@@ -1021,10 +1005,7 @@ fn write_broker_config(
     state: State<ProxyConfigState>,
     profiles_state: State<ProfilesState>,
 ) -> Result<(), String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| err.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
     let proxy_path = {
         let status = state.0.lock().unwrap();
         PathBuf::from(status.path.clone())
@@ -1098,8 +1079,8 @@ struct HttpResponse {
 }
 
 async fn console_get(path: &str, log_path: &Path) -> Result<Value, String> {
-    let response = console_http_request_with_timeout("GET", path, None, log_path, HTTP_IO_TIMEOUT)
-        .await?;
+    let response =
+        console_http_request_with_timeout("GET", path, None, log_path, HTTP_IO_TIMEOUT).await?;
     if response.status / 100 != 2 {
         return Err(format!(
             "console http GET status {} for {}",
@@ -1365,7 +1346,11 @@ async fn ai_risk_assess(request: AiRiskRequest) -> Result<AiRiskResponse, String
     let content = value
         .pointer("/choices/0/message/content")
         .and_then(|val| val.as_str())
-        .or_else(|| value.pointer("/choices/0/text").and_then(|val| val.as_str()))
+        .or_else(|| {
+            value
+                .pointer("/choices/0/text")
+                .and_then(|val| val.as_str())
+        })
         .unwrap_or("")
         .trim();
     if content.is_empty() {
@@ -1666,7 +1651,8 @@ fn join_base_path(base: &str, path: &str) -> Result<String, String> {
 
 fn parse_ai_risk_content(content: &str) -> Result<AiRiskResponse, String> {
     let payload = extract_json_block(content).unwrap_or(content);
-    let parsed: AiRiskModelResponse = serde_json::from_str(payload).map_err(|err| err.to_string())?;
+    let parsed: AiRiskModelResponse =
+        serde_json::from_str(payload).map_err(|err| err.to_string())?;
     let risk = normalize_ai_risk(&parsed.risk)
         .ok_or_else(|| "risk must be low|medium|high".to_string())?;
     Ok(AiRiskResponse {
