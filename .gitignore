@@ -2,3 +2,5 @@ target/
 .idea/
 .DS_Store
 logs/
+.cunzhi-memory
+gen/
