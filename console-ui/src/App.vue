@@ -351,6 +351,11 @@ function showNotification(message: string, count?: number) {
   notificationToken.value += 1;
 }
 
+function reportUiError(context: string, err?: unknown) {
+  const detail = err ? `: ${String(err)}` : '';
+  void logUiEvent(`${context}${detail}`);
+}
+
 function loadAiRiskCache(): Record<string, AiRiskEntry> {
   if (typeof localStorage === 'undefined') {
     return {};
@@ -375,7 +380,8 @@ function loadAiRiskCache(): Record<string, AiRiskEntry> {
       normalized[key] = value;
     }
     return normalized;
-  } catch {
+  } catch (err) {
+    reportUiError('ai risk cache load failed', err);
     return {};
   }
 }
@@ -496,8 +502,9 @@ function processAiQueue() {
     aiInFlightKeys.add(key);
     aiRunning.value += 1;
     void runAiTask(task)
-      .catch(() => {
-        // errors handled in runAiTask
+      .catch((err) => {
+        reportUiError('ai task failed', err);
+        setAiRisk(key, { status: 'error', error: `AI 执行异常：${String(err)}`, updatedAt: Date.now() });
       })
       .finally(() => {
         aiRunning.value -= 1;
@@ -527,6 +534,7 @@ async function runAiTask(task: AiTask) {
     applyAiResult(key, response);
   } catch (err) {
     setAiRisk(key, { status: 'error', error: String(err), updatedAt: now });
+    reportUiError('ai risk assess failed', err);
   }
 }
 
@@ -646,7 +654,7 @@ async function refreshTargets() {
     updateTargets(list);
   } catch (err) {
     connectionState.value = 'disconnected';
-    void logUiEvent(`fetch targets failed: ${String(err)}`);
+    reportUiError('fetch targets failed', err);
   }
 }
 
@@ -660,8 +668,8 @@ async function refreshSnapshot(name: string) {
     snapshots.value = { ...snapshots.value, [name]: snapshot };
     lastPendingCounts.value[name] = snapshot.queue.length;
     scheduleAiForSnapshot(name, snapshot);
-  } catch {
-    void logUiEvent(`fetch snapshot failed target=${name}`);
+  } catch (err) {
+    reportUiError(`fetch snapshot failed target=${name}`, err);
     // ignore fetch errors; connection status handled by websocket
   } finally {
     snapshotLoading.value[name] = false;
@@ -674,6 +682,7 @@ async function approve(id: string) {
     await approveCommand(selectedTargetName.value, id);
   } catch (err) {
     showNotification('审批失败，请检查 console 服务');
+    reportUiError('approve command failed', err);
   }
 }
 
@@ -683,6 +692,7 @@ async function deny(id: string) {
     await denyCommand(selectedTargetName.value, id);
   } catch (err) {
     showNotification('拒绝失败，请检查 console 服务');
+    reportUiError('deny command failed', err);
   }
 }
 
