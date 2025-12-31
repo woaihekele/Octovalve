@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   approveCommand,
-  aiRiskAssess,
   denyCommand,
   fetchSnapshot,
   fetchTargets,
@@ -21,16 +20,14 @@ import SettingsModal from './components/SettingsModal.vue';
 import NotificationBridge from './components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from './settings';
 import type {
-  AiRiskEntry,
-  AiRiskApiResponse,
   AppSettings,
   ConsoleEvent,
-  RequestSnapshot,
   ServiceSnapshot,
   TargetInfo,
   ThemeMode,
 } from './types';
 import { startWindowDrag } from './tauriWindow';
+import { useAiRiskQueue } from './composables/useAiRiskQueue';
 
 const targets = ref<TargetInfo[]>([]);
 const snapshots = ref<Record<string, ServiceSnapshot>>({});
@@ -111,21 +108,6 @@ const naiveThemeOverrides = computed(() => {
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
 let stopSystemThemeListener: (() => void) | null = null;
-const AI_RISK_CACHE_KEY = 'octovalve.console.ai_risk_cache';
-const AI_RISK_CACHE_LIMIT = 2000;
-
-type AiTask = {
-  target: string;
-  request: RequestSnapshot;
-};
-
-const aiRiskMap = ref<Record<string, AiRiskEntry>>(loadAiRiskCache());
-const aiQueue = ref<AiTask[]>([]);
-const aiQueuedKeys = new Set<string>();
-const aiInFlightKeys = new Set<string>();
-const aiRunning = ref(0);
-let aiPumpScheduled = false;
-let aiPersistTimer: number | null = null;
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
@@ -356,217 +338,10 @@ function reportUiError(context: string, err?: unknown) {
   void logUiEvent(`${context}${detail}`);
 }
 
-function loadAiRiskCache(): Record<string, AiRiskEntry> {
-  if (typeof localStorage === 'undefined') {
-    return {};
-  }
-  try {
-    const raw = localStorage.getItem(AI_RISK_CACHE_KEY);
-    if (!raw) {
-      return {};
-    }
-    const parsed = JSON.parse(raw) as Record<string, AiRiskEntry>;
-    if (!parsed || typeof parsed !== 'object') {
-      return {};
-    }
-    const normalized: Record<string, AiRiskEntry> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (!value || typeof value !== 'object') {
-        continue;
-      }
-      if (typeof value.updatedAt !== 'number') {
-        continue;
-      }
-      normalized[key] = value;
-    }
-    return normalized;
-  } catch (err) {
-    reportUiError('ai risk cache load failed', err);
-    return {};
-  }
-}
-
-function scheduleAiRiskPersist() {
-  if (typeof localStorage === 'undefined') {
-    return;
-  }
-  if (aiPersistTimer !== null) {
-    return;
-  }
-  aiPersistTimer = window.setTimeout(() => {
-    aiPersistTimer = null;
-    persistAiRiskCache();
-  }, 500);
-}
-
-function persistAiRiskCache() {
-  if (typeof localStorage === 'undefined') {
-    return;
-  }
-  const entries = Object.entries(aiRiskMap.value);
-  if (entries.length > AI_RISK_CACHE_LIMIT) {
-    entries.sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-    const trimmed = Object.fromEntries(entries.slice(0, AI_RISK_CACHE_LIMIT));
-    aiRiskMap.value = trimmed;
-  }
-  localStorage.setItem(AI_RISK_CACHE_KEY, JSON.stringify(aiRiskMap.value));
-}
-
-function setAiRisk(key: string, entry: AiRiskEntry) {
-  aiRiskMap.value = {
-    ...aiRiskMap.value,
-    [key]: entry,
-  };
-  scheduleAiRiskPersist();
-}
-
-function buildAiKey(targetName: string, requestId: string) {
-  return `${targetName}:${requestId}`;
-}
-
-function formatAiPipeline(request: RequestSnapshot) {
-  return request.pipeline.map((stage) => stage.argv.join(' ')).join(' | ');
-}
-
-function buildAiPrompt(template: string, targetName: string, request: RequestSnapshot) {
-  const replacements: Record<string, string> = {
-    target: targetName,
-    client: request.client,
-    peer: request.peer,
-    intent: request.intent,
-    mode: request.mode,
-    raw_command: request.raw_command,
-    pipeline: formatAiPipeline(request),
-    cwd: request.cwd ?? '-',
-    timeout_ms: request.timeout_ms?.toString() ?? '-',
-    max_output_bytes: request.max_output_bytes?.toString() ?? '-',
-  };
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    if (key in replacements) {
-      return replacements[key];
-    }
-    return match;
-  });
-}
-
-function enqueueAiTask(targetName: string, request: RequestSnapshot) {
-  if (!settings.value.ai.enabled) {
-    return;
-  }
-  const key = buildAiKey(targetName, request.id);
-  const existing = aiRiskMap.value[key];
-  if (aiQueuedKeys.has(key) || aiInFlightKeys.has(key)) {
-    return;
-  }
-  if (!settings.value.ai.apiKey.trim()) {
-    if (!existing || existing.status !== 'done') {
-      setAiRisk(key, { status: 'error', error: '未配置 API Key', updatedAt: Date.now() });
-    }
-    return;
-  }
-  aiQueuedKeys.add(key);
-  aiQueue.value = [...aiQueue.value, { target: targetName, request }];
-  setAiRisk(key, { status: 'pending', updatedAt: Date.now() });
-  scheduleAiQueue();
-}
-
-function scheduleAiQueue() {
-  if (aiPumpScheduled) {
-    return;
-  }
-  aiPumpScheduled = true;
-  Promise.resolve().then(() => {
-    aiPumpScheduled = false;
-    processAiQueue();
-  });
-}
-
-function resetAiQueue() {
-  aiQueue.value = [];
-  aiQueuedKeys.clear();
-}
-
-function processAiQueue() {
-  if (!settings.value.ai.enabled) {
-    resetAiQueue();
-    return;
-  }
-  const maxConcurrency = Math.max(1, settings.value.ai.maxConcurrency);
-  while (aiRunning.value < maxConcurrency && aiQueue.value.length > 0) {
-    const task = aiQueue.value.shift();
-    if (!task) {
-      break;
-    }
-    const key = buildAiKey(task.target, task.request.id);
-    aiQueuedKeys.delete(key);
-    aiInFlightKeys.add(key);
-    aiRunning.value += 1;
-    void runAiTask(task)
-      .catch((err) => {
-        reportUiError('ai task failed', err);
-        setAiRisk(key, { status: 'error', error: `AI 执行异常：${String(err)}`, updatedAt: Date.now() });
-      })
-      .finally(() => {
-        aiRunning.value -= 1;
-        aiInFlightKeys.delete(key);
-        scheduleAiQueue();
-      });
-  }
-}
-
-async function runAiTask(task: AiTask) {
-  const key = buildAiKey(task.target, task.request.id);
-  const now = Date.now();
-  if (!settings.value.ai.apiKey.trim()) {
-    setAiRisk(key, { status: 'error', error: '未配置 API Key', updatedAt: now });
-    return;
-  }
-  try {
-    const prompt = buildAiPrompt(settings.value.ai.prompt, task.target, task.request);
-    const response = await aiRiskAssess({
-      base_url: settings.value.ai.baseUrl,
-      chat_path: settings.value.ai.chatPath,
-      model: settings.value.ai.model,
-      api_key: settings.value.ai.apiKey,
-      prompt,
-      timeout_ms: settings.value.ai.timeoutMs,
-    });
-    applyAiResult(key, response);
-  } catch (err) {
-    setAiRisk(key, { status: 'error', error: String(err), updatedAt: now });
-    reportUiError('ai risk assess failed', err);
-  }
-}
-
-function applyAiResult(key: string, response: AiRiskApiResponse) {
-  setAiRisk(key, {
-    status: 'done',
-    risk: response.risk,
-    reason: response.reason,
-    keyPoints: response.key_points ?? [],
-    updatedAt: Date.now(),
-  });
-}
-
-function scheduleAiForSnapshot(targetName: string, snapshot: ServiceSnapshot) {
-  if (!settings.value.ai.enabled) {
-    return;
-  }
-  const pending = snapshot.queue ?? [];
-  if (pending.length === 0) {
-    return;
-  }
-  pending.forEach((item) => {
-    const key = buildAiKey(targetName, item.id);
-    const existing = aiRiskMap.value[key];
-    if (
-      !existing ||
-      (existing.status === 'error' && existing.error?.includes('API Key') && settings.value.ai.apiKey.trim())
-    ) {
-      enqueueAiTask(targetName, item);
-    }
-  });
-}
+const { aiRiskMap, enqueueAiTask, processAiQueue, scheduleAiForSnapshot } = useAiRiskQueue({
+  settings,
+  onError: reportUiError,
+});
 
 function scheduleAiForAllTargets() {
   if (!settings.value.ai.enabled) {
@@ -794,9 +569,6 @@ onBeforeUnmount(() => {
   }
   if (stopSystemThemeListener) {
     stopSystemThemeListener();
-  }
-  if (aiPersistTimer !== null) {
-    window.clearTimeout(aiPersistTimer);
   }
   window.removeEventListener('keydown', handleGlobalKey);
 });
