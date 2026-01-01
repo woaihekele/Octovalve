@@ -1752,6 +1752,17 @@ fn resolve_codex_acp_path(app: &AppHandle) -> Result<PathBuf, String> {
     if sidecar.exists() {
         return Ok(sidecar);
     }
+    // Check common installation paths
+    let common_paths = [
+        "/usr/local/bin/codex-acp",
+        "/opt/homebrew/bin/codex-acp",
+    ];
+    for path in common_paths {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
     // Fallback to PATH
     Ok(PathBuf::from("codex-acp"))
 }
