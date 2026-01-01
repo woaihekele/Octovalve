@@ -16,7 +16,29 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { Marked } from 'marked';
+import { markedHighlight } from 'marked-highlight';
+import hljs from 'highlight.js';
 import type { ChatMessage } from '../types';
+
+// Configure marked with highlight.js
+const markedInstance = new Marked(
+  markedHighlight({
+    emptyLangClass: 'hljs',
+    langPrefix: 'hljs language-',
+    highlight(code, lang) {
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(code, { language: lang }).value;
+        } catch {
+          return code;
+        }
+      }
+      return hljs.highlightAuto(code).value;
+    },
+  })
+);
+markedInstance.setOptions({ breaks: true, gfm: true });
 
 interface Props {
   message: ChatMessage;
@@ -32,37 +54,20 @@ const isStreaming = computed(() => {
 });
 
 const renderedContent = computed(() => {
-  let content = props.message.content || '';
+  const content = props.message.content || '';
   if (!content && isStreaming.value) {
     return '<span class="chat-row__cursor"></span>';
   }
   
-  // Escape HTML
-  content = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  
-  // Code blocks
-  content = content.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre class="chat-row__code-block"><code class="language-${lang}">${code}</code></pre>`;
-  });
-  
-  // Inline code
-  content = content.replace(/`([^`]+)`/g, '<code class="chat-row__inline-code">$1</code>');
-  
-  // Bold
-  content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  
-  // Italic
-  content = content.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  
-  // Line breaks
-  content = content.replace(/\n/g, '<br>');
+  // Parse markdown
+  let html = markedInstance.parse(content) as string;
   
   // Add cursor at end if streaming
   if (isStreaming.value) {
-    content += '<span class="chat-row__cursor"></span>';
+    html += '<span class="chat-row__cursor"></span>';
   }
   
-  return content;
+  return html;
 });
 </script>
 
@@ -147,8 +152,40 @@ const renderedContent = computed(() => {
     word-break: break-word;
     overflow-wrap: anywhere;
 
-    :deep(.chat-row__code-block) {
-      background: rgba(0, 0, 0, 0.15);
+    // Markdown elements
+    :deep(p) {
+      margin: 0 0 0.75em 0;
+      &:last-child { margin-bottom: 0; }
+    }
+
+    :deep(ul), :deep(ol) {
+      margin: 0.5em 0;
+      padding-left: 1.5em;
+    }
+
+    :deep(li) {
+      margin: 0.25em 0;
+    }
+
+    :deep(h1), :deep(h2), :deep(h3), :deep(h4) {
+      margin: 1em 0 0.5em 0;
+      font-weight: 600;
+      &:first-child { margin-top: 0; }
+    }
+
+    :deep(h1) { font-size: 1.4em; }
+    :deep(h2) { font-size: 1.2em; }
+    :deep(h3) { font-size: 1.1em; }
+
+    :deep(blockquote) {
+      margin: 0.5em 0;
+      padding-left: 1em;
+      border-left: 3px solid rgb(var(--color-border));
+      color: rgb(var(--color-text-muted));
+    }
+
+    :deep(pre) {
+      background: rgba(0, 0, 0, 0.2);
       padding: 12px 14px;
       border-radius: 8px;
       overflow-x: auto;
@@ -159,15 +196,28 @@ const renderedContent = computed(() => {
       code {
         background: none;
         padding: 0;
+        font-size: inherit;
       }
     }
 
-    :deep(.chat-row__inline-code) {
+    :deep(code) {
       background: rgba(0, 0, 0, 0.1);
       padding: 2px 6px;
       border-radius: 4px;
       font-size: 13px;
       font-family: 'SF Mono', Monaco, Consolas, monospace;
+    }
+
+    :deep(a) {
+      color: #8b5cf6;
+      text-decoration: none;
+      &:hover { text-decoration: underline; }
+    }
+
+    :deep(hr) {
+      border: none;
+      border-top: 1px solid rgb(var(--color-border));
+      margin: 1em 0;
     }
 
     :deep(.chat-row__cursor) {
