@@ -382,7 +382,7 @@ onMounted(() => {
   }
 
   &__input-area {
-    padding: 10px 12px 12px;
+    padding: 12px 14px 14px;
     border-top: 1px solid rgb(var(--color-border));
     background: rgb(var(--color-panel));
     flex-shrink: 0;
@@ -392,14 +392,17 @@ onMounted(() => {
     display: flex;
     align-items: flex-end;
     gap: 8px;
-    background: rgb(var(--color-panel-muted));
-    border: 1px solid rgb(var(--color-border));
-    border-radius: 8px;
-    padding: 8px 10px;
-    transition: border-color 0.15s;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 10px 12px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 
     &:focus-within {
-      border-color: rgb(var(--color-accent));
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+      background: white;
     }
   }
 
@@ -408,15 +411,15 @@ onMounted(() => {
     border: none;
     background: transparent;
     color: rgb(var(--color-text));
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
     resize: none;
     outline: none;
-    min-height: 20px;
+    min-height: 22px;
     max-height: 120px;
 
     &::placeholder {
-      color: rgb(var(--color-text-muted));
+      color: #9ca3af;
     }
 
     &:disabled {
@@ -428,28 +431,47 @@ onMounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border: none;
-    background: rgb(var(--color-accent));
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
     color: white;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s ease;
     flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
 
     &:hover:not(:disabled) {
-      opacity: 0.9;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0);
     }
 
     &:disabled {
       opacity: 0.4;
       cursor: not-allowed;
+      box-shadow: none;
     }
 
     &--stop {
-      background: rgb(var(--color-danger));
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+
+      &:hover:not(:disabled) {
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      }
     }
+  }
+
+  &__disclaimer {
+    text-align: center;
+    font-size: 10px;
+    color: #9ca3af;
+    margin-top: 8px;
   }
 }
 </style>
