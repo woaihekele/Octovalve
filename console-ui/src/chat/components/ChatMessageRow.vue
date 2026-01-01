@@ -2,20 +2,23 @@
   <div class="chat-row" :class="[`chat-row--${message.role}`, { 'chat-row--streaming': isStreaming }]">
     <div class="chat-row__content">
       <!-- Thinking section (collapsible) -->
-      <div v-if="thinkingContent" class="chat-row__thinking" :class="{ 'chat-row__thinking--open': thinkingOpen }">
-        <button class="chat-row__thinking-toggle" @click="thinkingOpen = !thinkingOpen">
-          <span class="chat-row__thinking-icon">{{ thinkingOpen ? '▼' : '▶' }}</span>
-          <span class="chat-row__thinking-label">{{ thinkingOpen ? '隐藏思考过程' : '显示思考过程' }}</span>
-          <span v-if="isStreaming && !responseContent" class="chat-row__thinking-spinner"></span>
-        </button>
-        <div v-show="thinkingOpen" class="chat-row__thinking-content">
+      <ReasoningBlock
+        v-if="hasMeaningfulThinking"
+        :show="thinkingOpen"
+        :streaming="isStreaming"
+        :preview-text="thinkingContent"
+        :preview-active="!hasMeaningfulResponse"
+        :smooth-options="smoothOptions"
+        @toggle="handleToggleThinking"
+      >
+        <template #body>
           <MarkdownRender
             custom-id="chat-thinking"
             :content="thinkingContent"
             :is-dark="isDark"
           />
-        </div>
-      </div>
+        </template>
+      </ReasoningBlock>
       <!-- Tool calls -->
       <div v-if="message.toolCalls && message.toolCalls.length > 0" class="chat-row__tools">
         <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc" />
@@ -77,6 +80,7 @@ import { computed, ref, type CSSProperties } from 'vue';
 import MarkdownRender from 'markstream-vue';
 import type { ChatMessage } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
+import ReasoningBlock from './ReasoningBlock.vue';
 
 interface Props {
   message: ChatMessage;
@@ -88,6 +92,10 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   isLast: false,
 });
+
+const emit = defineEmits<{
+  (e: 'toggle-thinking', opened: boolean): void;
+}>();
 
 const thinkingOpen = ref(false);
 
@@ -133,6 +141,31 @@ const thinkingContent = computed(() => {
   return parsedContent.value.thinking;
 });
 const responseContent = computed(() => parsedContent.value.response);
+
+const hasMeaningfulText = (text?: string | null): boolean => {
+  if (text === undefined || text === null) {
+    return false;
+  }
+  const cleaned = text
+    .replace(/<[^>]*?>/g, '')
+    .replace(/[\s\u200B\u00A0]+/g, '');
+  return cleaned !== '';
+};
+
+const hasMeaningfulThinking = computed(() => hasMeaningfulText(thinkingContent.value));
+const hasMeaningfulResponse = computed(() => hasMeaningfulText(responseContent.value));
+
+const smoothOptions = computed(() => ({
+  minDelay: 10,
+  chunkFactor: 5,
+  maxCharsPerFrame: Number.POSITIVE_INFINITY,
+  streamEndStrategy: 'immediate' as const,
+}));
+
+function handleToggleThinking() {
+  thinkingOpen.value = !thinkingOpen.value;
+  emit('toggle-thinking', thinkingOpen.value);
+}
 
 const assistantMarkdown = computed(() => {
   const response = responseContent.value;

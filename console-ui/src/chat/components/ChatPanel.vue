@@ -45,6 +45,7 @@
               :is-last="message.id === messages[messages.length - 1]?.id"
               :register-bubble="registerBubble"
               :bubble-style="bubbleStyle"
+              @toggle-thinking="handleToggleThinking"
             />
           </template>
           <div ref="scrollAnchor" class="chat-panel__scroll-anchor"></div>
@@ -108,10 +109,16 @@ const messagesRef = ref<HTMLElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
 const scrollAnchor = ref<HTMLElement | null>(null);
 
-const { scrollToBottom, handleScroll, activateStickToBottom } = useStickToBottom(
+const { stickToBottom, scrollToBottom, handleScroll, activateStickToBottom } = useStickToBottom(
   messagesRef,
   contentRef
 );
+
+function handleToggleThinking(opened: boolean) {
+  if (opened && stickToBottom.value) {
+    void scrollToBottom({ force: true, behavior: 'smooth' });
+  }
+}
 
 // Track per-message max width so bubbles can grow but never shrink.
 const bubbleWidths = ref<Record<string, number>>({});
