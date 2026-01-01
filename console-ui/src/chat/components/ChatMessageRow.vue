@@ -222,12 +222,24 @@ const renderedContent = computed(() => {
 
     :deep(.chat-row__cursor) {
       display: inline-block;
-      width: 2px;
-      height: 16px;
-      background: rgb(var(--color-accent));
+      width: 3px;
+      height: 1.1em;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       margin-left: 2px;
       vertical-align: text-bottom;
-      animation: blink 1s step-end infinite;
+      border-radius: 1px;
+      animation: cursor-blink 0.8s ease-in-out infinite;
+    }
+  }
+
+  // Smooth text appearance for streaming
+  &--streaming {
+    .chat-row__text {
+      :deep(p:last-child),
+      :deep(li:last-child),
+      :deep(code:last-child) {
+        animation: text-appear 0.1s ease-out;
+      }
     }
   }
 }
@@ -243,8 +255,23 @@ const renderedContent = computed(() => {
   }
 }
 
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+@keyframes cursor-blink {
+  0%, 100% { 
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% { 
+    opacity: 0.3;
+    transform: scaleY(0.8);
+  }
+}
+
+@keyframes text-appear {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 1;
+  }
 }
 </style>
