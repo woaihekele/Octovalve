@@ -47,58 +47,24 @@
         <div ref="scrollAnchor" class="chat-panel__scroll-anchor"></div>
       </div>
 
-      <div class="chat-panel__input-area">
-        <div class="chat-panel__input-wrapper">
-          <textarea
-            ref="textareaRef"
-            v-model="inputValue"
-            class="chat-panel__textarea"
-            :placeholder="placeholder"
-            :disabled="!isConnected"
-            rows="1"
-            @keydown="handleKeyDown"
-            @input="autoResize"
-          ></textarea>
-          <button
-            v-if="isStreaming"
-            class="chat-panel__send-btn chat-panel__send-btn--stop"
-            title="停止"
-            @click="$emit('cancel')"
-          >⏹</button>
-          <button
-            v-else
-            class="chat-panel__send-btn"
-            :disabled="!canSend"
-            title="发送"
-            @click="handleSend"
-          >↑</button>
-        </div>
-        <div class="chat-panel__toolbar">
-          <div class="chat-panel__provider-select-wrapper">
-            <svg class="chat-panel__provider-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-            </svg>
-            <select 
-              class="chat-panel__provider-select"
-              :value="provider"
-              @change="$emit('change-provider', ($event.target as HTMLSelectElement).value as 'acp' | 'openai')"
-            >
-              <option value="acp">Codex CLI (ACP)</option>
-              <option value="openai">OpenAI API</option>
-            </select>
-            <svg class="chat-panel__provider-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </div>
-        </div>
-      </div>
+      <ChatInput
+        v-model="inputValue"
+        :placeholder="placeholder"
+        :disabled="!isConnected"
+        :is-streaming="isStreaming"
+        :provider="provider"
+        @send="handleSend"
+        @cancel="$emit('cancel')"
+        @change-provider="$emit('change-provider', $event)"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import ChatMessageRow from './ChatMessageRow.vue';
+import ChatInput from './ChatInput.vue';
 import type { ChatMessage } from '../types';
 
 interface Props {
@@ -135,33 +101,10 @@ const emit = defineEmits<{
 const inputValue = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
 const scrollAnchor = ref<HTMLElement | null>(null);
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
-const canSend = computed(() => {
-  return props.isConnected && !props.isStreaming && inputValue.value.trim().length > 0;
-});
-
-function handleKeyDown(event: KeyboardEvent) {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    handleSend();
-  }
-}
-
-function handleSend() {
-  if (!canSend.value) return;
-  emit('send', inputValue.value.trim());
+function handleSend(content: string) {
+  emit('send', content);
   inputValue.value = '';
-  nextTick(() => {
-    autoResize();
-  });
-}
-
-function autoResize() {
-  if (!textareaRef.value) return;
-  textareaRef.value.style.height = 'auto';
-  const maxHeight = 120;
-  textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, maxHeight)}px`;
 }
 
 function scrollToBottom() {
@@ -191,18 +134,11 @@ watch(
   (open) => {
     if (open) {
       nextTick(() => {
-        textareaRef.value?.focus();
         scrollToBottom();
       });
     }
   }
 );
-
-onMounted(() => {
-  if (props.isOpen) {
-    textareaRef.value?.focus();
-  }
-});
 </script>
 
 <style scoped lang="scss">
@@ -395,150 +331,6 @@ onMounted(() => {
 
   &__scroll-anchor {
     height: 1px;
-  }
-
-  &__input-area {
-    padding: 12px 14px 14px;
-    border-top: 1px solid rgb(var(--color-border));
-    background: rgb(var(--color-panel));
-    flex-shrink: 0;
-  }
-
-  &__input-wrapper {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 10px 12px;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-
-    &:focus-within {
-      border-color: #8b5cf6;
-      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
-      background: white;
-    }
-  }
-
-  &__textarea {
-    flex: 1;
-    border: none;
-    background: transparent;
-    color: rgb(var(--color-text));
-    font-size: 14px;
-    line-height: 1.5;
-    resize: none;
-    outline: none;
-    min-height: 22px;
-    max-height: 120px;
-
-    &::placeholder {
-      color: #9ca3af;
-    }
-
-    &:disabled {
-      opacity: 0.5;
-    }
-  }
-
-  &__send-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
-
-    &:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-    }
-
-    &:active:not(:disabled) {
-      transform: translateY(0);
-    }
-
-    &:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-      box-shadow: none;
-    }
-
-    &--stop {
-      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-      box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
-
-      &:hover:not(:disabled) {
-        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
-      }
-    }
-  }
-
-  &__disclaimer {
-    text-align: center;
-    font-size: 10px;
-    color: #9ca3af;
-    margin-top: 8px;
-  }
-
-  &__toolbar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 8px;
-  }
-
-  &__provider-select-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  &__provider-icon {
-    position: absolute;
-    left: 8px;
-    color: #6b7280;
-    pointer-events: none;
-  }
-
-  &__provider-select {
-    appearance: none;
-    padding: 5px 28px 5px 26px;
-    border: 1px solid #e5e7eb;
-    background: white;
-    color: #374151;
-    font-size: 11px;
-    font-weight: 500;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s;
-    outline: none;
-
-    &:hover {
-      border-color: #d1d5db;
-      background: #f9fafb;
-    }
-
-    &:focus {
-      border-color: #8b5cf6;
-      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1);
-    }
-  }
-
-  &__provider-chevron {
-    position: absolute;
-    right: 8px;
-    color: #9ca3af;
-    pointer-events: none;
   }
 }
 </style>
