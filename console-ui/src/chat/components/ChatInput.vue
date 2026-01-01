@@ -1,7 +1,7 @@
 <template>
   <div class="chat-input">
-    <!-- Text area -->
-    <div class="chat-input__textarea-wrapper" :class="{ 'chat-input__textarea-wrapper--focused': isFocused }">
+    <div class="chat-input__container" :class="{ 'chat-input__container--focused': isFocused }">
+      <!-- Text area (borderless) -->
       <n-input
         ref="inputRef"
         v-model:value="inputValue"
@@ -9,52 +9,53 @@
         :autosize="{ minRows: 2, maxRows: 8 }"
         :placeholder="placeholder"
         :disabled="disabled"
+        class="chat-input__textarea"
         @keydown="handleKeyDown"
         @compositionstart="isComposing = true"
         @compositionend="isComposing = false"
         @focus="isFocused = true"
         @blur="isFocused = false"
       />
-    </div>
-    
-    <!-- Toolbar -->
-    <div class="chat-input__toolbar">
-      <div class="chat-input__toolbar-left">
-        <!-- Provider selector -->
-        <n-select
-          :value="provider"
-          :options="providerOptions"
-          size="tiny"
-          :consistent-menu-width="false"
-          class="chat-input__provider-select"
-          @update:value="$emit('change-provider', $event)"
-        />
-      </div>
-      <div class="chat-input__toolbar-right">
-        <!-- Send / Stop button -->
-        <n-button
-          v-if="isStreaming"
-          size="small"
-          type="error"
-          circle
-          @click="$emit('cancel')"
-        >
-          <template #icon>
-            <n-icon :component="StopOutline" />
-          </template>
-        </n-button>
-        <n-button
-          v-else
-          size="small"
-          type="primary"
-          circle
-          :disabled="!canSend"
-          @click="handleSend"
-        >
-          <template #icon>
-            <n-icon :component="SendOutline" />
-          </template>
-        </n-button>
+      
+      <!-- Toolbar inside container -->
+      <div class="chat-input__toolbar">
+        <div class="chat-input__toolbar-left">
+          <!-- Provider selector -->
+          <n-select
+            :value="provider"
+            :options="providerOptions"
+            size="tiny"
+            :consistent-menu-width="false"
+            class="chat-input__provider-select"
+            @update:value="$emit('change-provider', $event)"
+          />
+        </div>
+        <div class="chat-input__toolbar-right">
+          <!-- Send / Stop button -->
+          <n-button
+            v-if="isStreaming"
+            size="small"
+            type="error"
+            circle
+            @click="$emit('cancel')"
+          >
+            <template #icon>
+              <n-icon :component="StopOutline" />
+            </template>
+          </n-button>
+          <n-button
+            v-else
+            size="small"
+            type="primary"
+            circle
+            :disabled="!canSend"
+            @click="handleSend"
+          >
+            <template #icon>
+              <n-icon :component="SendOutline" />
+            </template>
+          </n-button>
+        </div>
       </div>
     </div>
   </div>
@@ -134,10 +135,10 @@ defineExpose({ focus });
   background: rgb(var(--color-panel));
   border-top: 1px solid rgb(var(--color-border));
 
-  &__textarea-wrapper {
+  &__container {
     background: #f9fafb;
     border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    border-radius: 16px;
     overflow: hidden;
     transition: all 0.2s;
 
@@ -146,7 +147,9 @@ defineExpose({ focus });
       box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
       background: white;
     }
+  }
 
+  &__textarea {
     :deep(.n-input) {
       --n-border: none;
       --n-border-hover: none;
@@ -156,7 +159,7 @@ defineExpose({ focus });
       --n-color-focus: transparent;
       
       .n-input-wrapper {
-        padding: 10px 12px;
+        padding: 12px 14px 8px;
       }
 
       .n-input__textarea-el {
@@ -171,7 +174,7 @@ defineExpose({ focus });
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 10px;
+    padding: 8px 12px 10px;
     gap: 8px;
   }
 
@@ -191,8 +194,14 @@ defineExpose({ focus });
     width: 140px;
     
     :deep(.n-base-selection) {
-      --n-height: 28px;
+      --n-height: 26px;
       --n-font-size: 12px;
+      --n-border: 1px solid #e5e7eb;
+      --n-border-hover: 1px solid #d1d5db;
+      --n-border-active: 1px solid #8b5cf6;
+      --n-border-focus: 1px solid #8b5cf6;
+      --n-box-shadow-focus: 0 0 0 2px rgba(139, 92, 246, 0.1);
+      border-radius: 6px;
     }
   }
 }
