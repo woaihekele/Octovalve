@@ -48,7 +48,7 @@ struct AppLogState {
 }
 
 use acp_client::{AcpClient, AcpClientState};
-use acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem};
+use acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
 use openai_client::{ChatMessage, OpenAiClient, OpenAiClientState, OpenAiConfig, Tool};
 
 #[derive(Clone, serde::Serialize)]
@@ -196,6 +196,7 @@ fn main() {
             acp_start,
             acp_authenticate,
             acp_new_session,
+            acp_load_session,
             acp_prompt,
             acp_cancel,
             acp_stop,
@@ -1863,6 +1864,18 @@ fn acp_new_session(
         modes: vec![],  // Simplified - modes format varies
         models: vec![], // Simplified - models format varies
     })
+}
+
+#[tauri::command]
+fn acp_load_session(
+    state: State<'_, AcpClientState>,
+    session_id: String,
+) -> Result<LoadSessionResult, String> {
+    let guard = state.0.lock().unwrap();
+    let client = guard.as_ref().ok_or("ACP client not started")?;
+    client
+        .load_session(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

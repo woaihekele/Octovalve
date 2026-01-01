@@ -14,6 +14,7 @@ import {
 import { NButton, NConfigProvider, NNotificationProvider, NTabPane, NTabs, darkTheme } from 'naive-ui';
 import { ChatPanel, useChatStore } from './chat';
 import { storeToRefs } from 'pinia';
+import type { AuthMethod } from './chat/services/acpService';
 import { matchesShortcut } from './shortcuts';
 import Sidebar from './components/Sidebar.vue';
 import TerminalPanel from './components/TerminalPanel.vue';
@@ -133,7 +134,7 @@ async function initChatProvider() {
       console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
       
       // Authentication is optional - don't fail if it's not available
-      if (chatStore.authMethods.some(m => m.id === 'openai-api-key')) {
+      if ((chatStore.authMethods as AuthMethod[]).some((m) => m.id === 'openai-api-key')) {
         try {
           await chatStore.authenticateAcp('openai-api-key');
           console.log('[initChatProvider] authenticateAcp done');

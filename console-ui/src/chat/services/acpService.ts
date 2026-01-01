@@ -44,6 +44,12 @@ export interface AcpSessionInfo {
   models: SessionModel[];
 }
 
+export interface AcpLoadSessionResult {
+  modes: unknown;
+  models: unknown;
+  history: unknown;
+}
+
 export interface ContextItem {
   type: string;
   [key: string]: unknown;
@@ -119,6 +125,13 @@ export async function acpNewSession(cwd: string): Promise<AcpSessionInfo> {
 }
 
 /**
+ * Load an existing session
+ */
+export async function acpLoadSession(sessionId: string): Promise<AcpLoadSessionResult> {
+  return invoke<AcpLoadSessionResult>('acp_load_session', { sessionId });
+}
+
+/**
  * Send a prompt to the current session
  */
 export async function acpPrompt(content: string, context?: ContextItem[]): Promise<void> {
@@ -156,6 +169,7 @@ export const acpService = {
   start: acpStart,
   authenticate: acpAuthenticate,
   newSession: acpNewSession,
+  loadSession: acpLoadSession,
   prompt: acpPrompt,
   cancel: acpCancel,
   stop: acpStop,

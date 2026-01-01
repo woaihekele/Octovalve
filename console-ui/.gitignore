@@ -2,3 +2,7 @@ node_modules/
 dist/
 .env.local
 src-tauri/target/
+
+.claude/
+.shared/
+.windsurf/

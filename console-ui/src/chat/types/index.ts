@@ -65,6 +65,7 @@ export interface ChatSession {
   messages: ChatMessage[];
   totalTokens: number;
   status: 'idle' | 'running' | 'paused';
+  acpSessionId?: string | null;
 }
 
 export interface ChatState {

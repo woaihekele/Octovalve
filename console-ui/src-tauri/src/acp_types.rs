@@ -168,6 +168,23 @@ pub struct NewSessionResult {
     pub config_options: Vec<Value>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSessionParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSessionResult {
+    #[serde(default)]
+    pub modes: Value,
+    #[serde(default)]
+    pub models: Value,
+    #[serde(default)]
+    pub history: Value,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SessionMode {
     pub id: String,

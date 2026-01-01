@@ -7,9 +7,9 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 use crate::acp_types::*;
 
@@ -257,6 +257,19 @@ impl AcpClient {
 
         *self.session_id.lock().unwrap() = Some(session_result.session_id.clone());
         Ok(session_result)
+    }
+
+    /// Load an existing session
+    pub fn load_session(&self, session_id: &str) -> Result<LoadSessionResult, AcpError> {
+        let params = LoadSessionParams {
+            session_id: session_id.to_string(),
+        };
+
+        let result = self.send_request("session/load", Some(serde_json::to_value(&params)?))?;
+        let load_result: LoadSessionResult = serde_json::from_value(result)?;
+
+        *self.session_id.lock().unwrap() = Some(session_id.to_string());
+        Ok(load_result)
     }
 
     /// Send a prompt to the current session (non-blocking)

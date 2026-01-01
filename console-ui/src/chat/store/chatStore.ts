@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { ChatSession, ChatMessage, ChatConfig, ToolCall } from '../types';
 import type { AuthMethod, AcpEvent } from '../services/acpService';
 import { acpService } from '../services/acpService';
@@ -28,7 +28,6 @@ export const useChatStore = defineStore('chat', () => {
 
   // ACP state
   const acpInitialized = ref(false);
-  const acpSessionId = ref<string | null>(null);
   const authMethods = ref<AuthMethod[]>([]);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
@@ -95,6 +94,156 @@ export const useChatStore = defineStore('chat', () => {
   const lastMessage = computed(() => messages.value.at(-1) ?? null);
 
   const canSend = computed(() => !isStreaming.value && isConnected.value);
+
+  function toPlainText(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map(toPlainText).filter(Boolean).join('');
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      if (typeof obj.text === 'string') return obj.text;
+      if (typeof obj.content === 'string') return obj.content;
+      if (typeof obj.message === 'string') return obj.message;
+      if (typeof obj.value === 'string') return obj.value;
+      if (Array.isArray(obj.content)) return toPlainText(obj.content);
+      if (Array.isArray(obj.prompt)) return toPlainText(obj.prompt);
+      if (Array.isArray(obj.messages)) return toPlainText(obj.messages);
+      if (Array.isArray(obj.blocks)) return toPlainText(obj.blocks);
+    }
+    return '';
+  }
+
+  function toRole(value: unknown): 'user' | 'assistant' | 'system' {
+    if (!value || typeof value !== 'string') return 'assistant';
+    const v = value.toLowerCase();
+    if (v === 'user') return 'user';
+    if (v === 'assistant') return 'assistant';
+    if (v === 'system') return 'system';
+    return 'assistant';
+  }
+
+  function toTimestamp(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    return null;
+  }
+
+  function parseAcpHistory(history: unknown): ChatMessage[] {
+    if (!history) return [];
+
+    const list = Array.isArray(history)
+      ? history
+      : typeof history === 'object' && history !== null && Array.isArray((history as any).items)
+        ? ((history as any).items as unknown[])
+        : typeof history === 'object' && history !== null && Array.isArray((history as any).history)
+          ? ((history as any).history as unknown[])
+          : [];
+
+    if (!Array.isArray(list) || list.length === 0) return [];
+
+    const now = Date.now();
+    const parsed: ChatMessage[] = [];
+
+    for (let i = 0; i < list.length; i += 1) {
+      const item = list[i];
+      const obj = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : null;
+      const role = toRole(obj?.role ?? obj?.speaker ?? obj?.type);
+
+      const content = toPlainText(
+        obj?.content ??
+          obj?.text ??
+          obj?.message ??
+          obj?.value ??
+          obj?.prompt ??
+          obj?.output ??
+          obj?.response
+      );
+
+      if (!content.trim()) {
+        continue;
+      }
+
+      const ts =
+        toTimestamp(obj?.ts) ??
+        toTimestamp(obj?.timestamp) ??
+        toTimestamp(obj?.createdAt) ??
+        toTimestamp(obj?.created_at) ??
+        (now - (list.length - i) * 1000);
+
+      parsed.push({
+        id: generateId(),
+        ts,
+        type: 'say',
+        say: 'text',
+        role,
+        content,
+        status: 'complete',
+        partial: false,
+      });
+    }
+
+    return parsed;
+  }
+
+  function applyAcpHistoryToActiveSession(history: unknown) {
+    const session = activeSession.value;
+    if (!session) return;
+
+    const parsed = parseAcpHistory(history);
+    if (parsed.length === 0) return;
+
+    const current = session.messages || [];
+    const currentSignature = current
+      .slice(-3)
+      .map((m) => `${m.role}:${(m.content || '').trim()}`)
+      .join('|');
+    const parsedSignature = parsed
+      .slice(-3)
+      .map((m) => `${m.role}:${(m.content || '').trim()}`)
+      .join('|');
+
+    if (current.length === 0 || currentSignature !== parsedSignature || current.length < parsed.length) {
+      session.messages = parsed;
+      session.updatedAt = Date.now();
+      saveToStorage();
+    }
+  }
+
+  let acpHistoryLoadToken = 0;
+
+  async function loadAcpSessionOrThrow(sessionId: string) {
+    try {
+      return await acpService.loadSession(sessionId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`ACP load session failed: ${msg}`);
+      throw e;
+    }
+  }
+
+  async function maybeLoadAcpHistoryForActiveSession() {
+    if (!acpInitialized.value || provider.value !== 'acp') {
+      return;
+    }
+    if (isStreaming.value) {
+      return;
+    }
+    const session = activeSession.value;
+    if (!session?.acpSessionId) {
+      return;
+    }
+
+    const token = ++acpHistoryLoadToken;
+    try {
+      const loaded = await loadAcpSessionOrThrow(session.acpSessionId);
+      if (token !== acpHistoryLoadToken) {
+        return;
+      }
+      applyAcpHistoryToActiveSession(loaded.history);
+    } catch {
+      // error already set via setError
+    }
+  }
 
   // Actions
   function createSession(title?: string): ChatSession {
@@ -225,6 +374,14 @@ export const useChatStore = defineStore('chat', () => {
       provider.value = 'acp';
       providerInitialized.value = true;
       setupAcpEventListener();
+      if (activeSession.value?.acpSessionId) {
+        try {
+          const loaded = await loadAcpSessionOrThrow(activeSession.value.acpSessionId);
+          applyAcpHistoryToActiveSession(loaded.history);
+        } catch {
+          // error already set via setError
+        }
+      }
       console.log('[chatStore] initializeAcp done');
       return response;
     } catch (e) {
@@ -244,16 +401,39 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function ensureAcpSessionLoaded(cwd: string): Promise<string> {
+    if (!activeSession.value) {
+      createSession();
+    }
+    const session = activeSession.value!;
+
+    if (session.acpSessionId) {
+      const loaded = await loadAcpSessionOrThrow(session.acpSessionId);
+      applyAcpHistoryToActiveSession(loaded.history);
+      return session.acpSessionId;
+    }
+
+    const info = await acpService.newSession(cwd);
+    session.acpSessionId = info.sessionId;
+    session.updatedAt = Date.now();
+    saveToStorage();
+    return info.sessionId;
+  }
+
+  watch(
+    () => activeSessionId.value,
+    () => {
+      void maybeLoadAcpHistoryForActiveSession();
+    },
+    { flush: 'post' }
+  );
+
   async function sendAcpMessage(content: string, cwd = '.') {
     if (!acpInitialized.value) {
       throw new Error('ACP not initialized');
     }
 
-    // Create session if needed
-    if (!acpSessionId.value) {
-      const session = await acpService.newSession(cwd);
-      acpSessionId.value = session.sessionId;
-    }
+    await ensureAcpSessionLoaded(cwd);
 
     // Add user message
     addMessage({
@@ -324,7 +504,6 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
     acpInitialized.value = false;
-    acpSessionId.value = null;
     providerInitialized.value = false;
     setConnected(false);
     console.log('[chatStore] stopAcp done');
@@ -634,7 +813,6 @@ export const useChatStore = defineStore('chat', () => {
     sendMessage,
     // ACP
     acpInitialized,
-    acpSessionId,
     authMethods,
     initializeAcp,
     authenticateAcp,
