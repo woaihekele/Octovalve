@@ -1781,26 +1781,48 @@ async fn acp_start(
     state: State<'_, AcpClientState>,
     _cwd: String,
 ) -> Result<AcpInitResponse, String> {
-    let codex_acp_path = resolve_codex_acp_path(&app)?;
+    eprintln!("[acp_start] called with cwd: {}", _cwd);
+    
+    let codex_acp_path = match resolve_codex_acp_path(&app) {
+        Ok(path) => {
+            eprintln!("[acp_start] codex_acp_path resolved: {:?}", path);
+            path
+        }
+        Err(e) => {
+            eprintln!("[acp_start] failed to resolve codex_acp_path: {}", e);
+            return Err(e);
+        }
+    };
     
     // Stop existing client if any
     {
         let mut guard = state.0.lock().unwrap();
         if let Some(mut client) = guard.take() {
+            eprintln!("[acp_start] stopping existing client");
             client.stop();
         }
     }
 
     // Start new client in blocking task
+    eprintln!("[acp_start] starting new client...");
     let app_clone = app.clone();
     let result = tokio::task::spawn_blocking(move || {
+        eprintln!("[acp_start] spawn_blocking: calling AcpClient::start");
         let client = AcpClient::start(&codex_acp_path, app_clone)?;
+        eprintln!("[acp_start] spawn_blocking: client started, calling initialize");
         let init_result = client.initialize()?;
+        eprintln!("[acp_start] spawn_blocking: initialize done");
         Ok::<_, acp_client::AcpError>((client, init_result))
     })
     .await
-    .map_err(|e| format!("Task error: {}", e))?
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        eprintln!("[acp_start] task error: {}", e);
+        format!("Task error: {}", e)
+    })?
+    .map_err(|e| {
+        eprintln!("[acp_start] ACP error: {}", e);
+        e.to_string()
+    })?;
     let (client, init_result) = result;
 
     // Store client
@@ -1809,6 +1831,8 @@ async fn acp_start(
         *guard = Some(client);
     }
 
+    eprintln!("[acp_start] success, agent_info: {:?}, auth_methods: {:?}", 
+              init_result.agent_info, init_result.auth_methods);
     Ok(AcpInitResponse {
         agent_info: init_result.agent_info,
         auth_methods: init_result.auth_methods,

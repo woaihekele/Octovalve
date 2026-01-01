@@ -167,13 +167,20 @@ export const useChatStore = defineStore('chat', () => {
 
   // ACP Actions
   async function initializeAcp(cwd: string) {
+    console.log('[chatStore] initializeAcp called with cwd:', cwd);
     try {
+      console.log('[chatStore] initializeAcp: calling acpService.start...');
       const response = await acpService.start(cwd);
+      console.log('[chatStore] initializeAcp: acpService.start returned:', response);
       authMethods.value = response.authMethods;
       acpInitialized.value = true;
+      provider.value = 'acp';
+      providerInitialized.value = true;
       setupAcpEventListener();
+      console.log('[chatStore] initializeAcp done');
       return response;
     } catch (e) {
+      console.error('[chatStore] initializeAcp failed:', e);
       setError(`Failed to initialize ACP: ${e}`);
       throw e;
     }
