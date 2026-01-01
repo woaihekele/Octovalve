@@ -220,6 +220,7 @@ pub struct ContextItem {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PromptResult {
     pub stop_reason: String,
 }
