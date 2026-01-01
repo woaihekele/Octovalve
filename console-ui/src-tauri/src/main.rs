@@ -1768,10 +1768,10 @@ fn resolve_codex_acp_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-async fn acp_start(
+fn acp_start(
     app: AppHandle,
     state: State<'_, AcpClientState>,
-    cwd: String,
+    _cwd: String,
 ) -> Result<AcpInitResponse, String> {
     let codex_acp_path = resolve_codex_acp_path(&app)?;
     
@@ -1787,7 +1787,7 @@ async fn acp_start(
     let client = AcpClient::start(&codex_acp_path, app.clone())
         .map_err(|e| e.to_string())?;
 
-    // Initialize
+    // Initialize (blocking)
     let init_result = client.initialize().map_err(|e| e.to_string())?;
 
     // Store client
@@ -1803,7 +1803,7 @@ async fn acp_start(
 }
 
 #[tauri::command]
-async fn acp_authenticate(
+fn acp_authenticate(
     state: State<'_, AcpClientState>,
     method_id: String,
 ) -> Result<(), String> {
@@ -1813,7 +1813,7 @@ async fn acp_authenticate(
 }
 
 #[tauri::command]
-async fn acp_new_session(
+fn acp_new_session(
     state: State<'_, AcpClientState>,
     cwd: String,
 ) -> Result<AcpSessionInfo, String> {
@@ -1828,7 +1828,7 @@ async fn acp_new_session(
 }
 
 #[tauri::command]
-async fn acp_prompt(
+fn acp_prompt(
     state: State<'_, AcpClientState>,
     content: String,
     context: Option<Vec<ContextItem>>,
@@ -1840,14 +1840,14 @@ async fn acp_prompt(
 }
 
 #[tauri::command]
-async fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
+fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
     client.cancel().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
+fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
     let mut guard = state.0.lock().unwrap();
     if let Some(mut client) = guard.take() {
         client.stop();

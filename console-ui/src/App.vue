@@ -120,19 +120,27 @@ const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatI
 
 // Initialize ACP on mount
 async function initAcp() {
+  console.log('[ACP] Starting initialization...');
   try {
     // Use current directory as cwd
-    await chatStore.initializeAcp('.');
+    console.log('[ACP] Calling initializeAcp...');
+    const result = await chatStore.initializeAcp('.');
+    console.log('[ACP] Initialization result:', result);
+    console.log('[ACP] Auth methods:', chatStore.authMethods);
     // Auto-authenticate with openai-api-key if available
     if (chatStore.authMethods.some(m => m.id === 'openai-api-key')) {
+      console.log('[ACP] Authenticating with openai-api-key...');
       await chatStore.authenticateAcp('openai-api-key');
+      console.log('[ACP] Authentication complete');
     }
+    console.log('[ACP] acpInitialized:', chatStore.acpInitialized);
   } catch (e) {
-    console.warn('ACP initialization failed, using fallback:', e);
+    console.error('[ACP] Initialization failed:', e);
   }
 }
 
 // Call initAcp after a short delay to let Tauri initialize
+console.log('[ACP] Scheduling initialization...');
 setTimeout(initAcp, 500);
 
 async function handleChatSend(content: string) {
