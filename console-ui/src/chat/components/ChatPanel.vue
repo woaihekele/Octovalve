@@ -74,26 +74,22 @@
           >↑</button>
         </div>
         <div class="chat-panel__toolbar">
-          <button 
-            class="chat-panel__provider-btn"
-            :class="{ 'chat-panel__provider-btn--active': provider === 'acp' }"
-            @click="$emit('change-provider', 'acp')"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div class="chat-panel__provider-select-wrapper">
+            <svg class="chat-panel__provider-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
             </svg>
-            ACP
-          </button>
-          <button 
-            class="chat-panel__provider-btn"
-            :class="{ 'chat-panel__provider-btn--active': provider === 'openai' }"
-            @click="$emit('change-provider', 'openai')"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+            <select 
+              class="chat-panel__provider-select"
+              :value="provider"
+              @change="$emit('change-provider', ($event.target as HTMLSelectElement).value as 'acp' | 'openai')"
+            >
+              <option value="acp">Codex CLI (ACP)</option>
+              <option value="openai">OpenAI API</option>
+            </select>
+            <svg class="chat-panel__provider-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
             </svg>
-            API
-          </button>
+          </div>
         </div>
       </div>
     </div>
@@ -501,35 +497,48 @@ onMounted(() => {
     margin-top: 8px;
   }
 
-  &__provider-btn {
+  &__provider-select-wrapper {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
+  }
+
+  &__provider-icon {
+    position: absolute;
+    left: 8px;
+    color: #6b7280;
+    pointer-events: none;
+  }
+
+  &__provider-select {
+    appearance: none;
+    padding: 5px 28px 5px 26px;
     border: 1px solid #e5e7eb;
     background: white;
-    color: #6b7280;
+    color: #374151;
     font-size: 11px;
     font-weight: 500;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s;
+    outline: none;
 
     &:hover {
       border-color: #d1d5db;
       background: #f9fafb;
     }
 
-    &--active {
+    &:focus {
       border-color: #8b5cf6;
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-      color: #6366f1;
-
-      &:hover {
-        border-color: #8b5cf6;
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-      }
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1);
     }
+  }
+
+  &__provider-chevron {
+    position: absolute;
+    right: 8px;
+    color: #9ca3af;
+    pointer-events: none;
   }
 }
 </style>
