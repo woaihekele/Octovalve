@@ -118,22 +118,38 @@ const {
 const chatStore = useChatStore();
 const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatIsConnected, providerInitialized } = storeToRefs(chatStore);
 
-// Initialize chat provider on mount
+// Initialize chat provider based on settings
 async function initChatProvider() {
-  // Use OpenAI API by default
-  const openaiConfig = {
-    baseUrl: 'https://api.openai.com/v1',
-    apiKey: '',
-    model: 'gpt-4o-mini',
-    chatPath: '/chat/completions',
-  };
+  const chatConfig = settings.value.chat;
   
   try {
-    await chatStore.initializeOpenai(openaiConfig);
+    if (chatConfig.provider === 'openai') {
+      await chatStore.initializeOpenai(chatConfig.openai);
+    } else {
+      // ACP provider
+      await chatStore.initializeAcp(chatConfig.acp.path || '.');
+      if (chatStore.authMethods.some(m => m.id === 'openai-api-key')) {
+        await chatStore.authenticateAcp('openai-api-key');
+      }
+    }
   } catch (e) {
-    console.warn('OpenAI initialization failed:', e);
+    console.warn('Chat provider initialization failed:', e);
   }
 }
+
+// Re-initialize when settings change
+watch(() => settings.value.chat.provider, async (newProvider, oldProvider) => {
+  if (newProvider !== oldProvider) {
+    // Stop current provider
+    if (oldProvider === 'openai') {
+      await chatStore.stopOpenai();
+    } else {
+      await chatStore.stopAcp();
+    }
+    // Initialize new provider
+    await initChatProvider();
+  }
+});
 
 // Call init after a short delay to let Tauri initialize
 setTimeout(initChatProvider, 500);
