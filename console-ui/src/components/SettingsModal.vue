@@ -34,6 +34,8 @@ import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts
 import { DEFAULT_SETTINGS } from '../settings';
 import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../types';
 import MonacoEditor from './MonacoEditor.vue';
+import { ChatProviderSettings } from './settings';
+import type { ChatProviderConfig } from '../types';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -51,12 +53,17 @@ function cloneSettings(source: AppSettings): AppSettings {
     notificationsEnabled: source.notificationsEnabled,
     theme: source.theme,
     ai: { ...source.ai },
+    chat: {
+      provider: source.chat.provider,
+      openai: { ...source.chat.openai },
+      acp: { ...source.chat.acp },
+    },
     shortcuts: { ...source.shortcuts },
   };
 }
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
-const activeTab = ref<'general' | 'shortcuts' | 'ai' | 'config'>('general');
+const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('general');
 const themeOptions: SelectOption[] = [
   { value: 'system', label: '系统' },
   { value: 'dark', label: '深色' },
@@ -980,6 +987,13 @@ watch(
                   </div>
                 </div>
               </div>
+            </n-tab-pane>
+
+            <n-tab-pane name="chat" tab="聊天设置">
+              <ChatProviderSettings
+                :config="localSettings.chat"
+                @update="(config) => localSettings.chat = config"
+              />
             </n-tab-pane>
 
             <n-tab-pane name="ai" tab="AI 检查">
