@@ -30,21 +30,25 @@
         </div>
       </div>
 
-      <div class="chat-panel__messages" ref="messagesRef">
-        <div v-if="messages.length === 0" class="chat-panel__welcome">
-          <div class="chat-panel__welcome-icon">✨</div>
-          <h3>{{ greeting }}</h3>
-          <p>开始对话来与 AI 助手交互</p>
+      <div class="chat-panel__messages" ref="messagesRef" @scroll="handleScroll">
+        <div ref="contentRef" class="chat-panel__messages-content">
+          <div v-if="messages.length === 0" class="chat-panel__welcome">
+            <div class="chat-panel__welcome-icon">✨</div>
+            <h3>{{ greeting }}</h3>
+            <p>开始对话来与 AI 助手交互</p>
+          </div>
+          <template v-else>
+            <ChatMessageRow
+              v-for="message in messages"
+              :key="message.id"
+              :message="message"
+              :is-last="message.id === messages[messages.length - 1]?.id"
+              :register-bubble="registerBubble"
+              :bubble-style="bubbleStyle"
+            />
+          </template>
+          <div ref="scrollAnchor" class="chat-panel__scroll-anchor"></div>
         </div>
-        <template v-else>
-          <ChatMessageRow
-            v-for="message in messages"
-            :key="message.id"
-            :message="message"
-            :is-last="message.id === messages[messages.length - 1]?.id"
-          />
-        </template>
-        <div ref="scrollAnchor" class="chat-panel__scroll-anchor"></div>
       </div>
 
       <ChatInput
@@ -62,10 +66,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { onBeforeUnmount, ref, watch, nextTick } from 'vue';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
 import type { ChatMessage } from '../types';
+import { useStickToBottom } from '../composables/useStickToBottom';
 
 interface Props {
   isOpen: boolean;
@@ -100,32 +105,82 @@ const emit = defineEmits<{
 
 const inputValue = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
+const contentRef = ref<HTMLElement | null>(null);
 const scrollAnchor = ref<HTMLElement | null>(null);
 
+const { scrollToBottom, handleScroll, activateStickToBottom } = useStickToBottom(
+  messagesRef,
+  contentRef
+);
+
+// Track per-message max width so bubbles can grow but never shrink.
+const bubbleWidths = ref<Record<string, number>>({});
+const bubbleElements = new Map<string, HTMLElement>();
+const bubbleObservers = new Map<string, ResizeObserver>();
+
+const updateBubbleWidth = (messageId: string, width: number) => {
+  if (!Number.isFinite(width) || width <= 0) return;
+  const current = bubbleWidths.value[messageId] ?? 0;
+  if (width > current) {
+    bubbleWidths.value = { ...bubbleWidths.value, [messageId]: width };
+  }
+};
+
+const registerBubble = (messageId: string, el: HTMLElement | null) => {
+  const prevEl = bubbleElements.get(messageId) || null;
+  if (prevEl === el) {
+    return;
+  }
+  if (prevEl) {
+    const prevObserver = bubbleObservers.get(messageId);
+    if (prevObserver) {
+      prevObserver.disconnect();
+      bubbleObservers.delete(messageId);
+    }
+    bubbleElements.delete(messageId);
+  }
+  if (!el) {
+    return;
+  }
+  bubbleElements.set(messageId, el);
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        updateBubbleWidth(messageId, entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    bubbleObservers.set(messageId, observer);
+  } else {
+    requestAnimationFrame(() => {
+      updateBubbleWidth(messageId, el.getBoundingClientRect().width);
+    });
+  }
+};
+
+const bubbleStyle = (messageId: string) => {
+  const width = bubbleWidths.value[messageId];
+  return width ? { minWidth: `${width}px` } : undefined;
+};
+
+onBeforeUnmount(() => {
+  bubbleObservers.forEach((observer) => observer.disconnect());
+  bubbleObservers.clear();
+  bubbleElements.clear();
+});
+
 function handleSend(content: string) {
+  activateStickToBottom();
   emit('send', content);
   inputValue.value = '';
-}
-
-function scrollToBottom() {
-  if (scrollAnchor.value) {
-    scrollAnchor.value.scrollIntoView({ behavior: 'smooth' });
-  }
 }
 
 watch(
   () => props.messages.length,
   () => {
-    nextTick(scrollToBottom);
-  }
-);
-
-watch(
-  () => props.messages[props.messages.length - 1]?.content,
-  () => {
-    if (props.isStreaming) {
-      nextTick(scrollToBottom);
-    }
+    nextTick(() => {
+      void scrollToBottom();
+    });
   }
 );
 
@@ -134,7 +189,8 @@ watch(
   (open) => {
     if (open) {
       nextTick(() => {
-        scrollToBottom();
+        activateStickToBottom();
+        void scrollToBottom({ force: true, behavior: 'smooth' });
       });
     }
   }
@@ -331,6 +387,12 @@ watch(
 
   &__scroll-anchor {
     height: 1px;
+  }
+
+  &__messages-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
   }
 }
 </style>

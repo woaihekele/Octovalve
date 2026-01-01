@@ -15,7 +15,12 @@
         <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc" />
       </div>
       <!-- Main response bubble -->
-      <div class="chat-row__bubble" v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)">
+      <div
+        class="chat-row__bubble"
+        v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)"
+        :ref="(el) => registerBubble?.(message.id, el as HTMLElement | null)"
+        :style="bubbleStyle?.(message.id)"
+      >
         <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__thinking-card">
           <div class="chat-row__thinking-shimmer"></div>
           <div class="chat-row__thinking-icon-wrapper">
@@ -46,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, type CSSProperties } from 'vue';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
@@ -75,6 +80,8 @@ markedInstance.setOptions({ breaks: true, gfm: true });
 interface Props {
   message: ChatMessage;
   isLast?: boolean;
+  registerBubble?: (messageId: string, el: HTMLElement | null) => void;
+  bubbleStyle?: (messageId: string) => CSSProperties | undefined;
 }
 
 const props = withDefaults(defineProps<Props>(), {

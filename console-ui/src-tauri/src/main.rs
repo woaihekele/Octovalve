@@ -203,6 +203,7 @@ fn main() {
             openai_add_message,
             openai_set_tools,
             openai_clear_messages,
+            openai_cancel,
             openai_send
         ])
         .setup(|app| {
@@ -1915,7 +1916,7 @@ async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
 #[tauri::command]
 async fn openai_init(state: State<'_, OpenAiClientState>, config: OpenAiConfig) -> Result<(), String> {
     let mut guard = state.0.lock().await;
-    *guard = Some(OpenAiClient::new(config));
+    *guard = Some(std::sync::Arc::new(OpenAiClient::new(config)));
     Ok(())
 }
 
@@ -1924,25 +1925,53 @@ async fn openai_add_message(
     state: State<'_, OpenAiClientState>,
     message: ChatMessage,
 ) -> Result<(), String> {
-    let guard = state.0.lock().await;
-    let client = guard.as_ref().ok_or("OpenAI client not initialized")?;
+    let client = {
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .ok_or("OpenAI client not initialized")?
+            .clone()
+    };
     client.add_message(message).await;
     Ok(())
 }
 
 #[tauri::command]
 async fn openai_set_tools(state: State<'_, OpenAiClientState>, tools: Vec<Tool>) -> Result<(), String> {
-    let guard = state.0.lock().await;
-    let client = guard.as_ref().ok_or("OpenAI client not initialized")?;
+    let client = {
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .ok_or("OpenAI client not initialized")?
+            .clone()
+    };
     client.set_tools(tools).await;
     Ok(())
 }
 
 #[tauri::command]
 async fn openai_clear_messages(state: State<'_, OpenAiClientState>) -> Result<(), String> {
-    let guard = state.0.lock().await;
-    let client = guard.as_ref().ok_or("OpenAI client not initialized")?;
+    let client = {
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .ok_or("OpenAI client not initialized")?
+            .clone()
+    };
     client.clear_messages().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn openai_cancel(state: State<'_, OpenAiClientState>) -> Result<(), String> {
+    let client = {
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .ok_or("OpenAI client not initialized")?
+            .clone()
+    };
+    client.cancel();
     Ok(())
 }
 
@@ -1951,7 +1980,12 @@ async fn openai_send(
     app: AppHandle,
     state: State<'_, OpenAiClientState>,
 ) -> Result<(), String> {
-    let guard = state.0.lock().await;
-    let client = guard.as_ref().ok_or("OpenAI client not initialized")?;
+    let client = {
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .ok_or("OpenAI client not initialized")?
+            .clone()
+    };
     client.send_stream(&app).await
 }

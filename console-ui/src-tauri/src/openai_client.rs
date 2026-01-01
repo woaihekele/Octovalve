@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,15 +73,18 @@ pub struct OpenAiClient {
     http_client: Client,
     messages: Arc<Mutex<Vec<ChatMessage>>>,
     tools: Arc<Mutex<Vec<Tool>>>,
+    cancel_tx: watch::Sender<u64>,
 }
 
 impl OpenAiClient {
     pub fn new(config: OpenAiConfig) -> Self {
+        let (cancel_tx, _cancel_rx) = watch::channel(0u64);
         Self {
             config,
             http_client: Client::new(),
             messages: Arc::new(Mutex::new(Vec::new())),
             tools: Arc::new(Mutex::new(Vec::new())),
+            cancel_tx,
         }
     }
 
@@ -104,7 +107,15 @@ impl OpenAiClient {
         guard.clear();
     }
 
+    pub fn cancel(&self) {
+        let next = *self.cancel_tx.borrow() + 1;
+        let _ = self.cancel_tx.send(next);
+    }
+
     pub async fn send_stream(&self, app_handle: &AppHandle) -> Result<(), String> {
+        let mut cancel_rx = self.cancel_tx.subscribe();
+        let start_seq = *cancel_rx.borrow();
+
         let messages = self.messages.lock().await.clone();
         let tools = self.tools.lock().await.clone();
 
@@ -145,114 +156,134 @@ impl OpenAiClient {
         let mut full_content = String::new();
         let mut tool_calls: Vec<ToolCall> = Vec::new();
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            // Process SSE lines
-            while let Some(newline_pos) = buffer.find('\n') {
-                let line = buffer[..newline_pos].trim().to_string();
-                buffer = buffer[newline_pos + 1..].to_string();
-
-                if line.is_empty() || line.starts_with(':') {
-                    continue;
-                }
-
-                if let Some(data) = line.strip_prefix("data: ") {
-                    // Check for [DONE] or finish_reason
-                    if data == "[DONE]" || data.contains("\"finish_reason\":\"stop\"") || data.contains("\"finish_reason\": \"stop\"") {
-                        eprintln!("[OpenAI] Stream end detected: {}", data);
-                        // Stream complete
+        loop {
+            tokio::select! {
+                _ = cancel_rx.changed() => {
+                    if *cancel_rx.borrow() != start_seq {
                         let event = ChatStreamEvent {
-                            event_type: "complete".to_string(),
+                            event_type: "cancelled".to_string(),
                             content: None,
-                            tool_calls: if tool_calls.is_empty() {
-                                None
-                            } else {
-                                Some(tool_calls.clone())
-                            },
-                            finish_reason: Some("stop".to_string()),
+                            tool_calls: None,
+                            finish_reason: Some("cancelled".to_string()),
                             error: None,
                         };
                         let _ = app_handle.emit("openai-stream", &event);
-
-                        // Add assistant message to history
-                        if !full_content.is_empty() || !tool_calls.is_empty() {
-                            let mut msgs = self.messages.lock().await;
-                            msgs.push(ChatMessage {
-                                role: "assistant".to_string(),
-                                content: full_content.clone(),
-                                tool_calls: if tool_calls.is_empty() {
-                                    None
-                                } else {
-                                    Some(tool_calls.clone())
-                                },
-                                tool_call_id: None,
-                            });
-                        }
                         return Ok(());
                     }
+                }
+                maybe_chunk = stream.next() => {
+                    let Some(chunk) = maybe_chunk else {
+                        break;
+                    };
+                    let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
+                    buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                    if let Ok(chunk_data) = serde_json::from_str::<Value>(data) {
-                        if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array()) {
-                            if let Some(choice) = choices.first() {
-                                if let Some(delta) = choice.get("delta") {
-                                    // Content delta
-                                    if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
-                                        full_content.push_str(content);
-                                        let event = ChatStreamEvent {
-                                            event_type: "content".to_string(),
-                                            content: Some(content.to_string()),
-                                            tool_calls: None,
-                                            finish_reason: None,
-                                            error: None,
-                                        };
-                                        let _ = app_handle.emit("openai-stream", &event);
-                                    }
+                    // Process SSE lines
+                    while let Some(newline_pos) = buffer.find('\n') {
+                        let line = buffer[..newline_pos].trim().to_string();
+                        buffer = buffer[newline_pos + 1..].to_string();
 
-                                    // Tool calls delta
-                                    if let Some(tc) = delta.get("tool_calls").and_then(|t| t.as_array()) {
-                                        for tc_delta in tc {
-                                            let index = tc_delta.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
-                                            
-                                            // Ensure tool_calls has enough elements
-                                            while tool_calls.len() <= index {
-                                                tool_calls.push(ToolCall {
-                                                    id: String::new(),
-                                                    call_type: "function".to_string(),
-                                                    function: FunctionCall {
-                                                        name: String::new(),
-                                                        arguments: String::new(),
-                                                    },
-                                                });
+                        if line.is_empty() || line.starts_with(':') {
+                            continue;
+                        }
+
+                        if let Some(data) = line.strip_prefix("data: ") {
+                            // Check for [DONE] or finish_reason
+                            if data == "[DONE]" || data.contains("\"finish_reason\":\"stop\"") || data.contains("\"finish_reason\": \"stop\"") {
+                                eprintln!("[OpenAI] Stream end detected: {}", data);
+                                // Stream complete
+                                let event = ChatStreamEvent {
+                                    event_type: "complete".to_string(),
+                                    content: None,
+                                    tool_calls: if tool_calls.is_empty() {
+                                        None
+                                    } else {
+                                        Some(tool_calls.clone())
+                                    },
+                                    finish_reason: Some("stop".to_string()),
+                                    error: None,
+                                };
+                                let _ = app_handle.emit("openai-stream", &event);
+
+                                // Add assistant message to history
+                                if !full_content.is_empty() || !tool_calls.is_empty() {
+                                    let mut msgs = self.messages.lock().await;
+                                    msgs.push(ChatMessage {
+                                        role: "assistant".to_string(),
+                                        content: full_content.clone(),
+                                        tool_calls: if tool_calls.is_empty() {
+                                            None
+                                        } else {
+                                            Some(tool_calls.clone())
+                                        },
+                                        tool_call_id: None,
+                                    });
+                                }
+                                return Ok(());
+                            }
+
+                            if let Ok(chunk_data) = serde_json::from_str::<Value>(data) {
+                                if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array()) {
+                                    if let Some(choice) = choices.first() {
+                                        if let Some(delta) = choice.get("delta") {
+                                            // Content delta
+                                            if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                                full_content.push_str(content);
+                                                let event = ChatStreamEvent {
+                                                    event_type: "content".to_string(),
+                                                    content: Some(content.to_string()),
+                                                    tool_calls: None,
+                                                    finish_reason: None,
+                                                    error: None,
+                                                };
+                                                let _ = app_handle.emit("openai-stream", &event);
                                             }
 
-                                            if let Some(id) = tc_delta.get("id").and_then(|i| i.as_str()) {
-                                                tool_calls[index].id = id.to_string();
-                                            }
-                                            if let Some(func) = tc_delta.get("function") {
-                                                if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                                                    tool_calls[index].function.name = name.to_string();
-                                                }
-                                                if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                                                    tool_calls[index].function.arguments.push_str(args);
+                                            // Tool calls delta
+                                            if let Some(tc) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+                                                for tc_delta in tc {
+                                                    let index = tc_delta.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+
+                                                    // Ensure tool_calls has enough elements
+                                                    while tool_calls.len() <= index {
+                                                        tool_calls.push(ToolCall {
+                                                            id: String::new(),
+                                                            call_type: "function".to_string(),
+                                                            function: FunctionCall {
+                                                                name: String::new(),
+                                                                arguments: String::new(),
+                                                            },
+                                                        });
+                                                    }
+
+                                                    if let Some(id) = tc_delta.get("id").and_then(|i| i.as_str()) {
+                                                        tool_calls[index].id = id.to_string();
+                                                    }
+                                                    if let Some(func) = tc_delta.get("function") {
+                                                        if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
+                                                            tool_calls[index].function.name = name.to_string();
+                                                        }
+                                                        if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
+                                                            tool_calls[index].function.arguments.push_str(args);
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                }
 
-                                // Check finish reason
-                                if let Some(reason) = choice.get("finish_reason").and_then(|r| r.as_str()) {
-                                    if reason == "tool_calls" {
-                                        let event = ChatStreamEvent {
-                                            event_type: "tool_calls".to_string(),
-                                            content: None,
-                                            tool_calls: Some(tool_calls.clone()),
-                                            finish_reason: Some(reason.to_string()),
-                                            error: None,
-                                        };
-                                        let _ = app_handle.emit("openai-stream", &event);
+                                        // Check finish reason
+                                        if let Some(reason) = choice.get("finish_reason").and_then(|r| r.as_str()) {
+                                            if reason == "tool_calls" {
+                                                let event = ChatStreamEvent {
+                                                    event_type: "tool_calls".to_string(),
+                                                    content: None,
+                                                    tool_calls: Some(tool_calls.clone()),
+                                                    finish_reason: Some(reason.to_string()),
+                                                    error: None,
+                                                };
+                                                let _ = app_handle.emit("openai-stream", &event);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -261,10 +292,9 @@ impl OpenAiClient {
                 }
             }
         }
-
         Ok(())
     }
 }
 
 // Global client state
-pub struct OpenAiClientState(pub Mutex<Option<OpenAiClient>>);
+pub struct OpenAiClientState(pub Mutex<Option<Arc<OpenAiClient>>>);

@@ -244,7 +244,12 @@ export const useChatStore = defineStore('chat', () => {
       await acpService.cancel();
       setStreaming(false);
       if (currentAssistantMessageId.value) {
-        updateMessage(currentAssistantMessageId.value, { status: 'cancelled' });
+        const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
+        if (msg && (!msg.content || !msg.content.trim())) {
+          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: '回答已停止', partial: false });
+        } else {
+          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
+        }
         currentAssistantMessageId.value = null;
       }
     } catch (e) {
@@ -456,6 +461,17 @@ export const useChatStore = defineStore('chat', () => {
       if (currentAssistantMessageId.value) {
         appendToMessage(currentAssistantMessageId.value, event.content);
       }
+    } else if (event.eventType === 'cancelled') {
+      if (currentAssistantMessageId.value) {
+        const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
+        if (msg && (!msg.content || !msg.content.trim())) {
+          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: '回答已停止', partial: false });
+        } else {
+          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
+        }
+        currentAssistantMessageId.value = null;
+      }
+      setStreaming(false);
     } else if (event.eventType === 'complete') {
       if (currentAssistantMessageId.value) {
         // Get the full content and add to OpenAI context
@@ -474,6 +490,24 @@ export const useChatStore = defineStore('chat', () => {
         currentAssistantMessageId.value = null;
       }
       setStreaming(false);
+    }
+  }
+
+  async function cancelOpenai() {
+    try {
+      await openaiService.cancel();
+    } catch (e) {
+      console.warn('[chatStore] openai cancel failed:', e);
+    }
+    setStreaming(false);
+    if (currentAssistantMessageId.value) {
+      const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
+      if (msg && (!msg.content || !msg.content.trim())) {
+        updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: '回答已停止', partial: false });
+      } else {
+        updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
+      }
+      currentAssistantMessageId.value = null;
     }
   }
 
@@ -542,6 +576,7 @@ export const useChatStore = defineStore('chat', () => {
     openaiInitialized,
     initializeOpenai,
     sendOpenaiMessage,
+    cancelOpenai,
     stopOpenai,
   };
 });

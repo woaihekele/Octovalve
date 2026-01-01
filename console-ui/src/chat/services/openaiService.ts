@@ -34,7 +34,7 @@ export interface Tool {
 }
 
 export interface ChatStreamEvent {
-  eventType: 'content' | 'tool_calls' | 'complete' | 'error';
+  eventType: 'content' | 'tool_calls' | 'complete' | 'cancelled' | 'error';
   content?: string;
   toolCalls?: ToolCall[];
   finishReason?: string;
@@ -77,6 +77,13 @@ export async function openaiSend(): Promise<void> {
 }
 
 /**
+ * Cancel the current streaming request
+ */
+export async function openaiCancel(): Promise<void> {
+  return invoke('openai_cancel');
+}
+
+/**
  * Listen to OpenAI stream events
  */
 export async function onOpenaiStream(
@@ -94,5 +101,6 @@ export const openaiService = {
   setTools: openaiSetTools,
   clearMessages: openaiClearMessages,
   send: openaiSend,
+  cancel: openaiCancel,
   onStream: onOpenaiStream,
 };

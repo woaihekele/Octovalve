@@ -218,6 +218,8 @@ async function handleChatSend(content: string) {
 function handleChatCancel() {
   if (chatStore.provider === 'acp' && chatStore.acpInitialized) {
     chatStore.cancelAcp();
+  } else if (chatStore.provider === 'openai' && chatStore.openaiInitialized) {
+    chatStore.cancelOpenai();
   }
   chatStore.setStreaming(false);
 }
