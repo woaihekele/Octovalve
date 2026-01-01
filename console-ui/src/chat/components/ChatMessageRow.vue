@@ -19,8 +19,28 @@
       </div>
       <!-- Main response bubble -->
       <div class="chat-row__bubble" v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)">
-        <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__typing">
-          <span></span><span></span><span></span>
+        <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__thinking-card">
+          <div class="chat-row__thinking-shimmer"></div>
+          <div class="chat-row__thinking-icon-wrapper">
+            <div class="chat-row__thinking-ping"></div>
+            <div class="chat-row__thinking-icon-bg">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
+                <path d="M16 14a4 4 0 0 1-8 0"/>
+                <path d="M9 18h6"/>
+                <path d="M10 22h4"/>
+              </svg>
+            </div>
+          </div>
+          <div class="chat-row__thinking-text">
+            <span class="chat-row__thinking-title">AI 正在思考...</span>
+            <span class="chat-row__thinking-subtitle">
+              处理中
+              <span class="chat-row__thinking-dots">
+                <span></span><span></span><span></span>
+              </span>
+            </span>
+          </div>
         </div>
         <div v-else class="chat-row__text" v-html="renderedResponse"></div>
       </div>
@@ -244,20 +264,97 @@ const renderedResponse = computed(() => {
     transition: all 0.2s ease;
   }
 
-  &__typing {
+  &__thinking-card {
     display: flex;
-    gap: 4px;
-    padding: 4px 0;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    background: white;
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08);
+  }
+
+  &__thinking-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(99, 102, 241, 0.06) 50%,
+      transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+    transform: translateX(-100%);
+  }
+
+  &__thinking-icon-wrapper {
+    position: relative;
+    z-index: 1;
+  }
+
+  &__thinking-ping {
+    position: absolute;
+    inset: 0;
+    background: rgba(99, 102, 241, 0.4);
+    border-radius: 50%;
+    animation: ping 1.5s ease-out infinite;
+  }
+
+  &__thinking-icon-bg {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
     
+    svg {
+      animation: pulse-icon 2s ease-in-out infinite;
+    }
+  }
+
+  &__thinking-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 1;
+  }
+
+  &__thinking-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  &__thinking-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #9ca3af;
+  }
+
+  &__thinking-dots {
+    display: flex;
+    gap: 2px;
+    margin-left: 2px;
+
     span {
-      width: 6px;
-      height: 6px;
-      background: rgb(var(--color-text-muted));
+      width: 3px;
+      height: 3px;
+      background: #9ca3af;
       border-radius: 50%;
-      animation: typing 1.4s ease-in-out infinite;
-      
-      &:nth-child(2) { animation-delay: 0.2s; }
-      &:nth-child(3) { animation-delay: 0.4s; }
+      animation: dot-bounce 1.4s ease-in-out infinite;
+
+      &:nth-child(2) { animation-delay: 0.15s; }
+      &:nth-child(3) { animation-delay: 0.3s; }
     }
   }
 
@@ -403,6 +500,44 @@ const renderedResponse = computed(() => {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  75%, 100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-icon {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes dot-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
   }
 }
 </style>
