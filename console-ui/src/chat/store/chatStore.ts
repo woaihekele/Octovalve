@@ -312,6 +312,14 @@ export const useChatStore = defineStore('chat', () => {
         }
         setStreaming(false);
       }
+    } else if (method === 'prompt/complete') {
+      // Handle prompt completion (stopReason: "end_turn")
+      console.log('[chatStore] prompt/complete received:', payload);
+      if (currentAssistantMessageId.value) {
+        updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
+        currentAssistantMessageId.value = null;
+      }
+      setStreaming(false);
     }
   }
 

@@ -144,6 +144,21 @@ impl AcpClient {
                                 Ok(response.result.unwrap_or(Value::Null))
                             };
                             let _ = sender.send(result);
+                        } else {
+                            // No pending request - this is likely a prompt response
+                            // Emit as completion event
+                            if let Some(result) = &response.result {
+                                if let Some(stop_reason) = result.get("stopReason") {
+                                    eprintln!("[ACP reader] emitting completion event: {:?}", stop_reason);
+                                    let event = AcpEvent {
+                                        event_type: "prompt/complete".to_string(),
+                                        payload: result.clone(),
+                                    };
+                                    if let Err(e) = app_handle.emit("acp-event", &event) {
+                                        eprintln!("[ACP] Failed to emit completion event: {}", e);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -244,7 +259,8 @@ impl AcpClient {
         Ok(session_result)
     }
 
-    /// Send a prompt to the current session
+    /// Send a prompt to the current session (non-blocking)
+    /// Content comes via notifications, completion comes via response
     pub fn prompt(&self, content: &str, context: Option<Vec<ContextItem>>) -> Result<(), AcpError> {
         let session_id = self
             .session_id
@@ -259,8 +275,22 @@ impl AcpClient {
             context,
         };
 
-        let result = self.send_request("session/prompt", Some(serde_json::to_value(&params)?))?;
-        let prompt_result: PromptResult = serde_json::from_value(result)?;
+        // Send request but don't block waiting - let reader thread handle response
+        self.send_request_async("session/prompt", Some(serde_json::to_value(&params)?))
+    }
+
+    /// Send a request without waiting for response (reader thread will handle it)
+    fn send_request_async(&self, method: &str, params: Option<Value>) -> Result<(), AcpError> {
+        let id = self.request_id.fetch_add(1, Ordering::SeqCst);
+        let request = JsonRpcRequest::new(id, method, params);
+        let request_json = serde_json::to_string(&request)?;
+
+        // Don't register pending request - we'll handle response in reader thread
+        // by emitting an event
+
+        let mut stdin = self.stdin.lock().unwrap();
+        writeln!(stdin, "{}", request_json)?;
+        stdin.flush()?;
         Ok(())
     }
 
@@ -274,8 +304,8 @@ impl AcpClient {
             .ok_or_else(|| AcpError("No active session".into()))?;
 
         let params = CancelParams { session_id };
-        self.send_request("session/cancel", Some(serde_json::to_value(&params)?))?;
-        Ok(())
+        // Use notification instead of request
+        self.send_notification("session/cancel", Some(serde_json::to_value(&params)?))
     }
 
     /// Get the current session ID
