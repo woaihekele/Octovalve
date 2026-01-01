@@ -151,21 +151,28 @@ defineExpose({ focus });
 
   &__textarea {
     :deep(.n-input) {
-      --n-border: none;
-      --n-border-hover: none;
-      --n-border-focus: none;
-      --n-box-shadow-focus: none;
-      --n-color: transparent;
-      --n-color-focus: transparent;
+      --n-border: none !important;
+      --n-border-hover: none !important;
+      --n-border-focus: none !important;
+      --n-box-shadow-focus: none !important;
+      --n-color: transparent !important;
+      --n-color-focus: transparent !important;
+      --n-color-disabled: transparent !important;
       
       .n-input-wrapper {
         padding: 12px 14px 8px;
+        border: none !important;
       }
 
       .n-input__textarea-el {
         resize: none;
         font-size: 14px;
         line-height: 1.5;
+      }
+
+      .n-input__border,
+      .n-input__state-border {
+        display: none !important;
       }
     }
   }
