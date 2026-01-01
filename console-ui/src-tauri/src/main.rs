@@ -1903,8 +1903,8 @@ fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
 // ============================================================================
 
 #[tauri::command]
-fn openai_init(state: State<'_, OpenAiClientState>, config: OpenAiConfig) -> Result<(), String> {
-    let mut guard = state.0.blocking_lock();
+async fn openai_init(state: State<'_, OpenAiClientState>, config: OpenAiConfig) -> Result<(), String> {
+    let mut guard = state.0.lock().await;
     *guard = Some(OpenAiClient::new(config));
     Ok(())
 }
