@@ -108,7 +108,8 @@ const canSend = computed(() => {
 
 function handleKeyDown(event: KeyboardEvent) {
   // Shift+Enter = newline, Enter = send (but not during IME composition)
-  if (event.key === 'Enter' && !event.shiftKey && !isComposing.value) {
+  // Check both our state and the native isComposing property
+  if (event.key === 'Enter' && !event.shiftKey && !isComposing.value && !event.isComposing) {
     event.preventDefault();
     handleSend();
   }
