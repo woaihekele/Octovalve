@@ -246,18 +246,24 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function stopAcp() {
+    console.log('[chatStore] stopAcp called');
     if (acpEventUnlisten) {
+      console.log('[chatStore] stopAcp: unlisten event');
       acpEventUnlisten();
       acpEventUnlisten = null;
     }
     try {
+      console.log('[chatStore] stopAcp: calling acpService.stop()');
       await acpService.stop();
+      console.log('[chatStore] stopAcp: acpService.stop() done');
     } catch (e) {
       console.error('Failed to stop ACP:', e);
     }
     acpInitialized.value = false;
     acpSessionId.value = null;
+    providerInitialized.value = false;
     setConnected(false);
+    console.log('[chatStore] stopAcp done');
   }
 
   function setupAcpEventListener() {
@@ -301,13 +307,19 @@ export const useChatStore = defineStore('chat', () => {
 
   // OpenAI Actions
   async function initializeOpenai(config: OpenAiConfig) {
+    console.log('[chatStore] initializeOpenai called');
     try {
+      console.log('[chatStore] initializeOpenai: calling openaiService.init()');
       await openaiService.init(config);
+      console.log('[chatStore] initializeOpenai: openaiService.init() done');
       openaiInitialized.value = true;
       providerInitialized.value = true;
+      provider.value = 'openai';
       setupOpenaiEventListener();
       setConnected(true);
+      console.log('[chatStore] initializeOpenai done');
     } catch (e) {
+      console.error('[chatStore] initializeOpenai failed:', e);
       setError(`Failed to initialize OpenAI: ${e}`);
       throw e;
     }
@@ -386,6 +398,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function stopOpenai() {
+    console.log('[chatStore] stopOpenai called');
     if (openaiEventUnlisten) {
       openaiEventUnlisten();
       openaiEventUnlisten = null;
@@ -393,6 +406,7 @@ export const useChatStore = defineStore('chat', () => {
     openaiInitialized.value = false;
     providerInitialized.value = false;
     setConnected(false);
+    console.log('[chatStore] stopOpenai done');
   }
 
   // Unified send message

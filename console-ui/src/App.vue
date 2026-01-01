@@ -140,14 +140,24 @@ async function initChatProvider() {
 // Re-initialize when settings change
 watch(() => settings.value.chat.provider, async (newProvider, oldProvider) => {
   if (newProvider !== oldProvider) {
-    // Stop current provider
-    if (oldProvider === 'openai') {
-      await chatStore.stopOpenai();
-    } else {
-      await chatStore.stopAcp();
+    console.log(`[Chat] Switching provider from ${oldProvider} to ${newProvider}`);
+    try {
+      // Stop current provider
+      if (oldProvider === 'openai') {
+        console.log('[Chat] Stopping OpenAI...');
+        await chatStore.stopOpenai();
+      } else {
+        console.log('[Chat] Stopping ACP...');
+        await chatStore.stopAcp();
+      }
+      console.log('[Chat] Previous provider stopped');
+      // Initialize new provider
+      console.log('[Chat] Initializing new provider...');
+      await initChatProvider();
+      console.log('[Chat] New provider initialized');
+    } catch (e) {
+      console.error('[Chat] Provider switch failed:', e);
     }
-    // Initialize new provider
-    await initChatProvider();
   }
 });
 
