@@ -176,6 +176,7 @@ watch(() => settings.value.chat.provider, async (newProvider, oldProvider) => {
 setTimeout(initChatProvider, 500);
 
 async function handleChatSend(content: string) {
+  console.log('[handleChatSend] providerInitialized:', providerInitialized.value, 'provider:', chatStore.provider);
   if (providerInitialized.value) {
     try {
       await chatStore.sendMessage(content);
