@@ -34,7 +34,7 @@ export interface Tool {
 }
 
 export interface ChatStreamEvent {
-  eventType: 'content' | 'tool_calls' | 'complete' | 'cancelled' | 'error';
+  eventType: 'content' | 'reasoning' | 'tool_calls' | 'complete' | 'cancelled' | 'error';
   content?: string;
   toolCalls?: ToolCall[];
   finishReason?: string;

@@ -125,7 +125,13 @@ const parsedContent = computed(() => {
   return { thinking: '', response: content };
 });
 
-const thinkingContent = computed(() => parsedContent.value.thinking);
+const thinkingContent = computed(() => {
+  const direct = props.message.reasoning;
+  if (direct && direct.trim()) {
+    return direct;
+  }
+  return parsedContent.value.thinking;
+});
 const responseContent = computed(() => parsedContent.value.response);
 
 const assistantMarkdown = computed(() => {

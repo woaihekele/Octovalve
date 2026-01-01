@@ -300,7 +300,17 @@ export const useChatStore = defineStore('chat', () => {
       if (sessionUpdate === 'agent_message_chunk') {
         const content = update.content as { text?: string; type?: string } | undefined;
         if (content?.text && currentAssistantMessageId.value) {
-          appendToMessage(currentAssistantMessageId.value, content.text);
+          const contentType = content.type;
+          if (contentType === 'reasoning' || contentType === 'reasoning_content' || contentType === 'thinking') {
+            const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
+            if (msg) {
+              updateMessage(currentAssistantMessageId.value, {
+                reasoning: (msg.reasoning || '') + content.text,
+              });
+            }
+          } else {
+            appendToMessage(currentAssistantMessageId.value, content.text);
+          }
         }
       } else if (sessionUpdate === 'tool_call') {
         // Tool call started
@@ -460,6 +470,15 @@ export const useChatStore = defineStore('chat', () => {
     if (event.eventType === 'content' && event.content) {
       if (currentAssistantMessageId.value) {
         appendToMessage(currentAssistantMessageId.value, event.content);
+      }
+    } else if (event.eventType === 'reasoning' && event.content) {
+      if (currentAssistantMessageId.value) {
+        const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
+        if (msg) {
+          updateMessage(currentAssistantMessageId.value, {
+            reasoning: (msg.reasoning || '') + event.content,
+          });
+        }
       }
     } else if (event.eventType === 'cancelled') {
       if (currentAssistantMessageId.value) {

@@ -190,7 +190,6 @@ impl OpenAiClient {
                         if let Some(data) = line.strip_prefix("data: ") {
                             // Check for [DONE] or finish_reason
                             if data == "[DONE]" || data.contains("\"finish_reason\":\"stop\"") || data.contains("\"finish_reason\": \"stop\"") {
-                                eprintln!("[OpenAI] Stream end detected: {}", data);
                                 // Stream complete
                                 let event = ChatStreamEvent {
                                     event_type: "complete".to_string(),
@@ -226,6 +225,27 @@ impl OpenAiClient {
                                 if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array()) {
                                     if let Some(choice) = choices.first() {
                                         if let Some(delta) = choice.get("delta") {
+                                            if let Some(reasoning) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
+                                                let event = ChatStreamEvent {
+                                                    event_type: "reasoning".to_string(),
+                                                    content: Some(reasoning.to_string()),
+                                                    tool_calls: None,
+                                                    finish_reason: None,
+                                                    error: None,
+                                                };
+                                                let _ = app_handle.emit("openai-stream", &event);
+                                            }
+                                            if let Some(reasoning) = delta.get("reasoning").and_then(|c| c.as_str()) {
+                                                let event = ChatStreamEvent {
+                                                    event_type: "reasoning".to_string(),
+                                                    content: Some(reasoning.to_string()),
+                                                    tool_calls: None,
+                                                    finish_reason: None,
+                                                    error: None,
+                                                };
+                                                let _ = app_handle.emit("openai-stream", &event);
+                                            }
+
                                             // Content delta
                                             if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                                                 full_content.push_str(content);
