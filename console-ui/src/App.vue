@@ -230,6 +230,13 @@ function handleChatClear() {
   chatStore.clearMessages();
 }
 
+function handleChangeProvider(newProvider: 'acp' | 'openai') {
+  if (settings.value.chat.provider !== newProvider) {
+    settings.value.chat.provider = newProvider;
+    saveSettings(settings.value);
+  }
+}
+
 function showNotification(message: string, count?: number) {
   notification.value = { message, count };
   notificationToken.value += 1;
@@ -619,6 +626,7 @@ watch(
           :messages="chatMessages"
           :is-streaming="chatIsStreaming"
           :is-connected="chatIsConnected"
+          :provider="settings.chat.provider"
           title="AI 助手"
           greeting="你好，我是 AI 助手"
           @close="isChatOpen = false"
@@ -626,6 +634,7 @@ watch(
           @cancel="handleChatCancel"
           @new-session="handleChatNewSession"
           @clear="handleChatClear"
+          @change-provider="handleChangeProvider"
         />
 
         <SettingsModal

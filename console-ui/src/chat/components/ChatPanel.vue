@@ -73,6 +73,28 @@
             @click="handleSend"
           >↑</button>
         </div>
+        <div class="chat-panel__toolbar">
+          <button 
+            class="chat-panel__provider-btn"
+            :class="{ 'chat-panel__provider-btn--active': provider === 'acp' }"
+            @click="$emit('change-provider', 'acp')"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            ACP
+          </button>
+          <button 
+            class="chat-panel__provider-btn"
+            :class="{ 'chat-panel__provider-btn--active': provider === 'openai' }"
+            @click="$emit('change-provider', 'openai')"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+            </svg>
+            API
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -111,6 +133,7 @@ const emit = defineEmits<{
   cancel: [];
   'new-session': [];
   clear: [];
+  'change-provider': [provider: 'acp' | 'openai'];
 }>();
 
 const inputValue = ref('');
@@ -469,6 +492,44 @@ onMounted(() => {
     font-size: 10px;
     color: #9ca3af;
     margin-top: 8px;
+  }
+
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  &__provider-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+
+    &:hover {
+      border-color: #d1d5db;
+      background: #f9fafb;
+    }
+
+    &--active {
+      border-color: #8b5cf6;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+      color: #6366f1;
+
+      &:hover {
+        border-color: #8b5cf6;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+      }
+    }
   }
 }
 </style>
