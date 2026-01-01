@@ -66,15 +66,12 @@ impl AcpClient {
         codex_acp_path: &PathBuf,
         app_handle: AppHandle,
     ) -> Result<Self, AcpError> {
-        eprintln!("[AcpClient] Spawning process: {:?}", codex_acp_path);
         let mut process = Command::new(codex_acp_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| AcpError(format!("Failed to start codex-acp: {}", e)))?;
-
-        eprintln!("[AcpClient] Process spawned, pid: {}", process.id());
 
         let stdin = process
             .stdin
@@ -91,12 +88,8 @@ impl AcpClient {
         // Spawn reader thread
         let pending_clone = pending_requests.clone();
         let reader_handle = std::thread::spawn(move || {
-            eprintln!("[AcpClient] Reader thread started");
             Self::read_loop(stdout, pending_clone, app_handle);
-            eprintln!("[AcpClient] Reader thread ended");
         });
-
-        eprintln!("[AcpClient] Client created successfully");
 
         Ok(Self {
             process,
@@ -112,33 +105,23 @@ impl AcpClient {
     /// Read loop for processing messages from codex-acp
     fn read_loop(stdout: ChildStdout, pending: PendingRequests, app_handle: AppHandle) {
         let reader = BufReader::new(stdout);
-        eprintln!("[AcpClient] Starting to read lines...");
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
-                Err(e) => {
-                    eprintln!("[AcpClient] Read error: {}", e);
-                    break;
-                }
+                Err(_) => break,
             };
 
             if line.is_empty() {
                 continue;
             }
 
-            eprintln!("[AcpClient] Received: {}", &line[..line.len().min(200)]);
-
             let message: AcpMessage = match serde_json::from_str(&line) {
                 Ok(m) => m,
-                Err(e) => {
-                    eprintln!("[AcpClient] Parse error: {} - line: {}", e, line);
-                    continue;
-                }
+                Err(_) => continue,
             };
 
             match message {
                 AcpMessage::Response(response) => {
-                    eprintln!("[AcpClient] Got response id={:?}", response.id);
                     if let Some(id) = response.id {
                         let mut pending_guard = pending.lock().unwrap();
                         if let Some(sender) = pending_guard.remove(&id) {
@@ -152,12 +135,10 @@ impl AcpClient {
                     }
                 }
                 AcpMessage::Notification(notification) => {
-                    eprintln!("[AcpClient] Got notification: {}", notification.method);
                     Self::handle_notification(&app_handle, &notification);
                 }
             }
         }
-        eprintln!("[AcpClient] Read loop finished");
     }
 
     /// Handle incoming notifications from codex-acp
@@ -175,9 +156,6 @@ impl AcpClient {
         let request = JsonRpcRequest::new(id, method, params);
         let request_json = serde_json::to_string(&request)?;
 
-        eprintln!("[AcpClient] Sending request id={} method={}", id, method);
-        eprintln!("[AcpClient] Request: {}", &request_json[..request_json.len().min(500)]);
-
         // Register pending request
         let (tx, rx) = oneshot::channel();
         {
@@ -190,14 +168,11 @@ impl AcpClient {
             let mut stdin = self.stdin.lock().unwrap();
             writeln!(stdin, "{}", request_json)?;
             stdin.flush()?;
-            eprintln!("[AcpClient] Request sent, waiting for response...");
         }
 
         // Wait for response (blocking)
-        let result = rx.blocking_recv()
-            .map_err(|_| AcpError("Request cancelled".into()))?;
-        eprintln!("[AcpClient] Got response for id={}", id);
-        result
+        rx.blocking_recv()
+            .map_err(|_| AcpError("Request cancelled".into()))?
     }
 
     /// Initialize the ACP connection

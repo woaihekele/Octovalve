@@ -1774,13 +1774,11 @@ async fn acp_start(
     _cwd: String,
 ) -> Result<AcpInitResponse, String> {
     let codex_acp_path = resolve_codex_acp_path(&app)?;
-    eprintln!("[ACP] Starting with path: {:?}", codex_acp_path);
     
     // Stop existing client if any
     {
         let mut guard = state.0.lock().unwrap();
         if let Some(mut client) = guard.take() {
-            eprintln!("[ACP] Stopping existing client");
             client.stop();
         }
     }
@@ -1788,11 +1786,8 @@ async fn acp_start(
     // Start new client in blocking task
     let app_clone = app.clone();
     let result = tokio::task::spawn_blocking(move || {
-        eprintln!("[ACP] Starting client...");
         let client = AcpClient::start(&codex_acp_path, app_clone)?;
-        eprintln!("[ACP] Initializing...");
         let init_result = client.initialize()?;
-        eprintln!("[ACP] Initialized successfully");
         Ok::<_, acp_client::AcpError>((client, init_result))
     })
     .await

@@ -101,15 +101,7 @@ export interface CompletePayload {
  * Start the ACP client and initialize connection
  */
 export async function acpStart(cwd: string): Promise<AcpInitResponse> {
-  console.log('[acpService] acpStart called with cwd:', cwd);
-  try {
-    const result = await invoke<AcpInitResponse>('acp_start', { cwd });
-    console.log('[acpService] acpStart result:', result);
-    return result;
-  } catch (e) {
-    console.error('[acpService] acpStart error:', e);
-    throw e;
-  }
+  return invoke<AcpInitResponse>('acp_start', { cwd });
 }
 
 /**
