@@ -103,20 +103,29 @@ impl AcpClient {
 
     /// Read loop for processing messages from codex-acp
     fn read_loop(stdout: ChildStdout, pending: PendingRequests, app_handle: AppHandle) {
+        eprintln!("[ACP reader] starting read loop");
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
-                Err(_) => break,
+                Err(e) => {
+                    eprintln!("[ACP reader] read error: {}", e);
+                    break;
+                }
             };
 
             if line.is_empty() {
                 continue;
             }
 
+            eprintln!("[ACP reader] received line: {}", &line[..line.len().min(200)]);
+
             let message: AcpMessage = match serde_json::from_str(&line) {
                 Ok(m) => m,
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("[ACP reader] parse error: {}", e);
+                    continue;
+                }
             };
 
             match message {
