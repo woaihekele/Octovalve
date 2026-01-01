@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, useSlots, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
 import { useSmoothStream } from '../composables/useSmoothStream';
 
 interface Props {
@@ -73,9 +73,59 @@ const previewRef = ref<HTMLElement | null>(null);
 const displayedPreviewText = ref('');
 const previewStreamDone = ref(!props.streaming);
 const previousPreviewRaw = ref('');
-const previewScrollTimer = ref<number | null>(null);
-const lastPreviewScrollAt = ref(0);
-const previewScrollThrottleMs = 100;
+
+let previewScrollFrame: number | null = null;
+let previewScrollToken = 0;
+let previewScrollTarget = 0;
+
+const stopPreviewFollow = () => {
+  previewScrollToken += 1;
+  if (previewScrollFrame !== null) {
+    cancelAnimationFrame(previewScrollFrame);
+    previewScrollFrame = null;
+  }
+};
+
+const startPreviewFollow = () => {
+  const element = previewRef.value;
+  if (!element) {
+    return;
+  }
+  previewScrollTarget = Math.max(element.scrollHeight - element.clientHeight, 0);
+  if (previewScrollFrame !== null) {
+    return;
+  }
+
+  const token = previewScrollToken + 1;
+  previewScrollToken = token;
+
+  const step = () => {
+    if (previewScrollToken !== token) {
+      previewScrollFrame = null;
+      return;
+    }
+    const el = previewRef.value;
+    if (!el) {
+      previewScrollFrame = null;
+      return;
+    }
+
+    previewScrollTarget = Math.max(el.scrollHeight - el.clientHeight, 0);
+    const current = el.scrollTop;
+    const delta = previewScrollTarget - current;
+
+    if (Math.abs(delta) <= 0.5) {
+      el.scrollTop = previewScrollTarget;
+      previewScrollFrame = null;
+      return;
+    }
+
+    el.scrollTop = current + delta * 0.35;
+    previewScrollFrame = requestAnimationFrame(step);
+  };
+
+  previewScrollFrame = requestAnimationFrame(step);
+};
 
 defineEmits<{ (e: 'toggle'): void }>();
 
@@ -155,6 +205,10 @@ const showPreview = computed(() => {
 watch(
   () => showPreview.value,
   async (visible) => {
+    if (!visible) {
+      stopPreviewFollow();
+      return;
+    }
     if (!visible) return;
     await nextTick();
     if (previewRef.value) {
@@ -170,31 +224,15 @@ watch(
     if (!showPreview.value || count <= prev) return;
     await nextTick();
     if (previewRef.value) {
-      if (previewScrollTimer.value !== null) {
-        return;
-      }
-      const now = Date.now();
-      const elapsed = now - lastPreviewScrollAt.value;
-      const runScroll = () => {
-        requestAnimationFrame(() => {
-          if (!previewRef.value) return;
-          previewRef.value.scrollTop = previewRef.value.scrollHeight;
-          lastPreviewScrollAt.value = Date.now();
-          if (previewScrollTimer.value !== null) {
-            window.clearTimeout(previewScrollTimer.value);
-            previewScrollTimer.value = null;
-          }
-        });
-      };
-      if (elapsed >= previewScrollThrottleMs) {
-        runScroll();
-      } else {
-        previewScrollTimer.value = window.setTimeout(runScroll, previewScrollThrottleMs - elapsed);
-      }
+      startPreviewFollow();
     }
   },
   { flush: 'post' }
 );
+
+onBeforeUnmount(() => {
+  stopPreviewFollow();
+});
 </script>
 
 <style scoped lang="scss">
