@@ -1890,10 +1890,20 @@ fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
-    let mut guard = state.0.lock().unwrap();
-    if let Some(mut client) = guard.take() {
-        client.stop();
+async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
+    // Take the client out of state first
+    let client = {
+        let mut guard = state.0.lock().unwrap();
+        guard.take()
+    };
+    
+    // Stop in a blocking task to avoid blocking the async runtime
+    if let Some(mut client) = client {
+        tokio::task::spawn_blocking(move || {
+            client.stop();
+        })
+        .await
+        .map_err(|e| format!("Failed to stop ACP: {}", e))?;
     }
     Ok(())
 }
