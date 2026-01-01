@@ -5,14 +5,31 @@
   >
     <div class="chat-panel__content">
       <div class="chat-panel__header">
-        <div class="chat-panel__title">
-          <span class="chat-panel__icon">✨</span>
-          <span>{{ title }}</span>
+        <div class="chat-panel__header-left">
+          <div class="chat-panel__avatar">
+            <span class="chat-panel__avatar-icon">✨</span>
+          </div>
+          <div class="chat-panel__header-info">
+            <div class="chat-panel__title-row">
+              <span class="chat-panel__title-text">{{ title }}</span>
+              <span class="chat-panel__provider-badge">{{ provider === 'acp' ? 'ACP' : 'API' }}</span>
+            </div>
+            <div class="chat-panel__status">
+              <span class="chat-panel__status-dot" :class="{ 'chat-panel__status-dot--connected': isConnected }"></span>
+              <span class="chat-panel__status-text">{{ isConnected ? '已连接' : '未连接' }}</span>
+            </div>
+          </div>
         </div>
         <div class="chat-panel__actions">
-          <button class="chat-panel__btn" title="新会话" @click="$emit('new-session')">＋</button>
-          <button class="chat-panel__btn" title="清空消息" @click="$emit('clear')">🗑</button>
-          <button class="chat-panel__btn" title="关闭" @click="$emit('close')">✕</button>
+          <button class="chat-panel__btn" title="新会话" @click="$emit('new-session')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="chat-panel__btn" title="清空消息" @click="$emit('clear')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+          <button class="chat-panel__btn" title="关闭" @click="$emit('close')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       </div>
 
@@ -78,6 +95,7 @@ interface Props {
   messages: ChatMessage[];
   isStreaming?: boolean;
   isConnected?: boolean;
+  provider?: 'acp' | 'openai';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -87,6 +105,7 @@ const props = withDefaults(defineProps<Props>(), {
   width: 380,
   isStreaming: false,
   isConnected: true,
+  provider: 'acp',
 });
 
 const emit = defineEmits<{
@@ -202,46 +221,106 @@ onMounted(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
-    border-bottom: 1px solid rgb(var(--color-border));
-    background: rgb(var(--color-panel));
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
     flex-shrink: 0;
   }
 
-  &__title {
+  &__header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__avatar {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  &__avatar-icon {
+    font-size: 16px;
+  }
+
+  &__header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__title-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 600;
-    font-size: 13px;
-    color: rgb(var(--color-text));
   }
 
-  &__icon {
+  &__title-text {
+    font-weight: 600;
     font-size: 14px;
+    color: white;
+    letter-spacing: 0.3px;
+  }
+
+  &__provider-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 4px;
+    font-family: monospace;
+  }
+
+  &__status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  &__status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.4);
+
+    &--connected {
+      background: #4ade80;
+      box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+    }
+  }
+
+  &__status-text {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
   }
 
   &__actions {
     display: flex;
-    gap: 2px;
+    gap: 4px;
   }
 
   &__btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border: none;
-    background: transparent;
-    color: rgb(var(--color-text-muted));
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s;
 
     &:hover {
-      background: rgb(var(--color-panel-muted));
-      color: rgb(var(--color-text));
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
     }
   }
 
