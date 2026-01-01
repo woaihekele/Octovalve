@@ -90,7 +90,6 @@ impl AcpClient {
         let reader_handle = std::thread::spawn(move || {
             Self::read_loop(stdout, pending_clone, app_handle);
         });
-
         Ok(Self {
             process,
             stdin,
@@ -209,8 +208,18 @@ impl AcpClient {
 
     /// Create a new session
     pub fn new_session(&self, cwd: &str) -> Result<NewSessionResult, AcpError> {
+        // Ensure cwd is absolute
+        let cwd_path = std::path::Path::new(cwd);
+        let absolute_cwd = if cwd_path.is_absolute() {
+            cwd.to_string()
+        } else {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "/".to_string())
+        };
+        
         let params = NewSessionParams {
-            cwd: cwd.to_string(),
+            cwd: absolute_cwd,
             mcp_servers: vec![],
         };
 
@@ -222,7 +231,7 @@ impl AcpClient {
     }
 
     /// Send a prompt to the current session
-    pub fn prompt(&self, content: &str, context: Option<Vec<ContextItem>>) -> Result<PromptResult, AcpError> {
+    pub fn prompt(&self, content: &str, context: Option<Vec<ContextItem>>) -> Result<(), AcpError> {
         let session_id = self
             .session_id
             .lock()
@@ -232,13 +241,13 @@ impl AcpClient {
 
         let params = PromptParams {
             session_id,
-            content: PromptContent::Text(content.to_string()),
+            prompt: vec![ContentBlock::text(content)],
             context,
         };
 
         let result = self.send_request("session/prompt", Some(serde_json::to_value(&params)?))?;
         let prompt_result: PromptResult = serde_json::from_value(result)?;
-        Ok(prompt_result)
+        Ok(())
     }
 
     /// Cancel the current operation

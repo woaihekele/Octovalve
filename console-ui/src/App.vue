@@ -127,7 +127,7 @@ async function initAcp() {
       await chatStore.authenticateAcp('openai-api-key');
     }
   } catch (e) {
-    console.warn('ACP initialization failed, using fallback:', e);
+    console.warn('ACP initialization failed:', e);
   }
 }
 

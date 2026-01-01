@@ -99,7 +99,7 @@ pub struct ClientInfo {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
-    pub protocol_version: String,
+    pub protocol_version: serde_json::Value,  // Can be string or number
     #[serde(default)]
     pub agent_capabilities: Option<AgentCapabilities>,
     #[serde(default)]
@@ -150,8 +150,8 @@ pub struct AuthenticateParams {
 #[serde(rename_all = "camelCase")]
 pub struct NewSessionParams {
     pub cwd: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mcp_servers: Vec<Value>,
+    #[serde(default)]
+    pub mcp_servers: Vec<Value>,  // Always include, even if empty
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -159,9 +159,9 @@ pub struct NewSessionParams {
 pub struct NewSessionResult {
     pub session_id: String,
     #[serde(default)]
-    pub modes: Vec<SessionMode>,
+    pub modes: Value,  // Can be object or array depending on agent
     #[serde(default)]
-    pub models: Vec<SessionModel>,
+    pub models: Value,  // Can be object or array depending on agent
     #[serde(default)]
     pub config_options: Vec<Value>,
 }
@@ -190,23 +190,25 @@ pub struct SessionModel {
 #[serde(rename_all = "camelCase")]
 pub struct PromptParams {
     pub session_id: String,
-    pub content: PromptContent,
+    pub prompt: PromptContent,  // Changed from 'content' to 'prompt'
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<Vec<ContextItem>>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum PromptContent {
-    Text(String),
-    Blocks(Vec<ContentBlock>),
-}
+// PromptContent is always an array of ContentBlocks
+pub type PromptContent = Vec<ContentBlock>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text { text: String },
     Image { data: String, media_type: String },
+}
+
+impl ContentBlock {
+    pub fn text(s: &str) -> Self {
+        ContentBlock::Text { text: s.to_string() }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1793,7 +1793,6 @@ async fn acp_start(
     .await
     .map_err(|e| format!("Task error: {}", e))?
     .map_err(|e| e.to_string())?;
-
     let (client, init_result) = result;
 
     // Store client
@@ -1809,18 +1808,17 @@ async fn acp_start(
 }
 
 #[tauri::command]
-async fn acp_authenticate(
+fn acp_authenticate(
     state: State<'_, AcpClientState>,
     method_id: String,
 ) -> Result<(), String> {
-    // For now, authentication is quick enough to not need spawn_blocking
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
     client.authenticate(&method_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn acp_new_session(
+fn acp_new_session(
     state: State<'_, AcpClientState>,
     cwd: String,
 ) -> Result<AcpSessionInfo, String> {
@@ -1829,13 +1827,13 @@ async fn acp_new_session(
     let result = client.new_session(&cwd).map_err(|e| e.to_string())?;
     Ok(AcpSessionInfo {
         session_id: result.session_id,
-        modes: result.modes,
-        models: result.models,
+        modes: vec![],  // Simplified - modes format varies
+        models: vec![], // Simplified - models format varies
     })
 }
 
 #[tauri::command]
-async fn acp_prompt(
+fn acp_prompt(
     state: State<'_, AcpClientState>,
     content: String,
     context: Option<Vec<ContextItem>>,
@@ -1847,14 +1845,14 @@ async fn acp_prompt(
 }
 
 #[tauri::command]
-async fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
+fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
     client.cancel().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
+fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
     let mut guard = state.0.lock().unwrap();
     if let Some(mut client) = guard.take() {
         client.stop();
