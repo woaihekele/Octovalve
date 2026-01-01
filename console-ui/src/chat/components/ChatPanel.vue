@@ -6,9 +6,6 @@
     <div class="chat-panel__content">
       <div class="chat-panel__header">
         <div class="chat-panel__header-left">
-          <div class="chat-panel__avatar">
-            <span class="chat-panel__avatar-icon">✨</span>
-          </div>
           <div class="chat-panel__header-info">
             <div class="chat-panel__title-row">
               <span class="chat-panel__title-text">{{ title }}</span>

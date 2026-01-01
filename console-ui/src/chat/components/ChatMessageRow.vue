@@ -1,8 +1,5 @@
 <template>
   <div class="chat-row" :class="[`chat-row--${message.role}`, { 'chat-row--streaming': isStreaming }]">
-    <div class="chat-row__avatar" v-if="message.role === 'assistant'">
-      <span class="chat-row__avatar-icon">✨</span>
-    </div>
     <div class="chat-row__content">
       <!-- Thinking section (collapsible) -->
       <div v-if="thinkingContent" class="chat-row__thinking" :class="{ 'chat-row__thinking--open': thinkingOpen }">
@@ -140,18 +137,21 @@ const renderedResponse = computed(() => {
 <style scoped lang="scss">
 .chat-row {
   display: flex;
-  gap: 10px;
-  padding: 12px 16px;
-  align-items: flex-start;
+  padding: 8px 16px;
   animation: slideIn 0.25s ease-out;
 
   &--user {
-    flex-direction: row-reverse;
+    justify-content: flex-end;
+    
+    .chat-row__content {
+      align-items: flex-end;
+    }
     
     .chat-row__bubble {
       background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       color: #fff;
       border-radius: 18px 18px 4px 18px;
+      width: fit-content;
       max-width: 80%;
       box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
     }
@@ -162,9 +162,16 @@ const renderedResponse = computed(() => {
   }
 
   &--assistant {
+    justify-content: flex-start;
+    
+    .chat-row__content {
+      align-items: flex-start;
+    }
+    
     .chat-row__bubble {
       background: rgb(var(--color-panel-muted));
       border-radius: 18px 18px 18px 4px;
+      width: fit-content;
       max-width: 90%;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       border: 1px solid rgba(0, 0, 0, 0.04);
@@ -173,28 +180,14 @@ const renderedResponse = computed(() => {
 
   &__tools {
     margin-bottom: 8px;
-  }
-
-  &__avatar {
-    flex-shrink: 0;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  &__avatar-icon {
-    font-size: 16px;
+    width: fit-content;
+    max-width: 90%;
   }
 
   &__content {
-    flex: 1;
-    min-width: 0;
     display: flex;
     flex-direction: column;
+    max-width: 90%;
   }
 
   &__thinking {
