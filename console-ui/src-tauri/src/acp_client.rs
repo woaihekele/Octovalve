@@ -304,8 +304,8 @@ impl AcpClient {
             .ok_or_else(|| AcpError("No active session".into()))?;
 
         let params = CancelParams { session_id };
-        // Use notification instead of request
-        self.send_notification("session/cancel", Some(serde_json::to_value(&params)?))
+        // Use async request (don't wait for response)
+        self.send_request_async("session/cancel", Some(serde_json::to_value(&params)?))
     }
 
     /// Get the current session ID
