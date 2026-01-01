@@ -112,10 +112,24 @@ export interface AiSettings {
   maxConcurrency: number;
 }
 
+export interface ChatProviderConfig {
+  provider: 'openai' | 'acp';
+  openai: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    chatPath: string;
+  };
+  acp: {
+    path: string;
+  };
+}
+
 export interface AppSettings {
   notificationsEnabled: boolean;
   theme: ThemeMode;
   ai: AiSettings;
+  chat: ChatProviderConfig;
   shortcuts: {
     prevTarget: string;
     nextTarget: string;

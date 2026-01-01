@@ -1,4 +1,4 @@
-import type { AiSettings, AppSettings } from './types';
+import type { AiSettings, AppSettings, ChatProviderConfig } from './types';
 import { normalizeShortcut } from './shortcuts';
 
 const SETTINGS_KEY = 'octovalve.console.settings';
@@ -31,10 +31,24 @@ const DEFAULT_AI_SETTINGS: AiSettings = {
   maxConcurrency: 2,
 };
 
+const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
+  provider: 'openai',
+  openai: {
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    model: 'gpt-4o-mini',
+    chatPath: '/chat/completions',
+  },
+  acp: {
+    path: '',
+  },
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   theme: 'system',
   ai: DEFAULT_AI_SETTINGS,
+  chat: DEFAULT_CHAT_SETTINGS,
   shortcuts: {
     prevTarget: 'KeyW',
     nextTarget: 'KeyS',
@@ -110,11 +124,29 @@ export function loadSettings(): AppSettings {
       timeoutMs: normalizeNumber(parsedAi.timeoutMs, DEFAULT_AI_SETTINGS.timeoutMs, 1000, 60000),
       maxConcurrency: normalizeNumber(parsedAi.maxConcurrency, DEFAULT_AI_SETTINGS.maxConcurrency, 1, 10),
     };
+    const parsedChat = (parsed.chat ?? {}) as Partial<ChatProviderConfig>;
+    const normalizeChatProvider = (value: unknown): 'openai' | 'acp' => 
+      (value === 'openai' || value === 'acp') ? value : DEFAULT_CHAT_SETTINGS.provider;
+    const parsedOpenai = (parsedChat.openai ?? {}) as Partial<ChatProviderConfig['openai']>;
+    const parsedAcp = (parsedChat.acp ?? {}) as Partial<ChatProviderConfig['acp']>;
+    const normalizedChat: ChatProviderConfig = {
+      provider: normalizeChatProvider(parsedChat.provider),
+      openai: {
+        baseUrl: normalizeText(parsedOpenai.baseUrl, DEFAULT_CHAT_SETTINGS.openai.baseUrl),
+        apiKey: normalizeText(parsedOpenai.apiKey, DEFAULT_CHAT_SETTINGS.openai.apiKey),
+        model: normalizeText(parsedOpenai.model, DEFAULT_CHAT_SETTINGS.openai.model),
+        chatPath: normalizeText(parsedOpenai.chatPath, DEFAULT_CHAT_SETTINGS.openai.chatPath),
+      },
+      acp: {
+        path: normalizeText(parsedAcp.path, DEFAULT_CHAT_SETTINGS.acp.path),
+      },
+    };
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
       theme: normalizeTheme(parsed.theme),
       ai: normalizedAi,
+      chat: normalizedChat,
       shortcuts: normalizedShortcuts,
     };
   } catch {
