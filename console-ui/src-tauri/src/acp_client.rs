@@ -142,11 +142,14 @@ impl AcpClient {
 
     /// Handle incoming notifications from codex-acp
     fn handle_notification(app_handle: &AppHandle, notification: &JsonRpcNotification) {
+        eprintln!("[ACP] Emitting notification: {}", notification.method);
         let event = AcpEvent {
             event_type: notification.method.clone(),
             payload: notification.params.clone().unwrap_or(Value::Null),
         };
-        let _ = app_handle.emit("acp-event", &event);
+        if let Err(e) = app_handle.emit("acp-event", &event) {
+            eprintln!("[ACP] Failed to emit event: {}", e);
+        }
     }
 
     /// Send a JSON-RPC request and wait for response

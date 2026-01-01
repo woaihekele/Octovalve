@@ -1838,9 +1838,15 @@ fn acp_prompt(
     content: String,
     context: Option<Vec<ContextItem>>,
 ) -> Result<(), String> {
+    eprintln!("[acp_prompt] called with content: {}", content);
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
-    client.prompt(&content, context).map_err(|e| e.to_string())?;
+    eprintln!("[acp_prompt] calling client.prompt...");
+    client.prompt(&content, context).map_err(|e| {
+        eprintln!("[acp_prompt] error: {}", e);
+        e.to_string()
+    })?;
+    eprintln!("[acp_prompt] done");
     Ok(())
 }
 

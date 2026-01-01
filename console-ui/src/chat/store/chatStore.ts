@@ -256,14 +256,19 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleAcpEvent(event: AcpEvent) {
+    console.log('[ACP Event]', event.type, event.payload);
     const method = event.type;
     const payload = event.payload as Record<string, unknown>;
 
     if (method === 'session/update') {
       const update = payload.update as Record<string, unknown> | undefined;
-      if (!update) return;
+      if (!update) {
+        console.log('[ACP] No update in payload');
+        return;
+      }
       
       const sessionUpdate = update.sessionUpdate as string | undefined;
+      console.log('[ACP] sessionUpdate:', sessionUpdate);
       
       // Handle agent message chunks (AI response text)
       if (sessionUpdate === 'agent_message_chunk') {
