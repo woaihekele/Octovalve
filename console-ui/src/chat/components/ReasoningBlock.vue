@@ -158,10 +158,7 @@ watch(
     if (!visible) return;
     await nextTick();
     if (previewRef.value) {
-      previewRef.value.scrollTo({
-        top: previewRef.value.scrollHeight,
-        behavior: 'instant' as ScrollBehavior,
-      });
+      previewRef.value.scrollTop = previewRef.value.scrollHeight;
     }
   },
   { flush: 'post' }
