@@ -10,7 +10,7 @@ export const useChatStore = defineStore('chat', () => {
   // State
   const sessions = ref<ChatSession[]>([]);
   const activeSessionId = ref<string | null>(null);
-  const isConnected = ref(false);
+  const isConnected = ref(true);
   const isStreaming = ref(false);
   const error = ref<string | null>(null);
   const config = ref<ChatConfig>({
