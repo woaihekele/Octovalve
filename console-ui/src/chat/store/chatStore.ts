@@ -33,6 +33,54 @@ export const useChatStore = defineStore('chat', () => {
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
 
+  let pendingAssistantContent = '';
+  let pendingAssistantReasoning = '';
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const flushIntervalMs = 50;
+
+  const flushPending = () => {
+    if (!currentAssistantMessageId.value || !activeSession.value) {
+      pendingAssistantContent = '';
+      pendingAssistantReasoning = '';
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      return;
+    }
+
+    const messageId = currentAssistantMessageId.value;
+    const msg = activeSession.value.messages.find((m) => m.id === messageId);
+
+    if (msg && pendingAssistantReasoning) {
+      const delta = pendingAssistantReasoning;
+      pendingAssistantReasoning = '';
+      updateMessage(messageId, { reasoning: (msg.reasoning || '') + delta });
+    } else {
+      pendingAssistantReasoning = '';
+    }
+
+    if (pendingAssistantContent) {
+      const delta = pendingAssistantContent;
+      pendingAssistantContent = '';
+      appendToMessage(messageId, delta);
+    }
+
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+  };
+
+  const scheduleFlush = () => {
+    if (flushTimer) {
+      return;
+    }
+    flushTimer = setTimeout(() => {
+      flushPending();
+    }, flushIntervalMs);
+  };
+
   // OpenAI state
   const openaiInitialized = ref(false);
   let openaiEventUnlisten: (() => void) | null = null;
@@ -241,6 +289,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function cancelAcp() {
     try {
+      flushPending();
       await acpService.cancel();
       setStreaming(false);
       if (currentAssistantMessageId.value) {
@@ -302,14 +351,11 @@ export const useChatStore = defineStore('chat', () => {
         if (content?.text && currentAssistantMessageId.value) {
           const contentType = content.type;
           if (contentType === 'reasoning' || contentType === 'reasoning_content' || contentType === 'thinking') {
-            const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
-            if (msg) {
-              updateMessage(currentAssistantMessageId.value, {
-                reasoning: (msg.reasoning || '') + content.text,
-              });
-            }
+            pendingAssistantReasoning += content.text;
+            scheduleFlush();
           } else {
-            appendToMessage(currentAssistantMessageId.value, content.text);
+            pendingAssistantContent += content.text;
+            scheduleFlush();
           }
         }
       } else if (sessionUpdate === 'tool_call') {
@@ -343,12 +389,14 @@ export const useChatStore = defineStore('chat', () => {
           updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
         }
       } else if (sessionUpdate === 'task_complete') {
+        flushPending();
         if (currentAssistantMessageId.value) {
           updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
           currentAssistantMessageId.value = null;
         }
         setStreaming(false);
       } else if (sessionUpdate === 'error') {
+        flushPending();
         const errorMsg = (update.error as { message?: string })?.message || 'Unknown error';
         setError(errorMsg);
         if (currentAssistantMessageId.value) {
@@ -360,6 +408,7 @@ export const useChatStore = defineStore('chat', () => {
     } else if (method === 'prompt/complete') {
       // Handle prompt completion (stopReason: "end_turn")
       console.log('[chatStore] prompt/complete received:', payload);
+      flushPending();
       if (currentAssistantMessageId.value) {
         updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
         currentAssistantMessageId.value = null;
@@ -469,18 +518,16 @@ export const useChatStore = defineStore('chat', () => {
   function handleOpenaiStreamEvent(event: ChatStreamEvent) {
     if (event.eventType === 'content' && event.content) {
       if (currentAssistantMessageId.value) {
-        appendToMessage(currentAssistantMessageId.value, event.content);
+        pendingAssistantContent += event.content;
+        scheduleFlush();
       }
     } else if (event.eventType === 'reasoning' && event.content) {
       if (currentAssistantMessageId.value) {
-        const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
-        if (msg) {
-          updateMessage(currentAssistantMessageId.value, {
-            reasoning: (msg.reasoning || '') + event.content,
-          });
-        }
+        pendingAssistantReasoning += event.content;
+        scheduleFlush();
       }
     } else if (event.eventType === 'cancelled') {
+      flushPending();
       if (currentAssistantMessageId.value) {
         const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
         if (msg && (!msg.content || !msg.content.trim())) {
@@ -492,6 +539,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       setStreaming(false);
     } else if (event.eventType === 'complete') {
+      flushPending();
       if (currentAssistantMessageId.value) {
         // Get the full content and add to OpenAI context
         const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
@@ -503,6 +551,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       setStreaming(false);
     } else if (event.eventType === 'error' && event.error) {
+      flushPending();
       setError(event.error);
       if (currentAssistantMessageId.value) {
         updateMessage(currentAssistantMessageId.value, { status: 'error', content: event.error });
@@ -514,6 +563,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function cancelOpenai() {
     try {
+      flushPending();
       await openaiService.cancel();
     } catch (e) {
       console.warn('[chatStore] openai cancel failed:', e);

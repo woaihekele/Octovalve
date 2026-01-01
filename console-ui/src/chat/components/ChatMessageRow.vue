@@ -166,9 +166,9 @@ const hasMeaningfulThinking = computed(() => hasMeaningfulText(thinkingContent.v
 const hasMeaningfulResponse = computed(() => hasMeaningfulText(responseContent.value));
 
 const smoothOptions = computed(() => ({
-  minDelay: 10,
-  chunkFactor: 5,
-  maxCharsPerFrame: Number.POSITIVE_INFINITY,
+  minDelay: 24,
+  chunkFactor: 9,
+  maxCharsPerFrame: 64,
   streamEndStrategy: 'immediate' as const,
 }));
 
