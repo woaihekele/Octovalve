@@ -66,6 +66,7 @@ pub enum AcpMessage {
 // ============================================================================
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
     pub protocol_version: String,
     pub client_capabilities: ClientCapabilities,
@@ -73,12 +74,14 @@ pub struct InitializeParams {
 }
 
 #[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<PromptCapabilities>,
 }
 
 #[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PromptCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedded_context: Option<bool>,
@@ -87,12 +90,14 @@ pub struct PromptCapabilities {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientInfo {
     pub name: String,
     pub version: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
     pub protocol_version: String,
     #[serde(default)]
@@ -132,6 +137,7 @@ pub struct AuthMethod {
 // ============================================================================
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthenticateParams {
     pub method_id: String,
 }
@@ -141,6 +147,7 @@ pub struct AuthenticateParams {
 // ============================================================================
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NewSessionParams {
     pub cwd: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -148,6 +155,7 @@ pub struct NewSessionParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct NewSessionResult {
     pub session_id: String,
     #[serde(default)]
@@ -179,6 +187,7 @@ pub struct SessionModel {
 // ============================================================================
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PromptParams {
     pub session_id: String,
     pub content: PromptContent,
@@ -218,6 +227,7 @@ pub struct PromptResult {
 // ============================================================================
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CancelParams {
     pub session_id: String,
 }
