@@ -26,12 +26,16 @@
       @wheel.prevent
       @touchmove.prevent
     >
-      <div
-        v-for="(line, index) in previewLines"
-        :key="index"
-        :class="['reasoning-line', { empty: line === '' }]"
-        v-text="line || ' '"
-      ></div>
+      <MarkdownRender
+        :custom-id="previewCustomId || 'reasoning-preview'"
+        :content="displayedPreviewText"
+        :is-dark="props.isDark ?? true"
+        :max-live-nodes="0"
+        :batch-rendering="true"
+        :render-batch-size="16"
+        :render-batch-delay="8"
+        :final="previewStreamDone"
+      />
     </div>
 
     <div v-show="show" class="collapse-footer" @click="$emit('toggle')">
@@ -51,6 +55,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
+import MarkdownRender from 'markstream-vue';
 import { useSmoothStream } from '../composables/useSmoothStream';
 
 interface Props {
@@ -59,6 +64,8 @@ interface Props {
   streaming?: boolean;
   previewText?: string;
   previewActive?: boolean;
+  previewCustomId?: string;
+  isDark?: boolean;
   smoothOptions?: {
     minDelay?: number;
     chunkFactor?: number;
@@ -132,7 +139,7 @@ defineEmits<{ (e: 'toggle'): void }>();
 const hasBody = computed(() => Boolean(props.bodyHtml) || Boolean(slots.body));
 
 const normalizePreviewText = (text: string): string => {
-  return (text || '').replace(/<[^>]*?>/g, '');
+  return text || '';
 };
 
 const smoothOptions = computed(() => props.smoothOptions || {});
@@ -185,6 +192,19 @@ watch(
     previewStreamDone.value = !streaming;
   },
   { immediate: true }
+);
+
+watch(
+  () => props.show,
+  (visible) => {
+    if (!visible) {
+      return;
+    }
+
+    const raw = normalizePreviewText(props.previewText || '');
+    resetPreviewStream(raw);
+    previousPreviewRaw.value = raw;
+  }
 );
 
 const previewLines = computed(() => {

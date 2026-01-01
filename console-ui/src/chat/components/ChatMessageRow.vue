@@ -8,6 +8,8 @@
         :streaming="isStreaming"
         :preview-text="thinkingContent"
         :preview-active="!hasMeaningfulResponse"
+        :preview-custom-id="`chat-thinking-preview-${message.id}`"
+        :is-dark="isDark"
         :smooth-options="smoothOptions"
         @toggle="handleToggleThinking"
       >
@@ -32,8 +34,8 @@
       <div
         class="chat-row__bubble"
         v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)"
-        :ref="(el) => registerBubble?.(message.id, el as HTMLElement | null)"
-        :style="bubbleStyle?.(message.id)"
+        :ref="handleBubbleRef"
+        :style="resolvedBubbleStyle"
       >
         <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__thinking-card">
           <div class="chat-row__thinking-shimmer"></div>
@@ -86,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, type CSSProperties } from 'vue';
+import { computed, ref, type ComponentPublicInstance, type CSSProperties } from 'vue';
 import MarkdownRender from 'markstream-vue';
 import type { ChatMessage } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
@@ -186,6 +188,17 @@ const assistantMarkdown = computed(() => {
   }
   return `${base}${cursor}`;
 });
+
+const handleBubbleRef = (_el: Element | ComponentPublicInstance | null) => {
+  if (props.message.role !== 'assistant') {
+    return;
+  }
+  props.registerBubble?.(props.message.id, null);
+};
+
+const resolvedBubbleStyle = computed(() => {
+  return undefined;
+});
 </script>
 
 <style scoped lang="scss">
@@ -205,30 +218,59 @@ const assistantMarkdown = computed(() => {
       background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       color: #fff;
       border-radius: 18px 18px 4px 18px;
-      width: fit-content;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: max-content;
       max-width: 80%;
       box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
     }
     
     .chat-row__text {
       color: #fff;
+      display: inline-block;
+      min-width: 0;
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+
+      :deep(p) {
+        display: inline;
+        margin: 0;
+      }
+
+      :deep(pre) {
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      :deep(table) {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      :deep(img) {
+        max-width: 100%;
+        height: auto;
+      }
     }
   }
 
   &--assistant {
-    justify-content: flex-start;
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
     
     .chat-row__content {
-      align-items: flex-start;
+      align-items: stretch;
+      max-width: 100%;
+      width: 100%;
+      padding: 0 14px;
     }
     
     .chat-row__bubble {
-      background: rgb(var(--color-panel-muted));
-      border-radius: 18px 18px 18px 4px;
-      width: fit-content;
-      max-width: 90%;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-      border: 1px solid rgba(0, 0, 0, 0.04);
+      display: contents;
     }
   }
 
@@ -309,6 +351,7 @@ const assistantMarkdown = computed(() => {
   &__bubble {
     padding: 10px 14px;
     transition: all 0.2s ease;
+    overflow: hidden;
   }
 
   &__thinking-card {
