@@ -36,24 +36,24 @@
           v-if="isStreaming"
           size="small"
           type="error"
+          circle
           @click="$emit('cancel')"
         >
           <template #icon>
             <n-icon :component="StopOutline" />
           </template>
-          停止
         </n-button>
         <n-button
           v-else
           size="small"
           type="primary"
+          circle
           :disabled="!canSend"
           @click="handleSend"
         >
           <template #icon>
             <n-icon :component="SendOutline" />
           </template>
-          发送
         </n-button>
       </div>
     </div>
