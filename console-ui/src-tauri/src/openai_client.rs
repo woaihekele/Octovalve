@@ -159,7 +159,9 @@ impl OpenAiClient {
                 }
 
                 if let Some(data) = line.strip_prefix("data: ") {
-                    if data == "[DONE]" {
+                    // Check for [DONE] or finish_reason
+                    if data == "[DONE]" || data.contains("\"finish_reason\":\"stop\"") || data.contains("\"finish_reason\": \"stop\"") {
+                        eprintln!("[OpenAI] Stream end detected: {}", data);
                         // Stream complete
                         let event = ChatStreamEvent {
                             event_type: "complete".to_string(),
