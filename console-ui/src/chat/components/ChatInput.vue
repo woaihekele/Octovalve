@@ -10,8 +10,8 @@
         class="chat-input__textarea"
         rows="2"
         @keydown="handleKeyDown"
-        @compositionstart="isComposing = true"
-        @compositionend="isComposing = false"
+        @compositionstart="handleCompositionStart"
+        @compositionend="handleCompositionEnd"
         @focus="isFocused = true"
         @blur="isFocused = false"
         @input="autoResize"
@@ -91,6 +91,22 @@ const emit = defineEmits<{
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isFocused = ref(false);
 const isComposing = ref(false);
+let compositionEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+function handleCompositionStart() {
+  isComposing.value = true;
+  if (compositionEndTimer) {
+    clearTimeout(compositionEndTimer);
+    compositionEndTimer = null;
+  }
+}
+
+function handleCompositionEnd() {
+  // Delay setting isComposing to false to allow the Enter key event to be processed
+  compositionEndTimer = setTimeout(() => {
+    isComposing.value = false;
+  }, 100);
+}
 
 const providerOptions = [
   { label: 'Codex CLI (ACP)', value: 'acp' },
