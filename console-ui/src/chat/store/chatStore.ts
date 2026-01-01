@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
 import type { ChatSession, ChatMessage, ChatState, SendMessageOptions, ChatConfig } from '../types';
+import type { AuthMethod, AcpEvent, ContentDeltaPayload, ErrorPayload, CompletePayload } from '../services/acpService';
+import { acpService } from '../services/acpService';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
@@ -16,6 +18,13 @@ export const useChatStore = defineStore('chat', () => {
   const config = ref<ChatConfig>({
     greeting: '你好，我是 AI 助手。请描述你想要完成的任务。',
   });
+
+  // ACP state
+  const acpInitialized = ref(false);
+  const acpSessionId = ref<string | null>(null);
+  const authMethods = ref<AuthMethod[]>([]);
+  const currentAssistantMessageId = ref<string | null>(null);
+  let acpEventUnlisten: (() => void) | null = null;
 
   // Getters
   const activeSession = computed(() =>
@@ -145,6 +154,143 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // ACP Actions
+  async function initializeAcp(cwd: string) {
+    try {
+      const response = await acpService.start(cwd);
+      authMethods.value = response.authMethods;
+      acpInitialized.value = true;
+      setupAcpEventListener();
+      return response;
+    } catch (e) {
+      setError(`Failed to initialize ACP: ${e}`);
+      throw e;
+    }
+  }
+
+  async function authenticateAcp(methodId: string) {
+    try {
+      await acpService.authenticate(methodId);
+      setConnected(true);
+    } catch (e) {
+      setError(`Authentication failed: ${e}`);
+      throw e;
+    }
+  }
+
+  async function sendAcpMessage(content: string, cwd = '.') {
+    if (!acpInitialized.value) {
+      throw new Error('ACP not initialized');
+    }
+
+    // Create session if needed
+    if (!acpSessionId.value) {
+      const session = await acpService.newSession(cwd);
+      acpSessionId.value = session.sessionId;
+    }
+
+    // Add user message
+    addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'user',
+      content,
+      status: 'complete',
+    });
+
+    // Add assistant placeholder
+    const assistantMsg = addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      partial: true,
+    });
+    currentAssistantMessageId.value = assistantMsg.id;
+
+    setStreaming(true);
+
+    try {
+      await acpService.prompt(content);
+    } catch (e) {
+      updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
+      setStreaming(false);
+      currentAssistantMessageId.value = null;
+      throw e;
+    }
+  }
+
+  async function cancelAcp() {
+    try {
+      await acpService.cancel();
+      setStreaming(false);
+      if (currentAssistantMessageId.value) {
+        updateMessage(currentAssistantMessageId.value, { status: 'cancelled' });
+        currentAssistantMessageId.value = null;
+      }
+    } catch (e) {
+      console.error('Failed to cancel:', e);
+    }
+  }
+
+  async function stopAcp() {
+    if (acpEventUnlisten) {
+      acpEventUnlisten();
+      acpEventUnlisten = null;
+    }
+    try {
+      await acpService.stop();
+    } catch (e) {
+      console.error('Failed to stop ACP:', e);
+    }
+    acpInitialized.value = false;
+    acpSessionId.value = null;
+    setConnected(false);
+  }
+
+  function setupAcpEventListener() {
+    acpService.onEvent(handleAcpEvent).then((unlisten) => {
+      acpEventUnlisten = unlisten;
+    });
+  }
+
+  function handleAcpEvent(event: AcpEvent) {
+    const method = event.type;
+    const payload = event.payload as Record<string, unknown>;
+
+    if (method === 'session/update') {
+      const updateType = (payload as { type?: string }).type;
+      
+      if (updateType === 'content_delta') {
+        const delta = payload as unknown as ContentDeltaPayload;
+        if (currentAssistantMessageId.value) {
+          appendToMessage(currentAssistantMessageId.value, delta.content);
+        }
+      } else if (updateType === 'complete') {
+        if (currentAssistantMessageId.value) {
+          updateMessage(currentAssistantMessageId.value, { 
+            status: 'complete', 
+            partial: false 
+          });
+          currentAssistantMessageId.value = null;
+        }
+        setStreaming(false);
+      } else if (updateType === 'error') {
+        const errorPayload = payload as unknown as ErrorPayload;
+        setError(errorPayload.message);
+        if (currentAssistantMessageId.value) {
+          updateMessage(currentAssistantMessageId.value, { 
+            status: 'error',
+            content: errorPayload.message
+          });
+          currentAssistantMessageId.value = null;
+        }
+        setStreaming(false);
+      }
+    }
+  }
+
   return {
     // State
     sessions,
@@ -172,5 +318,14 @@ export const useChatStore = defineStore('chat', () => {
     setConfig,
     loadFromStorage,
     saveToStorage,
+    // ACP
+    acpInitialized,
+    acpSessionId,
+    authMethods,
+    initializeAcp,
+    authenticateAcp,
+    sendAcpMessage,
+    cancelAcp,
+    stopAcp,
   };
 });

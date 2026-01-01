@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod acp_client;
+mod acp_types;
+
 use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
@@ -42,6 +45,9 @@ struct TerminalSessions(Mutex<HashMap<String, TerminalSession>>);
 struct AppLogState {
     app_log: PathBuf,
 }
+
+use acp_client::{AcpClient, AcpClientState};
+use acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem};
 
 #[derive(Clone, serde::Serialize)]
 struct ProxyConfigStatus {
@@ -155,6 +161,7 @@ fn main() {
         .manage(ConsoleSidecarState(Mutex::new(None)))
         .manage(ConsoleStreamState(Mutex::new(false)))
         .manage(TerminalSessions(Mutex::new(HashMap::new())))
+        .manage(AcpClientState::default())
         .invoke_handler(tauri::generate_handler![
             list_profiles,
             create_profile,
@@ -182,7 +189,13 @@ fn main() {
             terminal_open,
             terminal_input,
             terminal_resize,
-            terminal_close
+            terminal_close,
+            acp_start,
+            acp_authenticate,
+            acp_new_session,
+            acp_prompt,
+            acp_cancel,
+            acp_stop
         ])
         .setup(|app| {
             let app_handle = app.handle();
@@ -1718,4 +1731,115 @@ fn send_terminal_message(
         .tx
         .send(payload)
         .map_err(|_| "terminal session unavailable".to_string())
+}
+
+// ============================================================================
+// ACP Commands
+// ============================================================================
+
+fn resolve_codex_acp_path(app: &AppHandle) -> Result<PathBuf, String> {
+    // First check ~/.octovalve/codex-acp
+    if let Ok(home) = app.path().home_dir() {
+        let custom_path = home.join(".octovalve").join("codex-acp");
+        if custom_path.exists() {
+            return Ok(custom_path);
+        }
+    }
+    // Then check bundled sidecar
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let dir = exe.parent().ok_or("failed to get exe dir")?;
+    let sidecar = dir.join("codex-acp");
+    if sidecar.exists() {
+        return Ok(sidecar);
+    }
+    // Fallback to PATH
+    Ok(PathBuf::from("codex-acp"))
+}
+
+#[tauri::command]
+async fn acp_start(
+    app: AppHandle,
+    state: State<'_, AcpClientState>,
+    cwd: String,
+) -> Result<AcpInitResponse, String> {
+    let codex_acp_path = resolve_codex_acp_path(&app)?;
+    
+    // Stop existing client if any
+    {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(mut client) = guard.take() {
+            client.stop();
+        }
+    }
+
+    // Start new client
+    let client = AcpClient::start(&codex_acp_path, app.clone())
+        .map_err(|e| e.to_string())?;
+
+    // Initialize
+    let init_result = client.initialize().map_err(|e| e.to_string())?;
+
+    // Store client
+    {
+        let mut guard = state.0.lock().unwrap();
+        *guard = Some(client);
+    }
+
+    Ok(AcpInitResponse {
+        agent_info: init_result.agent_info,
+        auth_methods: init_result.auth_methods,
+    })
+}
+
+#[tauri::command]
+async fn acp_authenticate(
+    state: State<'_, AcpClientState>,
+    method_id: String,
+) -> Result<(), String> {
+    let guard = state.0.lock().unwrap();
+    let client = guard.as_ref().ok_or("ACP client not started")?;
+    client.authenticate(&method_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn acp_new_session(
+    state: State<'_, AcpClientState>,
+    cwd: String,
+) -> Result<AcpSessionInfo, String> {
+    let guard = state.0.lock().unwrap();
+    let client = guard.as_ref().ok_or("ACP client not started")?;
+    let result = client.new_session(&cwd).map_err(|e| e.to_string())?;
+    Ok(AcpSessionInfo {
+        session_id: result.session_id,
+        modes: result.modes,
+        models: result.models,
+    })
+}
+
+#[tauri::command]
+async fn acp_prompt(
+    state: State<'_, AcpClientState>,
+    content: String,
+    context: Option<Vec<ContextItem>>,
+) -> Result<(), String> {
+    let guard = state.0.lock().unwrap();
+    let client = guard.as_ref().ok_or("ACP client not started")?;
+    client.prompt(&content, context).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
+    let guard = state.0.lock().unwrap();
+    let client = guard.as_ref().ok_or("ACP client not started")?;
+    client.cancel().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
+    let mut guard = state.0.lock().unwrap();
+    if let Some(mut client) = guard.take() {
+        client.stop();
+    }
+    Ok(())
 }
