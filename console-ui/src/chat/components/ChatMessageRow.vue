@@ -212,16 +212,18 @@ const resolvedBubbleStyle = computed(() => {
     
     .chat-row__content {
       align-items: flex-end;
+      width: 100%;
+      max-width: 100%;
     }
     
     .chat-row__bubble {
       background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
       color: #fff;
       border-radius: 18px 18px 4px 18px;
-      display: inline-flex;
-      flex-direction: column;
-      align-items: flex-start;
-      width: max-content;
+      display: inline-block;
+      width: auto;
+      padding-top: 9px;
+      padding-bottom: 7px;
       max-width: 80%;
       box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
     }
@@ -231,8 +233,26 @@ const resolvedBubbleStyle = computed(() => {
       display: inline-block;
       min-width: 0;
       max-width: 100%;
+      font-size: 14px;
       white-space: pre-wrap;
-      overflow-wrap: anywhere;
+      line-height: 1;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+
+      :deep(> *) {
+        display: inline-block;
+        width: max-content;
+        max-width: 100%;
+        line-height: inherit;
+        margin: 0;
+        padding: 0;
+        word-break: inherit;
+        overflow-wrap: inherit;
+      }
+
+      :deep(*) {
+        line-height: inherit;
+      }
 
       :deep(p) {
         display: inline;
