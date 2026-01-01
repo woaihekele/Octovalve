@@ -320,10 +320,12 @@ impl AcpClient {
 
     /// Stop the codex-acp process
     pub fn stop(&mut self) {
+        eprintln!("[ACP] stop: killing process");
         let _ = self.process.kill();
-        if let Some(handle) = self.reader_handle.take() {
-            let _ = handle.join();
-        }
+        // Don't wait for reader thread - it will exit when stdout closes
+        // Just detach it by taking the handle
+        let _ = self.reader_handle.take();
+        eprintln!("[ACP] stop: done");
     }
 }
 
