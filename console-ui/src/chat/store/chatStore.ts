@@ -260,14 +260,20 @@ export const useChatStore = defineStore('chat', () => {
     const payload = event.payload as Record<string, unknown>;
 
     if (method === 'session/update') {
-      const updateType = (payload as { type?: string }).type;
+      const update = payload.update as Record<string, unknown> | undefined;
+      if (!update) return;
       
-      if (updateType === 'content_delta') {
-        const delta = payload as unknown as ContentDeltaPayload;
-        if (currentAssistantMessageId.value) {
-          appendToMessage(currentAssistantMessageId.value, delta.content);
+      const sessionUpdate = update.sessionUpdate as string | undefined;
+      
+      // Handle agent message chunks (AI response text)
+      if (sessionUpdate === 'agent_message_chunk') {
+        const content = update.content as { text?: string; type?: string } | undefined;
+        if (content?.text && currentAssistantMessageId.value) {
+          appendToMessage(currentAssistantMessageId.value, content.text);
         }
-      } else if (updateType === 'complete') {
+      }
+      // Handle task complete
+      else if (sessionUpdate === 'task_complete') {
         if (currentAssistantMessageId.value) {
           updateMessage(currentAssistantMessageId.value, { 
             status: 'complete', 
@@ -276,13 +282,15 @@ export const useChatStore = defineStore('chat', () => {
           currentAssistantMessageId.value = null;
         }
         setStreaming(false);
-      } else if (updateType === 'error') {
-        const errorPayload = payload as unknown as ErrorPayload;
-        setError(errorPayload.message);
+      }
+      // Handle errors
+      else if (sessionUpdate === 'error') {
+        const errorMsg = (update.error as { message?: string })?.message || 'Unknown error';
+        setError(errorMsg);
         if (currentAssistantMessageId.value) {
           updateMessage(currentAssistantMessageId.value, { 
             status: 'error',
-            content: errorPayload.message
+            content: errorMsg
           });
           currentAssistantMessageId.value = null;
         }
