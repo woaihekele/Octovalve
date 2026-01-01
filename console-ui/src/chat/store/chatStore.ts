@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia';
-import { ref, computed, onUnmounted } from 'vue';
-import type { ChatSession, ChatMessage, ChatState, SendMessageOptions, ChatConfig } from '../types';
-import type { AuthMethod, AcpEvent, ContentDeltaPayload, ErrorPayload, CompletePayload } from '../services/acpService';
+import { ref, computed } from 'vue';
+import type { ChatSession, ChatMessage, ChatConfig } from '../types';
+import type { AuthMethod, AcpEvent } from '../services/acpService';
 import { acpService } from '../services/acpService';
+import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
+
+export type ChatProvider = 'acp' | 'openai';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
@@ -19,12 +22,20 @@ export const useChatStore = defineStore('chat', () => {
     greeting: '你好，我是 AI 助手。请描述你想要完成的任务。',
   });
 
+  // Provider state
+  const provider = ref<ChatProvider>('openai');
+  const providerInitialized = ref(false);
+
   // ACP state
   const acpInitialized = ref(false);
   const acpSessionId = ref<string | null>(null);
   const authMethods = ref<AuthMethod[]>([]);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
+
+  // OpenAI state
+  const openaiInitialized = ref(false);
+  let openaiEventUnlisten: (() => void) | null = null;
 
   // Getters
   const activeSession = computed(() =>
@@ -256,51 +267,140 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleAcpEvent(event: AcpEvent) {
-    console.log('[ACP Event]', event.type, event.payload);
     const method = event.type;
     const payload = event.payload as Record<string, unknown>;
 
     if (method === 'session/update') {
       const update = payload.update as Record<string, unknown> | undefined;
-      if (!update) {
-        console.log('[ACP] No update in payload');
-        return;
-      }
+      if (!update) return;
       
       const sessionUpdate = update.sessionUpdate as string | undefined;
-      console.log('[ACP] sessionUpdate:', sessionUpdate);
       
-      // Handle agent message chunks (AI response text)
       if (sessionUpdate === 'agent_message_chunk') {
         const content = update.content as { text?: string; type?: string } | undefined;
         if (content?.text && currentAssistantMessageId.value) {
           appendToMessage(currentAssistantMessageId.value, content.text);
         }
-      }
-      // Handle task complete
-      else if (sessionUpdate === 'task_complete') {
+      } else if (sessionUpdate === 'task_complete') {
         if (currentAssistantMessageId.value) {
-          updateMessage(currentAssistantMessageId.value, { 
-            status: 'complete', 
-            partial: false 
-          });
+          updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
           currentAssistantMessageId.value = null;
         }
         setStreaming(false);
-      }
-      // Handle errors
-      else if (sessionUpdate === 'error') {
+      } else if (sessionUpdate === 'error') {
         const errorMsg = (update.error as { message?: string })?.message || 'Unknown error';
         setError(errorMsg);
         if (currentAssistantMessageId.value) {
-          updateMessage(currentAssistantMessageId.value, { 
-            status: 'error',
-            content: errorMsg
-          });
+          updateMessage(currentAssistantMessageId.value, { status: 'error', content: errorMsg });
           currentAssistantMessageId.value = null;
         }
         setStreaming(false);
       }
+    }
+  }
+
+  // OpenAI Actions
+  async function initializeOpenai(config: OpenAiConfig) {
+    try {
+      await openaiService.init(config);
+      openaiInitialized.value = true;
+      providerInitialized.value = true;
+      setupOpenaiEventListener();
+      setConnected(true);
+    } catch (e) {
+      setError(`Failed to initialize OpenAI: ${e}`);
+      throw e;
+    }
+  }
+
+  async function sendOpenaiMessage(content: string) {
+    if (!openaiInitialized.value) {
+      throw new Error('OpenAI not initialized');
+    }
+
+    // Add user message to UI
+    addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'user',
+      content,
+      status: 'complete',
+    });
+
+    // Add user message to OpenAI context
+    await openaiService.addMessage({ role: 'user', content });
+
+    // Add assistant placeholder
+    const assistantMsg = addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      partial: true,
+    });
+    currentAssistantMessageId.value = assistantMsg.id;
+
+    setStreaming(true);
+
+    try {
+      await openaiService.send();
+    } catch (e) {
+      updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
+      setStreaming(false);
+      currentAssistantMessageId.value = null;
+      throw e;
+    }
+  }
+
+  function setupOpenaiEventListener() {
+    openaiService.onStream(handleOpenaiStreamEvent).then((unlisten) => {
+      openaiEventUnlisten = unlisten;
+    });
+  }
+
+  function handleOpenaiStreamEvent(event: ChatStreamEvent) {
+    if (event.eventType === 'content' && event.content) {
+      if (currentAssistantMessageId.value) {
+        appendToMessage(currentAssistantMessageId.value, event.content);
+      }
+    } else if (event.eventType === 'complete') {
+      if (currentAssistantMessageId.value) {
+        // Get the full content and add to OpenAI context
+        const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
+        if (msg) {
+          openaiService.addMessage({ role: 'assistant', content: msg.content });
+        }
+        updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
+        currentAssistantMessageId.value = null;
+      }
+      setStreaming(false);
+    } else if (event.eventType === 'error' && event.error) {
+      setError(event.error);
+      if (currentAssistantMessageId.value) {
+        updateMessage(currentAssistantMessageId.value, { status: 'error', content: event.error });
+        currentAssistantMessageId.value = null;
+      }
+      setStreaming(false);
+    }
+  }
+
+  async function stopOpenai() {
+    if (openaiEventUnlisten) {
+      openaiEventUnlisten();
+      openaiEventUnlisten = null;
+    }
+    openaiInitialized.value = false;
+    providerInitialized.value = false;
+    setConnected(false);
+  }
+
+  // Unified send message
+  async function sendMessage(content: string, cwd = '.') {
+    if (provider.value === 'openai') {
+      return sendOpenaiMessage(content);
+    } else {
+      return sendAcpMessage(content, cwd);
     }
   }
 
@@ -331,6 +431,10 @@ export const useChatStore = defineStore('chat', () => {
     setConfig,
     loadFromStorage,
     saveToStorage,
+    // Provider
+    provider,
+    providerInitialized,
+    sendMessage,
     // ACP
     acpInitialized,
     acpSessionId,
@@ -340,5 +444,10 @@ export const useChatStore = defineStore('chat', () => {
     sendAcpMessage,
     cancelAcp,
     stopAcp,
+    // OpenAI
+    openaiInitialized,
+    initializeOpenai,
+    sendOpenaiMessage,
+    stopOpenai,
   };
 });

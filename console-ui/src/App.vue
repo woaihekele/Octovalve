@@ -116,31 +116,34 @@ const {
 
 // Chat store integration
 const chatStore = useChatStore();
-const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatIsConnected, acpInitialized } = storeToRefs(chatStore);
+const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatIsConnected, providerInitialized } = storeToRefs(chatStore);
 
-// Initialize ACP on mount
-async function initAcp() {
+// Initialize chat provider on mount
+async function initChatProvider() {
+  // Use OpenAI API by default
+  const openaiConfig = {
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    model: 'gpt-4o-mini',
+    chatPath: '/chat/completions',
+  };
+  
   try {
-    await chatStore.initializeAcp('.');
-    // Auto-authenticate with openai-api-key if available
-    if (chatStore.authMethods.some(m => m.id === 'openai-api-key')) {
-      await chatStore.authenticateAcp('openai-api-key');
-    }
+    await chatStore.initializeOpenai(openaiConfig);
   } catch (e) {
-    console.warn('ACP initialization failed:', e);
+    console.warn('OpenAI initialization failed:', e);
   }
 }
 
-// Call initAcp after a short delay to let Tauri initialize
-setTimeout(initAcp, 500);
+// Call init after a short delay to let Tauri initialize
+setTimeout(initChatProvider, 500);
 
 async function handleChatSend(content: string) {
-  if (acpInitialized.value) {
-    // Use ACP
+  if (providerInitialized.value) {
     try {
-      await chatStore.sendAcpMessage(content);
+      await chatStore.sendMessage(content);
     } catch (e) {
-      showNotification(`ACP 错误: ${e}`);
+      showNotification(`Chat error: ${e}`);
     }
   } else {
     // Fallback to simulated response
@@ -175,11 +178,10 @@ async function handleChatSend(content: string) {
 }
 
 function handleChatCancel() {
-  if (acpInitialized.value) {
+  if (chatStore.provider === 'acp' && chatStore.acpInitialized) {
     chatStore.cancelAcp();
-  } else {
-    chatStore.setStreaming(false);
   }
+  chatStore.setStreaming(false);
 }
 
 function handleChatNewSession() {
