@@ -11,7 +11,9 @@ import {
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from './api';
-import { NButton, NConfigProvider, NNotificationProvider, NTabPane, NTabs, darkTheme } from 'naive-ui';
+import { NButton, NConfigProvider, NIcon, NNotificationProvider, NTabPane, NTabs, darkTheme } from 'naive-ui';
+import { ChatbubblesOutline } from '@vicons/ionicons5';
+import { ChatDrawer } from './chat';
 import { matchesShortcut } from './shortcuts';
 import Sidebar from './components/Sidebar.vue';
 import TerminalPanel from './components/TerminalPanel.vue';
@@ -30,6 +32,7 @@ const snapshots = ref<Record<string, ServiceSnapshot>>({});
 const selectedTargetName = ref<string | null>(null);
 const settings = ref(loadSettings());
 const isSettingsOpen = ref(false);
+const isChatOpen = ref(false);
 const notification = ref<{ message: string; count?: number } | null>(null);
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
@@ -409,6 +412,17 @@ watch(
 
         <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
           <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
+            <n-button
+              size="small"
+              quaternary
+              circle
+              title="AI 助手"
+              @click="isChatOpen = true"
+            >
+              <template #icon>
+                <n-icon :component="ChatbubblesOutline" />
+              </template>
+            </n-button>
             <span
               v-if="connectionState === 'disconnected'"
               class="text-xs px-2 py-1 rounded border bg-danger/20 text-danger border-danger/30"
@@ -491,6 +505,12 @@ watch(
           :resolved-theme="resolvedTheme"
           @close="isSettingsOpen = false"
           @save="handleSettingsSave"
+        />
+
+        <ChatDrawer
+          v-model="isChatOpen"
+          title="AI 助手"
+          greeting="你好，我是 AI 助手。请描述你想要完成的任务。"
         />
       </div>
     </n-notification-provider>
