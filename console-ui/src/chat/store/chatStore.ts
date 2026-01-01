@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { ChatSession, ChatMessage, ChatConfig } from '../types';
+import type { ChatSession, ChatMessage, ChatConfig, ToolCall } from '../types';
 import type { AuthMethod, AcpEvent } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
@@ -297,6 +297,36 @@ export const useChatStore = defineStore('chat', () => {
         if (content?.text && currentAssistantMessageId.value) {
           appendToMessage(currentAssistantMessageId.value, content.text);
         }
+      } else if (sessionUpdate === 'tool_call') {
+        // Tool call started
+        const toolCallId = update.toolCallId as string;
+        const title = update.title as string | undefined;
+        const name = update.name as string | undefined;
+        if (currentAssistantMessageId.value && toolCallId) {
+          addToolCall(currentAssistantMessageId.value, {
+            id: toolCallId,
+            name: name || title || 'Unknown Tool',
+            arguments: {},
+            status: 'running',
+          });
+        }
+      } else if (sessionUpdate === 'tool_call_update') {
+        // Tool call output/status update
+        const toolCallId = update.toolCallId as string;
+        const content = update.content as { text?: string } | undefined;
+        const status = update.status as string | undefined;
+        if (currentAssistantMessageId.value && toolCallId) {
+          const updates: Partial<ToolCall> = {};
+          if (content?.text) {
+            updates.result = (updates.result || '') + content.text;
+          }
+          if (status === 'completed' || status === 'done') {
+            updates.status = 'completed';
+          } else if (status === 'failed' || status === 'error') {
+            updates.status = 'failed';
+          }
+          updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
+        }
       } else if (sessionUpdate === 'task_complete') {
         if (currentAssistantMessageId.value) {
           updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
@@ -320,6 +350,38 @@ export const useChatStore = defineStore('chat', () => {
         currentAssistantMessageId.value = null;
       }
       setStreaming(false);
+    }
+  }
+
+  function addToolCall(messageId: string, toolCall: ToolCall) {
+    const session = activeSession.value;
+    if (!session) return;
+    const msg = session.messages.find((m) => m.id === messageId);
+    if (msg) {
+      if (!msg.toolCalls) {
+        msg.toolCalls = [];
+      }
+      msg.toolCalls.push(toolCall);
+    }
+  }
+
+  function updateToolCall(messageId: string, toolCallId: string, updates: Partial<ToolCall>) {
+    const session = activeSession.value;
+    if (!session) return;
+    const msg = session.messages.find((m) => m.id === messageId);
+    if (msg?.toolCalls) {
+      const tc = msg.toolCalls.find((t) => t.id === toolCallId);
+      if (tc) {
+        if (updates.result !== undefined) {
+          tc.result = (tc.result || '') + updates.result;
+        }
+        if (updates.status !== undefined) {
+          tc.status = updates.status;
+        }
+        if (updates.name !== undefined) {
+          tc.name = updates.name;
+        }
+      }
     }
   }
 

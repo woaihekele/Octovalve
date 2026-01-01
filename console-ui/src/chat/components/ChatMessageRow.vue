@@ -13,6 +13,10 @@
         </button>
         <div v-show="thinkingOpen" class="chat-row__thinking-content" v-html="renderedThinking"></div>
       </div>
+      <!-- Tool calls -->
+      <div v-if="message.toolCalls && message.toolCalls.length > 0" class="chat-row__tools">
+        <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc" />
+      </div>
       <!-- Main response bubble -->
       <div class="chat-row__bubble" v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)">
         <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__typing">
@@ -30,6 +34,7 @@ import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import type { ChatMessage } from '../types';
+import ToolCallCard from './ToolCallCard.vue';
 
 // Configure marked with highlight.js
 const markedInstance = new Marked(
