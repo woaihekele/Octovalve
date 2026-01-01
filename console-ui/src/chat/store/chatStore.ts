@@ -246,18 +246,21 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function stopAcp() {
-    console.log('[chatStore] stopAcp called');
+    console.log('[chatStore] stopAcp called, acpInitialized:', acpInitialized.value);
     if (acpEventUnlisten) {
       console.log('[chatStore] stopAcp: unlisten event');
       acpEventUnlisten();
       acpEventUnlisten = null;
     }
-    try {
-      console.log('[chatStore] stopAcp: calling acpService.stop()');
-      await acpService.stop();
-      console.log('[chatStore] stopAcp: acpService.stop() done');
-    } catch (e) {
-      console.error('Failed to stop ACP:', e);
+    // Only call backend stop if ACP was actually initialized
+    if (acpInitialized.value) {
+      try {
+        console.log('[chatStore] stopAcp: calling acpService.stop()');
+        await acpService.stop();
+        console.log('[chatStore] stopAcp: acpService.stop() done');
+      } catch (e) {
+        console.error('Failed to stop ACP:', e);
+      }
     }
     acpInitialized.value = false;
     acpSessionId.value = null;
