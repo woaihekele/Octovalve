@@ -54,11 +54,13 @@ pub struct JsonRpcNotification {
 }
 
 /// Incoming message from codex-acp (either response or notification)
+/// Note: Notification must come first because Response has optional id field
+/// which would match notifications incorrectly
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum AcpMessage {
-    Response(JsonRpcResponse),
     Notification(JsonRpcNotification),
+    Response(JsonRpcResponse),
 }
 
 // ============================================================================

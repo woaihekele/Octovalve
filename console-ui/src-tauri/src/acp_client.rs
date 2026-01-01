@@ -129,7 +129,12 @@ impl AcpClient {
             };
 
             match message {
+                AcpMessage::Notification(notification) => {
+                    eprintln!("[ACP reader] parsed as Notification: {}", notification.method);
+                    Self::handle_notification(&app_handle, &notification);
+                }
                 AcpMessage::Response(response) => {
+                    eprintln!("[ACP reader] parsed as Response, id: {:?}", response.id);
                     if let Some(id) = response.id {
                         let mut pending_guard = pending.lock().unwrap();
                         if let Some(sender) = pending_guard.remove(&id) {
@@ -141,9 +146,6 @@ impl AcpClient {
                             let _ = sender.send(result);
                         }
                     }
-                }
-                AcpMessage::Notification(notification) => {
-                    Self::handle_notification(&app_handle, &notification);
                 }
             }
         }
