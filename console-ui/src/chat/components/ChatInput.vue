@@ -1,20 +1,20 @@
 <template>
   <div class="chat-input">
     <div class="chat-input__container" :class="{ 'chat-input__container--focused': isFocused }">
-      <!-- Text area (borderless) -->
-      <n-input
-        ref="inputRef"
-        v-model:value="inputValue"
-        type="textarea"
-        :autosize="{ minRows: 2, maxRows: 8 }"
+      <!-- Text area (native, borderless) -->
+      <textarea
+        ref="textareaRef"
+        v-model="inputValue"
         :placeholder="placeholder"
         :disabled="disabled"
         class="chat-input__textarea"
+        rows="2"
         @keydown="handleKeyDown"
         @compositionstart="isComposing = true"
         @compositionend="isComposing = false"
         @focus="isFocused = true"
         @blur="isFocused = false"
+        @input="autoResize"
       />
       
       <!-- Toolbar inside container -->
@@ -62,8 +62,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue';
-import { NInput, NButton, NIcon, NSelect } from 'naive-ui';
+import { ref, computed, nextTick, onMounted } from 'vue';
+import { NButton, NIcon, NSelect } from 'naive-ui';
 import { SendOutline, StopOutline } from '@vicons/ionicons5';
 
 interface Props {
@@ -88,7 +88,7 @@ const emit = defineEmits<{
   'change-provider': [provider: 'acp' | 'openai'];
 }>();
 
-const inputRef = ref<InstanceType<typeof NInput> | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isFocused = ref(false);
 const isComposing = ref(false);
 
@@ -118,13 +118,25 @@ function handleSend() {
   if (!canSend.value) return;
   emit('send', inputValue.value.trim());
   inputValue.value = '';
+  nextTick(autoResize);
+}
+
+function autoResize() {
+  if (!textareaRef.value) return;
+  textareaRef.value.style.height = 'auto';
+  const maxHeight = 200;
+  textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, maxHeight)}px`;
 }
 
 function focus() {
   nextTick(() => {
-    inputRef.value?.focus();
+    textareaRef.value?.focus();
   });
 }
+
+onMounted(() => {
+  autoResize();
+});
 
 defineExpose({ focus });
 </script>
@@ -150,30 +162,26 @@ defineExpose({ focus });
   }
 
   &__textarea {
-    :deep(.n-input) {
-      --n-border: none !important;
-      --n-border-hover: none !important;
-      --n-border-focus: none !important;
-      --n-box-shadow-focus: none !important;
-      --n-color: transparent !important;
-      --n-color-focus: transparent !important;
-      --n-color-disabled: transparent !important;
-      
-      .n-input-wrapper {
-        padding: 12px 14px 8px;
-        border: none !important;
-      }
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 12px 14px 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    font-family: inherit;
+    color: rgb(var(--color-text));
+    min-height: 50px;
+    max-height: 200px;
 
-      .n-input__textarea-el {
-        resize: none;
-        font-size: 14px;
-        line-height: 1.5;
-      }
+    &::placeholder {
+      color: #9ca3af;
+    }
 
-      .n-input__border,
-      .n-input__state-border {
-        display: none !important;
-      }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   }
 
