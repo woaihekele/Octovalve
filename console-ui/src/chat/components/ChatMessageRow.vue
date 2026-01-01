@@ -4,18 +4,28 @@
       <span class="chat-row__avatar-icon">✨</span>
     </div>
     <div class="chat-row__content">
-      <div class="chat-row__bubble">
-        <div v-if="message.role === 'assistant' && isStreaming && !message.content" class="chat-row__typing">
+      <!-- Thinking section (collapsible) -->
+      <div v-if="thinkingContent" class="chat-row__thinking" :class="{ 'chat-row__thinking--open': thinkingOpen }">
+        <button class="chat-row__thinking-toggle" @click="thinkingOpen = !thinkingOpen">
+          <span class="chat-row__thinking-icon">{{ thinkingOpen ? '▼' : '▶' }}</span>
+          <span class="chat-row__thinking-label">{{ thinkingOpen ? '隐藏思考过程' : '显示思考过程' }}</span>
+          <span v-if="isStreaming && !responseContent" class="chat-row__thinking-spinner"></span>
+        </button>
+        <div v-show="thinkingOpen" class="chat-row__thinking-content" v-html="renderedThinking"></div>
+      </div>
+      <!-- Main response bubble -->
+      <div class="chat-row__bubble" v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)">
+        <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__typing">
           <span></span><span></span><span></span>
         </div>
-        <div v-else class="chat-row__text" v-html="renderedContent"></div>
+        <div v-else class="chat-row__text" v-html="renderedResponse"></div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
@@ -49,20 +59,51 @@ const props = withDefaults(defineProps<Props>(), {
   isLast: false,
 });
 
+const thinkingOpen = ref(false);
+
 const isStreaming = computed(() => {
   return props.message.status === 'streaming' && props.isLast;
 });
 
-const renderedContent = computed(() => {
+// Parse thinking content from <thinking> tags or reasoning_content
+const parsedContent = computed(() => {
   const content = props.message.content || '';
+  
+  // Check for <thinking> tags
+  const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+  if (thinkingMatch) {
+    const thinking = thinkingMatch[1].trim();
+    const response = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
+    return { thinking, response };
+  }
+  
+  // Check for **Thinking** or **思考** headers
+  const thinkingHeaderMatch = content.match(/^\*\*(?:Thinking|思考|Preparing)[^*]*\*\*\n?([\s\S]*?)(?=\n\n|$)/i);
+  if (thinkingHeaderMatch) {
+    const thinking = thinkingHeaderMatch[0].trim();
+    const response = content.replace(thinkingHeaderMatch[0], '').trim();
+    return { thinking, response };
+  }
+  
+  return { thinking: '', response: content };
+});
+
+const thinkingContent = computed(() => parsedContent.value.thinking);
+const responseContent = computed(() => parsedContent.value.response);
+
+const renderedThinking = computed(() => {
+  if (!thinkingContent.value) return '';
+  return markedInstance.parse(thinkingContent.value) as string;
+});
+
+const renderedResponse = computed(() => {
+  const content = responseContent.value;
   if (!content && isStreaming.value) {
     return '<span class="chat-row__cursor"></span>';
   }
   
-  // Parse markdown
   let html = markedInstance.parse(content) as string;
   
-  // Add cursor at end if streaming
   if (isStreaming.value) {
     html += '<span class="chat-row__cursor"></span>';
   }
@@ -121,6 +162,68 @@ const renderedContent = computed(() => {
     min-width: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  &__thinking {
+    margin-bottom: 8px;
+    border-radius: 12px;
+    background: rgba(139, 92, 246, 0.08);
+    overflow: hidden;
+    
+    &--open {
+      .chat-row__thinking-toggle {
+        border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+      }
+    }
+  }
+
+  &__thinking-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: rgb(var(--color-text-muted));
+    transition: all 0.2s ease;
+    
+    &:hover {
+      background: rgba(139, 92, 246, 0.1);
+    }
+  }
+
+  &__thinking-icon {
+    font-size: 10px;
+    color: #8b5cf6;
+  }
+
+  &__thinking-label {
+    flex: 1;
+    text-align: left;
+  }
+
+  &__thinking-spinner {
+    width: 10px;
+    height: 10px;
+    border: 2px solid rgba(139, 92, 246, 0.3);
+    border-top-color: #8b5cf6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  &__thinking-content {
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: rgb(var(--color-text-muted));
+    
+    :deep(p) {
+      margin: 0 0 0.5em 0;
+      &:last-child { margin-bottom: 0; }
+    }
   }
 
   &__bubble {
@@ -242,6 +345,10 @@ const renderedContent = computed(() => {
       }
     }
   }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes typing {
