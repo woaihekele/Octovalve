@@ -16,6 +16,7 @@
     "highlight.js": "^11.11.1",
     "marked": "^17.0.1",
     "marked-highlight": "^2.2.3",
+    "markstream-vue": "^0.0.4-beta.8",
     "monaco-editor": "^0.52.0",
     "naive-ui": "^2.43.2",
     "pinia": "^3.0.4",

@@ -8,7 +8,13 @@
           <span class="chat-row__thinking-label">{{ thinkingOpen ? '隐藏思考过程' : '显示思考过程' }}</span>
           <span v-if="isStreaming && !responseContent" class="chat-row__thinking-spinner"></span>
         </button>
-        <div v-show="thinkingOpen" class="chat-row__thinking-content" v-html="renderedThinking"></div>
+        <div v-show="thinkingOpen" class="chat-row__thinking-content">
+          <MarkdownRender
+            custom-id="chat-thinking"
+            :content="thinkingContent"
+            :is-dark="isDark"
+          />
+        </div>
       </div>
       <!-- Tool calls -->
       <div v-if="message.toolCalls && message.toolCalls.length > 0" class="chat-row__tools">
@@ -44,7 +50,23 @@
             </span>
           </div>
         </div>
-        <div v-else class="chat-row__text" v-html="renderedResponse"></div>
+        <div v-else class="chat-row__text">
+          <template v-if="message.role === 'assistant'">
+            <MarkdownRender
+              custom-id="chat"
+              :content="assistantMarkdown"
+              :is-dark="isDark"
+              :custom-html-tags="['thinking']"
+            />
+          </template>
+          <template v-else>
+            <MarkdownRender
+              custom-id="chat"
+              :content="message.content"
+              :is-dark="isDark"
+            />
+          </template>
+        </div>
       </div>
     </div>
   </div>
@@ -52,30 +74,9 @@
 
 <script setup lang="ts">
 import { computed, ref, type CSSProperties } from 'vue';
-import { Marked } from 'marked';
-import { markedHighlight } from 'marked-highlight';
-import hljs from 'highlight.js';
+import MarkdownRender from 'markstream-vue';
 import type { ChatMessage } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
-
-// Configure marked with highlight.js
-const markedInstance = new Marked(
-  markedHighlight({
-    emptyLangClass: 'hljs',
-    langPrefix: 'hljs language-',
-    highlight(code, lang) {
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return hljs.highlight(code, { language: lang }).value;
-        } catch {
-          return code;
-        }
-      }
-      return hljs.highlightAuto(code).value;
-    },
-  })
-);
-markedInstance.setOptions({ breaks: true, gfm: true });
 
 interface Props {
   message: ChatMessage;
@@ -92,6 +93,13 @@ const thinkingOpen = ref(false);
 
 const isStreaming = computed(() => {
   return props.message.status === 'streaming' && props.isLast;
+});
+
+const isDark = computed(() => {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+  return document.documentElement.dataset.theme !== 'light';
 });
 
 // Parse thinking content from <thinking> tags or reasoning_content
@@ -120,24 +128,14 @@ const parsedContent = computed(() => {
 const thinkingContent = computed(() => parsedContent.value.thinking);
 const responseContent = computed(() => parsedContent.value.response);
 
-const renderedThinking = computed(() => {
-  if (!thinkingContent.value) return '';
-  return markedInstance.parse(thinkingContent.value) as string;
-});
-
-const renderedResponse = computed(() => {
-  const content = responseContent.value;
-  if (!content && isStreaming.value) {
+const assistantMarkdown = computed(() => {
+  const response = responseContent.value;
+  const cursor = isStreaming.value ? '\n\n<span class="chat-row__cursor"></span>' : '';
+  const base = response || '';
+  if (!base && isStreaming.value) {
     return '<span class="chat-row__cursor"></span>';
   }
-  
-  let html = markedInstance.parse(content) as string;
-  
-  if (isStreaming.value) {
-    html += '<span class="chat-row__cursor"></span>';
-  }
-  
-  return html;
+  return `${base}${cursor}`;
 });
 </script>
 
