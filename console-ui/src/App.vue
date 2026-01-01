@@ -116,43 +116,71 @@ const {
 
 // Chat store integration
 const chatStore = useChatStore();
-const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatIsConnected } = storeToRefs(chatStore);
+const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatIsConnected, acpInitialized } = storeToRefs(chatStore);
+
+// Initialize ACP on mount
+async function initAcp() {
+  try {
+    // Use current directory as cwd
+    await chatStore.initializeAcp('.');
+    // Auto-authenticate with openai-api-key if available
+    if (chatStore.authMethods.some(m => m.id === 'openai-api-key')) {
+      await chatStore.authenticateAcp('openai-api-key');
+    }
+  } catch (e) {
+    console.warn('ACP initialization failed, using fallback:', e);
+  }
+}
+
+// Call initAcp after a short delay to let Tauri initialize
+setTimeout(initAcp, 500);
 
 async function handleChatSend(content: string) {
-  // Add user message
-  chatStore.addMessage({
-    type: 'say',
-    say: 'text',
-    role: 'user',
-    content,
-    status: 'complete',
-  });
+  if (acpInitialized.value) {
+    // Use ACP
+    try {
+      await chatStore.sendAcpMessage(content);
+    } catch (e) {
+      showNotification(`ACP 错误: ${e}`);
+    }
+  } else {
+    // Fallback to simulated response
+    chatStore.addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'user',
+      content,
+      status: 'complete',
+    });
 
-  // Add assistant placeholder
-  const assistantMsg = chatStore.addMessage({
-    type: 'say',
-    say: 'text',
-    role: 'assistant',
-    content: '',
-    status: 'streaming',
-    partial: true,
-  });
+    const assistantMsg = chatStore.addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      partial: true,
+    });
 
-  chatStore.setStreaming(true);
+    chatStore.setStreaming(true);
 
-  // Simulate streaming response (TODO: replace with ACP)
-  const response = `收到你的消息: "${content}"\n\n这是一个模拟的 AI 响应。实际实现将连接到 ACP 后端。`;
-  for (let i = 0; i < response.length; i++) {
-    chatStore.appendToMessage(assistantMsg.id, response[i]);
-    await new Promise((r) => setTimeout(r, 15));
+    const response = `收到你的消息: "${content}"\n\nACP 未初始化，这是模拟响应。请确保 codex-acp 已安装并配置。`;
+    for (let i = 0; i < response.length; i++) {
+      chatStore.appendToMessage(assistantMsg.id, response[i]);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+
+    chatStore.updateMessage(assistantMsg.id, { status: 'complete', partial: false });
+    chatStore.setStreaming(false);
   }
-
-  chatStore.updateMessage(assistantMsg.id, { status: 'complete', partial: false });
-  chatStore.setStreaming(false);
 }
 
 function handleChatCancel() {
-  chatStore.setStreaming(false);
+  if (acpInitialized.value) {
+    chatStore.cancelAcp();
+  } else {
+    chatStore.setStreaming(false);
+  }
 }
 
 function handleChatNewSession() {
