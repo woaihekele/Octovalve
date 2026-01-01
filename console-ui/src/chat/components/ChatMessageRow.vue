@@ -13,9 +13,14 @@
       >
         <template #body>
           <MarkdownRender
-            custom-id="chat-thinking"
+            :custom-id="`chat-thinking-${message.id}`"
             :content="thinkingContent"
             :is-dark="isDark"
+            :max-live-nodes="isStreaming ? 0 : undefined"
+            :batch-rendering="isStreaming"
+            :render-batch-size="16"
+            :render-batch-delay="8"
+            :final="!isStreaming"
           />
         </template>
       </ReasoningBlock>
@@ -56,15 +61,20 @@
         <div v-else class="chat-row__text">
           <template v-if="message.role === 'assistant'">
             <MarkdownRender
-              custom-id="chat"
+              :custom-id="`chat-${message.id}`"
               :content="assistantMarkdown"
               :is-dark="isDark"
               :custom-html-tags="['thinking']"
+              :max-live-nodes="isStreaming ? 0 : undefined"
+              :batch-rendering="isStreaming"
+              :render-batch-size="16"
+              :render-batch-delay="8"
+              :final="!isStreaming"
             />
           </template>
           <template v-else>
             <MarkdownRender
-              custom-id="chat"
+              :custom-id="`chat-${message.id}`"
               :content="message.content"
               :is-dark="isDark"
             />
