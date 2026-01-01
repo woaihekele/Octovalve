@@ -123,6 +123,7 @@ const renderedResponse = computed(() => {
   gap: 10px;
   padding: 12px 16px;
   align-items: flex-start;
+  animation: slideIn 0.25s ease-out;
 
   &--user {
     flex-direction: row-reverse;
@@ -132,6 +133,7 @@ const renderedResponse = computed(() => {
       color: #fff;
       border-radius: 18px 18px 4px 18px;
       max-width: 80%;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
     }
     
     .chat-row__text {
@@ -144,7 +146,13 @@ const renderedResponse = computed(() => {
       background: rgb(var(--color-panel-muted));
       border-radius: 18px 18px 18px 4px;
       max-width: 90%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      border: 1px solid rgba(0, 0, 0, 0.04);
     }
+  }
+
+  &__tools {
+    margin-bottom: 8px;
   }
 
   &__avatar {
@@ -384,6 +392,17 @@ const renderedResponse = computed(() => {
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>
