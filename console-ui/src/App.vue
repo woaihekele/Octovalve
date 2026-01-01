@@ -121,17 +121,28 @@ const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatI
 // Initialize chat provider based on settings
 async function initChatProvider() {
   const chatConfig = settings.value.chat;
+  console.log('[initChatProvider] config:', chatConfig.provider);
   
   try {
     if (chatConfig.provider === 'openai') {
       await chatStore.initializeOpenai(chatConfig.openai);
     } else {
       // ACP provider
+      console.log('[initChatProvider] calling initializeAcp...');
       await chatStore.initializeAcp(chatConfig.acp.path || '.');
+      console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
+      
+      // Authentication is optional - don't fail if it's not available
       if (chatStore.authMethods.some(m => m.id === 'openai-api-key')) {
-        await chatStore.authenticateAcp('openai-api-key');
+        try {
+          await chatStore.authenticateAcp('openai-api-key');
+          console.log('[initChatProvider] authenticateAcp done');
+        } catch (authErr) {
+          console.warn('[initChatProvider] authenticateAcp failed (optional):', authErr);
+        }
       }
     }
+    console.log('[initChatProvider] final providerInitialized:', providerInitialized.value);
   } catch (e) {
     console.warn('Chat provider initialization failed:', e);
   }
