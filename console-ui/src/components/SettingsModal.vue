@@ -30,12 +30,10 @@ import {
   writeProfileBrokerConfig,
   writeProfileProxyConfig,
 } from '../api';
-import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
-import { DEFAULT_SETTINGS, loadSettings } from '../settings';
+import { loadSettings } from '../settings';
 import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../types';
-import { THEME_OPTIONS, type ResolvedTheme } from '../theme';
-import MonacoEditor from './MonacoEditor.vue';
-import { ChatProviderSettings } from './settings';
+import { type ResolvedTheme } from '../theme';
+import { AiInspectionSettings, ChatProviderSettings, ConfigCenterSettings, GeneralSettings, ShortcutsSettings } from './settings';
 import type { ChatProviderConfig } from '../types';
 
 const props = defineProps<{
@@ -65,22 +63,7 @@ function cloneSettings(source: AppSettings): AppSettings {
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('general');
-const themeOptions: SelectOption[] = THEME_OPTIONS.map((option) => ({
-  value: option.value,
-  label: option.label,
-}));
 const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
-const shortcutFields = [
-  { key: 'prevTarget', label: '上一个目标' },
-  { key: 'nextTarget', label: '下一个目标' },
-  { key: 'jumpNextPending', label: '跳转到下一个 Pending' },
-  { key: 'approve', label: '批准' },
-  { key: 'deny', label: '拒绝' },
-  { key: 'toggleList', label: '切换 Pending/History' },
-  { key: 'fullScreen', label: '全屏输出' },
-] as const;
-type ShortcutField = (typeof shortcutFields)[number]['key'];
-const activeShortcut = ref<ShortcutField | null>(null);
 const configLoading = ref(false);
 const configBusy = ref(false);
 const configError = ref<string | null>(null);
@@ -234,6 +217,14 @@ function stopCardObserver() {
 
 function save() {
   emit('save', cloneSettings(localSettings.value));
+}
+
+function updateSetting(key: keyof AppSettings, value: unknown) {
+  (localSettings.value as Record<string, unknown>)[key] = value;
+}
+
+function updateShortcut(key: string, value: string) {
+  (localSettings.value.shortcuts as Record<string, string>)[key] = value;
 }
 
 function showConfigMessage(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') {
@@ -724,69 +715,6 @@ function closeLogModal() {
   logModalOpen.value = false;
 }
 
-function captureShortcut(field: ShortcutField, event: KeyboardEvent) {
-  if (event.code === 'Escape') {
-    activeShortcut.value = null;
-    emit('close');
-    return;
-  }
-  const shortcut = eventToShortcut(event);
-  if (!shortcut) {
-    return;
-  }
-  const normalized = normalizeShortcut(shortcut);
-  if (!normalized) {
-    return;
-  }
-  localSettings.value.shortcuts[field] = normalized;
-}
-
-function shortcutDisplay(field: ShortcutField) {
-  const formatted = formatShortcut(localSettings.value.shortcuts[field]);
-  if (activeShortcut.value === field) {
-    return formatted || '按键盘设置快捷键';
-  }
-  return formatted || '点击设置快捷键';
-}
-
-function shortcutHasValue(field: ShortcutField) {
-  return Boolean(formatShortcut(localSettings.value.shortcuts[field]));
-}
-
-function shortcutIsDefault(field: ShortcutField) {
-  const current = normalizeShortcut(localSettings.value.shortcuts[field] ?? '') ?? '';
-  const fallback = normalizeShortcut(DEFAULT_SETTINGS.shortcuts[field] ?? '') ?? '';
-  return current === fallback;
-}
-
-function shortcutInputClass(field: ShortcutField) {
-  if (activeShortcut.value === field) {
-    return 'border-accent text-accent ring-1 ring-accent/60';
-  }
-  if (shortcutHasValue(field)) {
-    return 'border-border text-foreground';
-  }
-  return 'border-border text-foreground-muted';
-}
-
-function clearShortcut(field: ShortcutField) {
-  localSettings.value.shortcuts[field] = '';
-}
-
-function resetShortcut(field: ShortcutField) {
-  localSettings.value.shortcuts[field] = DEFAULT_SETTINGS.shortcuts[field];
-}
-
-function activateShortcut(field: ShortcutField) {
-  activeShortcut.value = field;
-}
-
-function deactivateShortcut(field: ShortcutField) {
-  if (activeShortcut.value === field) {
-    activeShortcut.value = null;
-  }
-}
-
 onBeforeUnmount(() => {
   if (configMessageTimer !== null) {
     window.clearTimeout(configMessageTimer);
@@ -811,7 +739,6 @@ watch(
   (open) => {
     if (open) {
       localSettings.value = cloneSettings(props.settings);
-      activeShortcut.value = null;
       cardHeight.value = null;
       cardShellReady.value = false;
       void syncCardHeight();
@@ -847,7 +774,6 @@ watch(
       logHasOutput.value = false;
       logOffset.value = 0;
       activeTab.value = 'general';
-      activeShortcut.value = null;
       cardHeight.value = null;
       cardShellReady.value = false;
       stopCardObserver();
@@ -914,81 +840,11 @@ watch(
             :class="isConfigTab ? 'settings-tabs settings-tabs--full' : 'settings-tabs'"
           >
             <n-tab-pane name="general" tab="通用设置">
-              <div class="space-y-4">
-                <div class="flex items-center justify-between gap-4">
-                  <div>
-                    <div class="text-sm font-medium">主题</div>
-                    <div class="text-xs text-foreground-muted">系统/深色/浅色/Darcula</div>
-                  </div>
-                  <n-select
-                    v-model:value="localSettings.theme"
-                    :options="themeOptions"
-                    size="small"
-                    class="w-32"
-                    to="body"
-                    placement="top-start"
-                  />
-                </div>
-                <div class="flex items-center justify-between">
-                  <div>
-                    <div class="text-sm font-medium">新 Pending 通知</div>
-                    <div class="text-xs text-foreground-muted">有新的待审批时弹出提示</div>
-                  </div>
-                  <n-switch v-model:value="localSettings.notificationsEnabled" size="small" />
-                </div>
-              </div>
+              <GeneralSettings :settings="localSettings" @update="updateSetting" />
             </n-tab-pane>
 
             <n-tab-pane name="shortcuts" tab="快捷键设置">
-              <div class="space-y-3">
-                <div
-                  v-for="item in shortcutFields"
-                  :key="item.key"
-                  class="flex items-center justify-between gap-4 text-sm"
-                >
-                  <span class="text-foreground-muted">{{ item.label }}</span>
-                  <div class="flex items-center gap-2">
-                    <div class="w-[120px] flex-none">
-                      <n-input
-                        :value="shortcutDisplay(item.key)"
-                        size="small"
-                        readonly
-                        class="w-full"
-                        :class="shortcutInputClass(item.key)"
-                        @focus="activateShortcut(item.key)"
-                        @blur="deactivateShortcut(item.key)"
-                        @keydown.prevent="captureShortcut(item.key, $event)"
-                      />
-                    </div>
-                    <n-button
-                      size="small"
-                      quaternary
-                      :disabled="!shortcutHasValue(item.key)"
-                      title="清空"
-                      aria-label="清空快捷键"
-                      @click="clearShortcut(item.key)"
-                    >
-                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </n-button>
-                    <n-button
-                      size="small"
-                      quaternary
-                      :disabled="shortcutIsDefault(item.key)"
-                      title="恢复默认"
-                      aria-label="恢复默认快捷键"
-                      @click="resetShortcut(item.key)"
-                    >
-                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 12a9 9 0 1 0 3-6.7" />
-                        <polyline points="3 4 3 10 9 10" />
-                      </svg>
-                    </n-button>
-                  </div>
-                </div>
-              </div>
+              <ShortcutsSettings :settings="localSettings" @update-shortcut="updateShortcut" />
             </n-tab-pane>
 
             <n-tab-pane name="chat" tab="聊天设置">
@@ -999,229 +855,42 @@ watch(
             </n-tab-pane>
 
             <n-tab-pane name="ai" tab="AI 检查">
-              <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] gap-6 items-start">
-                <div class="space-y-4">
-                  <div class="ai-field">
-                    <div>
-                      <div class="text-sm font-medium">启用 AI 检查</div>
-                      <div class="text-xs text-foreground-muted">对所有 Pending 命令进行风险评估</div>
-                    </div>
-                    <div class="ai-control ai-control--switch">
-                      <n-switch v-model:value="localSettings.ai.enabled" size="small" />
-                    </div>
-                  </div>
-
-                  <div class="space-y-3">
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">Provider</div>
-                        <div class="text-xs text-foreground-muted">兼容 OpenAI 的接口</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-select v-model:value="localSettings.ai.provider" :options="aiProviderOptions" size="small" class="w-full" />
-                      </div>
-                    </div>
-
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">Base URL</div>
-                        <div class="text-xs text-foreground-muted">模型服务地址</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-input v-model:value="localSettings.ai.baseUrl" size="small" class="w-full" />
-                      </div>
-                    </div>
-
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">Chat Path</div>
-                        <div class="text-xs text-foreground-muted">请求路径</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-input v-model:value="localSettings.ai.chatPath" size="small" class="w-full" />
-                      </div>
-                    </div>
-
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">Model</div>
-                        <div class="text-xs text-foreground-muted">模型名称</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-input v-model:value="localSettings.ai.model" size="small" class="w-full" />
-                      </div>
-                    </div>
-
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">API Key</div>
-                        <div class="text-xs text-foreground-muted">仅保存在本地设置</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-input v-model:value="localSettings.ai.apiKey" size="small" class="w-full" type="password" />
-                      </div>
-                    </div>
-
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">Timeout (ms)</div>
-                        <div class="text-xs text-foreground-muted">超时后视为失败</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-input-number
-                          :value="localSettings.ai.timeoutMs"
-                          size="small"
-                          class="w-full"
-                          :min="1000"
-                          :max="60000"
-                          @update:value="(value) => { localSettings.ai.timeoutMs = value ?? DEFAULT_SETTINGS.ai.timeoutMs; }"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="ai-field">
-                      <div>
-                        <div class="text-sm font-medium">最大并发</div>
-                        <div class="text-xs text-foreground-muted">同时评估的请求数</div>
-                      </div>
-                      <div class="ai-control">
-                        <n-input-number
-                          :value="localSettings.ai.maxConcurrency"
-                          size="small"
-                          class="w-full"
-                          :min="1"
-                          :max="10"
-                          @update:value="(value) => { localSettings.ai.maxConcurrency = value ?? DEFAULT_SETTINGS.ai.maxConcurrency; }"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="flex flex-col gap-2">
-                  <div class="flex items-start justify-between gap-3">
-                    <div>
-                      <div class="text-sm font-medium">Prompt</div>
-                      <div class="text-xs text-foreground-muted" v-pre>支持 {{field}} 占位</div>
-                    </div>
-                    <n-button size="small" quaternary @click="localSettings.ai.prompt = DEFAULT_SETTINGS.ai.prompt">
-                      恢复默认
-                    </n-button>
-                  </div>
-                  <div class="ai-control ai-control--prompt">
-                    <n-input
-                      v-model:value="localSettings.ai.prompt"
-                      type="textarea"
-                      class="w-full"
-                      :autosize="{ minRows: 16, maxRows: 16 }"
-                    />
-                  </div>
-                </div>
-              </div>
+              <AiInspectionSettings :settings="localSettings.ai" @update="(ai) => localSettings.ai = ai" />
             </n-tab-pane>
 
             <n-tab-pane name="config" tab="配置中心">
-              <div class="flex flex-col gap-4 min-h-0 flex-1">
-                <div v-if="configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
-                  <n-spin size="small" />
-                  <span>正在加载配置...</span>
-                </div>
-                <n-alert v-else-if="configError" type="error" :bordered="false">
-                  加载失败：{{ configError }}
-                </n-alert>
-                <div v-else class="flex flex-col gap-3 min-h-0 flex-1">
-                  <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
-                    <div>
-                      <div class="font-medium">环境</div>
-                      <div class="text-xs text-foreground-muted">选择需要编辑的配置</div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <n-select
-                        :value="selectedProfile"
-                        :options="profileOptions"
-                        size="small"
-                        class="w-40"
-                        placeholder="请选择环境"
-                        :disabled="configBusy || logModalOpen || configLoading"
-                        @update:value="requestProfileChange"
-                      />
-                      <n-button size="small" :disabled="configBusy || logModalOpen || configLoading" @click="openCreateProfile">
-                        新建
-                      </n-button>
-                      <n-button
-                        size="small"
-                        quaternary
-                        :disabled="configBusy || logModalOpen || configLoading || !canDeleteProfile"
-                        @click="openDeleteProfile"
-                      >
-                        删除
-                      </n-button>
-                    </div>
-                  </div>
-
-                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">
-                    <div class="flex flex-col gap-2 min-h-0 flex-1">
-                      <div class="flex items-center justify-between text-sm">
-                        <div>
-                          <div class="font-medium">本地代理配置</div>
-                          <div class="text-xs text-foreground-muted break-all">{{ proxyConfig?.path }}</div>
-                        </div>
-                        <span v-if="proxyConfig && !proxyConfig.exists" class="text-xs text-warning">未创建</span>
-                      </div>
-                      <div class="flex-1 min-h-0">
-                        <MonacoEditor v-model="proxyConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
-                      </div>
-                    </div>
-
-                    <div class="flex flex-col gap-2 min-h-0 flex-1">
-                      <div class="flex items-center justify-between text-sm">
-                        <div>
-                          <div class="font-medium">远端 broker 配置（源文件）</div>
-                          <div class="text-xs text-foreground-muted break-all">{{ brokerConfig?.path }}</div>
-                        </div>
-                      </div>
-                      <div class="flex-1 min-h-0">
-                        <MonacoEditor v-model="brokerConfigText" language="toml" height="100%" :theme="props.resolvedTheme" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <n-alert v-if="configMessage" :type="configMessageType" :bordered="false">
-                  {{ configMessage }}
-                </n-alert>
-              </div>
+              <ConfigCenterSettings
+                :config-loading="configLoading"
+                :config-busy="configBusy"
+                :log-modal-open="logModalOpen"
+                :config-error="configError"
+                :config-message="configMessage"
+                :config-message-type="configMessageType"
+                :selected-profile="selectedProfile"
+                :profile-options="profileOptions"
+                :can-delete-profile="canDeleteProfile"
+                :proxy-config="proxyConfig"
+                :broker-config="brokerConfig"
+                v-model:proxy-config-text="proxyConfigText"
+                v-model:broker-config-text="brokerConfigText"
+                :proxy-dirty="proxyDirty"
+                :broker-dirty="brokerDirty"
+                :active-profile="activeProfile"
+                :resolved-theme="props.resolvedTheme"
+                @request-profile-change="requestProfileChange"
+                @open-create-profile="openCreateProfile"
+                @open-delete-profile="openDeleteProfile"
+                @request-refresh="requestRefreshConfig"
+                @close="emit('close')"
+                @save="saveConfigFiles"
+                @apply="requestApplyConfig"
+              />
             </n-tab-pane>
           </n-tabs>
 
           <div v-if="activeTab !== 'config'" class="mt-6 flex justify-end gap-3">
             <n-button @click="emit('close')">取消</n-button>
             <n-button type="primary" @click="save">保存</n-button>
-          </div>
-
-          <div v-else class="mt-4 flex items-center justify-between gap-3">
-            <div class="text-xs text-foreground-muted">
-              当前环境 {{ activeProfile || '-' }} · 已选择 {{ selectedProfile || '-' }} · 本地配置
-              {{ proxyDirty ? '有改动' : '未改动' }} · 远端配置 {{ brokerDirty ? '有改动' : '未改动' }}
-            </div>
-            <div class="flex items-center gap-2">
-              <n-button
-                quaternary
-                :disabled="configBusy || logModalOpen || configLoading"
-                @click="requestRefreshConfig"
-              >
-                刷新
-              </n-button>
-              <n-button :disabled="configBusy || logModalOpen" @click="emit('close')">取消</n-button>
-              <n-button :disabled="configBusy || logModalOpen || configLoading" @click="saveConfigFiles">保存</n-button>
-              <n-button
-                type="primary"
-                :disabled="configBusy || logModalOpen || configLoading"
-                @click="requestApplyConfig"
-              >
-                应用
-              </n-button>
-            </div>
           </div>
         </n-card>
       </div>
@@ -1392,6 +1061,7 @@ watch(
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 
