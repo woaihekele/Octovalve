@@ -302,6 +302,22 @@ impl OpenAiClient {
                                                     error: None,
                                                 };
                                                 let _ = app_handle.emit("openai-stream", &event);
+
+                                                if !full_content.is_empty() || !tool_calls.is_empty() {
+                                                    let mut msgs = self.messages.lock().await;
+                                                    msgs.push(ChatMessage {
+                                                        role: "assistant".to_string(),
+                                                        content: full_content.clone(),
+                                                        tool_calls: if tool_calls.is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(tool_calls.clone())
+                                                        },
+                                                        tool_call_id: None,
+                                                    });
+                                                }
+
+                                                return Ok(());
                                             }
                                         }
                                     }

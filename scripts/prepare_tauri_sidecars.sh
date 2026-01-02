@@ -14,6 +14,9 @@ cd "${REPO_ROOT}"
 cargo build --release --manifest-path "${REPO_ROOT}/Cargo.toml" \
   -p console
 
+cargo build --release --manifest-path "${REPO_ROOT}/Cargo.toml" \
+  -p octovalve-proxy
+
 BIN_DIR="${REPO_ROOT}/target/release"
 SUFFIX="-${TARGET_TRIPLE}"
 EXT=""
@@ -21,7 +24,7 @@ if [[ "${TARGET_TRIPLE}" == *windows* ]]; then
   EXT=".exe"
 fi
 
-for bin in console; do
+for bin in console octovalve-proxy; do
   src="${BIN_DIR}/${bin}${EXT}"
   dst="${BIN_DIR}/${bin}${SUFFIX}${EXT}"
   if [[ ! -f "${src}" ]]; then

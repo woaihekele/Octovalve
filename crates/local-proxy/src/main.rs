@@ -4,7 +4,6 @@ mod mcp;
 mod state;
 mod tunnel;
 
-use anyhow::Context;
 use clap::Parser;
 use cli::Args;
 use mcp::ProxyHandler;
@@ -45,7 +44,17 @@ async fn main() -> anyhow::Result<()> {
         guard.set_tunnel_manager(tunnel_manager.clone());
     }
     if let Some(manager) = tunnel_manager.clone() {
-        precheck_tunnels(Arc::clone(&state), manager, &args.client_id).await?;
+        let state = Arc::clone(&state);
+        let client_id = args.client_id.clone();
+        tokio::spawn(async move {
+            if let Err(err) = precheck_tunnels(state, manager, &client_id).await {
+                tracing::warn!(
+                    event = "tunnel.precheck.task_failed",
+                    error = %err,
+                    "tunnel precheck task failed"
+                );
+            }
+        });
     }
     spawn_shutdown_handler(Arc::clone(&state), shutdown.clone());
 
@@ -96,20 +105,46 @@ async fn precheck_tunnels(
     };
     for name in target_names {
         let forward = {
-            let state = state.read().await;
-            state.forward_spec(&name)?
+            let guard = state.read().await;
+            match guard.forward_spec(&name) {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(
+                        event = "tunnel.precheck.forward_spec_failed",
+                        target = %name,
+                        error = %err,
+                        "failed to resolve forward spec"
+                    );
+                    drop(guard);
+                    let mut write_guard = state.write().await;
+                    write_guard.note_failure(&name, &err.to_string());
+                    continue;
+                }
+            }
         };
         if let Some(forward) = forward {
             tracing::info!(target = %name, "prechecking ssh tunnel forward");
-            manager
-                .ensure_forward(client_id, &forward)
-                .await
-                .with_context(|| format!("tunnel precheck failed for target {name}"))?;
+            match manager.ensure_forward(client_id, &forward).await {
+                Ok(_) => {
+                    let mut write_guard = state.write().await;
+                    write_guard.note_tunnel_ready(&name);
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        event = "tunnel.precheck.failed",
+                        target = %name,
+                        error = %err,
+                        "tunnel precheck failed; continuing"
+                    );
+                    let mut write_guard = state.write().await;
+                    write_guard.note_failure(&name, &err.to_string());
+                }
+            }
         } else {
             tracing::info!(target = %name, "prechecking local target");
+            let mut write_guard = state.write().await;
+            write_guard.note_tunnel_ready(&name);
         }
-        let mut state = state.write().await;
-        state.note_tunnel_ready(&name);
     }
     Ok(())
 }

@@ -11,13 +11,13 @@ export interface OpenAiConfig {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  toolCalls?: ToolCall[];
-  toolCallId?: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
 }
 
 export interface ToolCall {
   id: string;
-  callType: string;
+  type: string;
   function: {
     name: string;
     arguments: string;
@@ -25,7 +25,7 @@ export interface ToolCall {
 }
 
 export interface Tool {
-  toolType: string;
+  type: string;
   function: {
     name: string;
     description: string;
@@ -83,6 +83,10 @@ export async function openaiCancel(): Promise<void> {
   return invoke('openai_cancel');
 }
 
+export async function mcpCallTool(name: string, arguments_: Record<string, unknown>): Promise<unknown> {
+  return invoke('mcp_call_tool', { name, arguments: arguments_ });
+}
+
 /**
  * Listen to OpenAI stream events
  */
@@ -102,5 +106,6 @@ export const openaiService = {
   clearMessages: openaiClearMessages,
   send: openaiSend,
   cancel: openaiCancel,
+  mcpCallTool,
   onStream: onOpenaiStream,
 };

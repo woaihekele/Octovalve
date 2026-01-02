@@ -2,6 +2,7 @@
 
 mod acp_client;
 mod acp_types;
+mod mcp_proxy;
 mod openai_client;
 
 use std::collections::HashMap;
@@ -23,7 +24,7 @@ use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -205,7 +206,8 @@ fn main() {
             openai_set_tools,
             openai_clear_messages,
             openai_cancel,
-            openai_send
+            openai_send,
+            mcp_call_tool
         ])
         .setup(|app| {
             let app_handle = app.handle();
@@ -1158,8 +1160,8 @@ async fn console_http_request_with_timeout(
         .map_err(|_| "console http connect timed out".to_string())?
         .map_err(|err| err.to_string())?;
     let mut request = format!(
-    "{method} {path} HTTP/1.1\r\nHost: {CONSOLE_HTTP_HOST}\r\nAccept: application/json\r\nConnection: close\r\n"
-  );
+        "{method} {path} HTTP/1.1\r\nHost: {CONSOLE_HTTP_HOST}\r\nAccept: application/json\r\nConnection: close\r\n"
+    );
     if let Some(body) = body {
         request.push_str("Content-Type: application/json\r\n");
         request.push_str(&format!("Content-Length: {}\r\n", body.len()));
@@ -1724,8 +1726,8 @@ fn console_terminal_url(name: &str, cols: u16, rows: u16, term: &str) -> String 
     let encoded_name = urlencoding::encode(name);
     let encoded_term = urlencoding::encode(term);
     format!(
-    "ws://{CONSOLE_HTTP_HOST}/targets/{encoded_name}/terminal?cols={cols}&rows={rows}&term={encoded_term}"
-  )
+        "ws://{CONSOLE_HTTP_HOST}/targets/{encoded_name}/terminal?cols={cols}&rows={rows}&term={encoded_term}"
+    )
 }
 
 fn send_terminal_message(
@@ -1749,8 +1751,8 @@ fn send_terminal_message(
 
 fn resolve_codex_acp_path(app: &AppHandle) -> Result<PathBuf, String> {
     // First check ~/.octovalve/codex-acp
-    if let Ok(home) = app.path().home_dir() {
-        let custom_path = home.join(".octovalve").join("codex-acp");
+    if let Ok(dir) = octovalve_dir(app) {
+        let custom_path = dir.join(".octovalve").join("codex-acp");
         if custom_path.exists() {
             return Ok(custom_path);
         }
@@ -1758,23 +1760,14 @@ fn resolve_codex_acp_path(app: &AppHandle) -> Result<PathBuf, String> {
     // Then check bundled sidecar
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let dir = exe.parent().ok_or("failed to get exe dir")?;
-    let sidecar = dir.join("codex-acp");
-    if sidecar.exists() {
-        return Ok(sidecar);
+    #[cfg(windows)]
+    {
+        return Ok(dir.join(format!("codex-acp.exe")));
     }
-    // Check common installation paths
-    let common_paths = [
-        "/usr/local/bin/codex-acp",
-        "/opt/homebrew/bin/codex-acp",
-    ];
-    for path in common_paths {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return Ok(p);
-        }
+    #[cfg(not(windows))]
+    {
+        return Ok(dir.join("codex-acp"));
     }
-    // Fallback to PATH
-    Ok(PathBuf::from("codex-acp"))
 }
 
 #[tauri::command]
@@ -2000,5 +1993,21 @@ async fn openai_send(
             .ok_or("OpenAI client not initialized")?
             .clone()
     };
-    client.send_stream(&app).await
+     client.send_stream(&app).await
+ }
+
+ #[tauri::command]
+ async fn mcp_call_tool(
+     app: AppHandle,
+    proxy_state: State<'_, ProxyConfigState>,
+    name: String,
+    arguments: Value,
+) -> Result<Value, String> {
+    let status = proxy_state.0.lock().unwrap().clone();
+    if !status.present {
+        return Err("proxy config missing".to_string());
+    }
+    let proxy_path = PathBuf::from(status.path);
+    let _ = app;
+    mcp_proxy::call_tool(&proxy_path, &name, arguments).await
 }

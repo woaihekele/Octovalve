@@ -4,6 +4,7 @@ import type { ChatSession, ChatMessage, ChatConfig, ToolCall } from '../types';
 import type { AuthMethod, AcpEvent } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
+import { fetchTargets } from '../../api';
 
 export type ChatProvider = 'acp' | 'openai';
 
@@ -453,12 +454,44 @@ export const useChatStore = defineStore('chat', () => {
         if (msg.status === 'streaming') {
           continue;
         }
+
         if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
           const content = (msg.content || '').trim();
-          if (!content) {
-            continue;
+          if (content) {
+            if (msg.role === 'assistant' && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) {
+              const tool_calls = msg.toolCalls.map((tc) => {
+                const args = tc.arguments ? JSON.stringify(tc.arguments) : '{}';
+                return {
+                  id: tc.id,
+                  type: 'function',
+                  function: {
+                    name: tc.name,
+                    arguments: args,
+                  },
+                };
+              });
+              await openaiService.addMessage({ role: 'assistant', content, tool_calls });
+            } else {
+              await openaiService.addMessage({ role: msg.role, content });
+            }
           }
-          await openaiService.addMessage({ role: msg.role, content });
+
+          if (Array.isArray(msg.toolCalls)) {
+            for (const tc of msg.toolCalls) {
+              if (tc.status !== 'completed') {
+                continue;
+              }
+              const result = (tc.result || '').trim();
+              if (!result) {
+                continue;
+              }
+              await openaiService.addMessage({
+                role: 'tool',
+                content: result,
+                tool_call_id: tc.id,
+              });
+            }
+          }
         }
       }
     });
@@ -750,6 +783,17 @@ export const useChatStore = defineStore('chat', () => {
       console.log('[chatStore] initializeOpenai: calling openaiService.init()');
       await openaiService.init(config);
       console.log('[chatStore] initializeOpenai: openaiService.init() done');
+
+      // Provide tools for OpenAI tool calling (targets are sourced from console/proxy)
+      try {
+        const targets = await fetchTargets();
+        const targetNames = targets.map((t) => t.name);
+        const defaultTarget = targets.find((t) => t.is_default)?.name ?? targetNames[0];
+        await openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
+      } catch (e) {
+        console.warn('[chatStore] initializeOpenai: setTools failed (continuing without tools):', e);
+      }
+
       openaiInitialized.value = true;
       providerInitialized.value = true;
       provider.value = 'openai';
@@ -762,6 +806,83 @@ export const useChatStore = defineStore('chat', () => {
       setError(`Failed to initialize OpenAI: ${e}`);
       throw e;
     }
+  }
+
+  function buildOpenaiTools(targets: string[], defaultTarget?: string) {
+    const targetProperty: Record<string, unknown> = {
+      type: 'string',
+      description: 'Target name defined in octovalve-proxy config.',
+    };
+    if (targets.length > 0) {
+      targetProperty.enum = targets;
+    }
+    if (defaultTarget) {
+      targetProperty.default = defaultTarget;
+    }
+
+    return [
+      {
+        type: 'function',
+        function: {
+          name: 'run_command',
+          description: 'Forward command execution to a remote broker with manual approval. target is required.',
+          parameters: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              command: {
+                type: 'string',
+                description: 'Shell-like command line. Default mode executes via /bin/bash -lc.',
+              },
+              target: targetProperty,
+              intent: {
+                type: 'string',
+                description: 'Why this command is needed (required for audit).',
+              },
+              mode: {
+                type: 'string',
+                enum: ['shell', 'argv'],
+                default: 'shell',
+                description: 'Execution mode: shell uses /bin/bash -lc, argv uses parsed pipeline.',
+              },
+              cwd: {
+                type: 'string',
+                description: 'Working directory for the command.',
+              },
+              timeout_ms: {
+                type: 'integer',
+                minimum: 0,
+                description: 'Override command timeout in milliseconds.',
+              },
+              max_output_bytes: {
+                type: 'integer',
+                minimum: 0,
+                description: 'Override output size limit in bytes.',
+              },
+              env: {
+                type: 'object',
+                additionalProperties: { type: 'string' },
+                description: 'Extra environment variables.',
+              },
+            },
+            required: ['command', 'intent', 'target'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_targets',
+          description: 'List available targets configured in octovalve-proxy.',
+          parameters: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {},
+            required: [],
+          },
+        },
+      },
+    ];
   }
 
   async function sendOpenaiMessage(content: string) {
@@ -833,6 +954,35 @@ export const useChatStore = defineStore('chat', () => {
         pendingAssistantReasoning += event.content;
         scheduleFlush();
       }
+    } else if (event.eventType === 'tool_calls' && Array.isArray(event.toolCalls)) {
+      flushPending();
+      const messageId = currentAssistantMessageId.value;
+      if (!messageId) {
+        return;
+      }
+
+      for (const tc of event.toolCalls) {
+        let args: Record<string, unknown> = {};
+        const rawArgs = tc.function?.arguments ?? '';
+        if (rawArgs && rawArgs.trim()) {
+          try {
+            args = JSON.parse(rawArgs) as Record<string, unknown>;
+          } catch {
+            args = { __raw: rawArgs };
+          }
+        }
+        addToolCall(messageId, {
+          id: tc.id,
+          name: tc.function?.name || 'Unknown Tool',
+          arguments: args,
+          status: 'running',
+        });
+      }
+
+      updateMessage(messageId, { status: 'complete', partial: false });
+      currentAssistantMessageId.value = null;
+
+      void handleOpenaiToolCalls(messageId, event.toolCalls);
     } else if (event.eventType === 'cancelled') {
       flushPending();
       if (currentAssistantMessageId.value) {
@@ -848,13 +998,6 @@ export const useChatStore = defineStore('chat', () => {
     } else if (event.eventType === 'complete') {
       flushPending();
       if (currentAssistantMessageId.value) {
-        // Get the full content and add to OpenAI context
-        const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
-        if (msg) {
-          void enqueueOpenaiContextOp(async () => {
-            await openaiService.addMessage({ role: 'assistant', content: msg.content });
-          });
-        }
         updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
         currentAssistantMessageId.value = null;
       }
@@ -868,6 +1011,94 @@ export const useChatStore = defineStore('chat', () => {
         currentAssistantMessageId.value = null;
       }
       setStreaming(false);
+    }
+  }
+
+  function extractToolResultText(payload: unknown): string {
+    if (!payload) return '';
+    if (typeof payload === 'string') return payload;
+    if (typeof payload !== 'object') return String(payload);
+    const value = payload as Record<string, unknown>;
+    const content = value.content;
+    if (Array.isArray(content) && content.length > 0) {
+      const first = content[0] as Record<string, unknown> | undefined;
+      const text = first?.text;
+      if (typeof text === 'string') {
+        return text;
+      }
+    }
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch {
+      return String(payload);
+    }
+  }
+
+  async function handleOpenaiToolCalls(messageId: string, toolCalls: NonNullable<ChatStreamEvent['toolCalls']>) {
+    setStreaming(true);
+
+    for (const tc of toolCalls) {
+      const name = tc.function?.name || '';
+      if (!name) {
+        updateToolCall(messageId, tc.id, { status: 'failed', result: 'Missing tool name' });
+        continue;
+      }
+
+      let args: Record<string, unknown> = {};
+      const rawArgs = tc.function?.arguments ?? '';
+      if (rawArgs && rawArgs.trim()) {
+        try {
+          args = JSON.parse(rawArgs) as Record<string, unknown>;
+        } catch {
+          args = { __raw: rawArgs };
+        }
+      }
+
+      try {
+        const result = await openaiService.mcpCallTool(name, args);
+        const text = extractToolResultText(result);
+
+        updateToolCall(messageId, tc.id, { status: 'completed', result: text });
+
+        await enqueueOpenaiContextOp(async () => {
+          await openaiService.addMessage({
+            role: 'tool',
+            content: text,
+            tool_call_id: tc.id,
+          });
+        });
+      } catch (e) {
+        const text = `Tool call failed: ${String(e)}`;
+        updateToolCall(messageId, tc.id, { status: 'failed', result: text });
+        await enqueueOpenaiContextOp(async () => {
+          await openaiService.addMessage({
+            role: 'tool',
+            content: text,
+            tool_call_id: tc.id,
+          });
+        });
+      }
+    }
+
+    await openaiContextQueue;
+
+    const assistantMsg = addMessage({
+      type: 'say',
+      say: 'text',
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      partial: true,
+    });
+    currentAssistantMessageId.value = assistantMsg.id;
+
+    try {
+      await openaiService.send();
+    } catch (e) {
+      updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
+      setStreaming(false);
+      currentAssistantMessageId.value = null;
+      return;
     }
   }
 

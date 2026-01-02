@@ -47,7 +47,8 @@
       "remote-broker/linux-x86_64"
     ],
     "externalBin": [
-      "../../target/release/console"
+      "../../target/release/console",
+      "../../target/release/octovalve-proxy"
     ],
     "icon": [
       "icons/icon.icns",

@@ -1,94 +1,103 @@
-use futures_util::StreamExt;
-use reqwest::Client;
-use serde_json::json;
+use serde_json::{json, Value};
+use std::path::PathBuf;
 
-#[tokio::main]
-async fn main() {
-    let config = OpenAiConfig {
-        base_url: "https://api.openai.com/v1".to_string(),
-        api_key: "".to_string(),
-        model: "gpt-4o-mini".to_string(),
-        chat_path: "/chat/completions".to_string(),
-    };
+#[path = "../mcp_proxy.rs"]
+mod mcp_proxy;
 
-    let client = Client::new();
-    let url = format!("{}{}", config.base_url, config.chat_path);
-
-    let body = json!({
-        "model": config.model,
-        "messages": [
-            {"role": "user", "content": "say hi"}
-        ],
-        "stream": true
-    });
-
-    println!("URL: {}", url);
-    println!("Body: {}", serde_json::to_string_pretty(&body).unwrap());
-
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .expect("Request failed");
-
-    println!("Status: {}", response.status());
-
-    if !response.status().is_success() {
-        let text = response.text().await.unwrap_or_default();
-        println!("Error: {}", text);
-        return;
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut full_content = String::new();
-
-    println!("\n=== Stream ===");
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.expect("Stream error");
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].trim().to_string();
-            buffer = buffer[pos + 1..].to_string();
-
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            if let Some(data) = line.strip_prefix("data: ") {
-                if data == "[DONE]" {
-                    println!("\n[DONE]");
-                    continue;
-                }
-
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(choices) = json.get("choices").and_then(|c| c.as_array()) {
-                        if let Some(choice) = choices.first() {
-                            if let Some(delta) = choice.get("delta") {
-                                if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
-                                    full_content.push_str(content);
-                                    print!("{}", content);
-                                    use std::io::Write;
-                                    std::io::stdout().flush().unwrap();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    println!("\n\n=== Full Response ===\n{}", full_content);
-}
-
+#[derive(Clone, Debug)]
 struct OpenAiConfig {
     base_url: String,
     api_key: String,
     model: String,
     chat_path: String,
+}
+
+fn env_or_default(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+#[derive(Default)]
+struct McpTimeouts {
+    initialize_timeout_ms: Option<u64>,
+    tools_call_timeout_ms: Option<u64>,
+    attempt_timeout_ms: Option<u64>,
+}
+
+fn parse_args() -> (PathBuf, Option<String>, McpTimeouts) {
+    let mut args = std::env::args().skip(1);
+    let mut proxy_config: Option<PathBuf> = None;
+    let mut target: Option<String> = None;
+    let mut timeouts = McpTimeouts::default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--proxy-config" => {
+                proxy_config = args.next().map(PathBuf::from);
+            }
+            "--target" => {
+                target = args.next();
+            }
+            "--mcp-initialize-timeout-ms" => {
+                timeouts.initialize_timeout_ms = args.next().and_then(|v| v.parse::<u64>().ok());
+            }
+            "--mcp-tools-call-timeout-ms" => {
+                timeouts.tools_call_timeout_ms = args.next().and_then(|v| v.parse::<u64>().ok());
+            }
+            "--mcp-attempt-timeout-ms" => {
+                timeouts.attempt_timeout_ms = args.next().and_then(|v| v.parse::<u64>().ok());
+            }
+            _ => {}
+        }
+    }
+
+    let proxy_config = proxy_config
+        .or_else(|| std::env::var("OCTOVALVE_PROXY_CONFIG").ok().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("config/local-proxy-config.toml"));
+    (proxy_config, target, timeouts)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), String> {
+    // This config mirrors what console-ui would hold, but we don't actually call OpenAI here.
+    // It exists so you can supply the same env vars you use in the app.
+    let _openai_config = OpenAiConfig {
+        base_url: env_or_default("OPENAI_BASE_URL", ""),
+        api_key: env_or_default("OPENAI_API_KEY", ""),
+        model: env_or_default("OPENAI_MODEL", ""),
+        chat_path: env_or_default("OPENAI_CHAT_PATH", "/v1/chat/completions"),
+    };
+
+    let (proxy_config, target, timeouts) = parse_args();
+    eprintln!("proxy_config={}", proxy_config.display());
+
+    if let Some(value) = timeouts.initialize_timeout_ms {
+        std::env::set_var("OCTOVALVE_MCP_INITIALIZE_TIMEOUT_MS", value.to_string());
+    }
+    if let Some(value) = timeouts.tools_call_timeout_ms {
+        std::env::set_var("OCTOVALVE_MCP_TOOLS_CALL_TIMEOUT_MS", value.to_string());
+    }
+    if let Some(value) = timeouts.attempt_timeout_ms {
+        std::env::set_var("OCTOVALVE_MCP_ATTEMPT_TIMEOUT_MS", value.to_string());
+    }
+
+    // 1) Validate MCP path: list_targets
+    let result = mcp_proxy::call_tool(&proxy_config, "list_targets", json!({})).await?;
+    println!("list_targets result:\n{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+
+    // 2) Optional: validate run_command end-to-end (requires target)
+    if let Some(target) = target {
+        let args: Value = json!({
+            "command": "echo octovalve-mcp-ok",
+            "intent": "mcp bridge smoke test",
+            "target": target,
+            "mode": "shell",
+            "timeout_ms": 30000,
+        });
+        let result = mcp_proxy::call_tool(&proxy_config, "run_command", args).await?;
+        println!("run_command result:\n{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    } else {
+        eprintln!("(skip run_command) pass --target <name> to run a full command approval/execution test");
+        eprintln!("(timeout overrides) --mcp-initialize-timeout-ms <ms> --mcp-tools-call-timeout-ms <ms> --mcp-attempt-timeout-ms <ms>");
+    }
+
+    Ok(())
 }
