@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import type { ChatSession, ChatMessage, ChatConfig, ToolCall } from '../types';
-import type { AuthMethod, AcpEvent } from '../services/acpService';
+import type { AuthMethod, AcpEvent, AgentCapabilities } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
 import { fetchTargets } from '../../api';
@@ -30,6 +30,7 @@ export const useChatStore = defineStore('chat', () => {
   // ACP state
   const acpInitialized = ref(false);
   const authMethods = ref<AuthMethod[]>([]);
+  const acpCapabilities = ref<AgentCapabilities | null>(null);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
 
@@ -235,6 +236,9 @@ export const useChatStore = defineStore('chat', () => {
 
   async function maybeLoadAcpHistoryForActiveSession() {
     if (!acpInitialized.value || provider.value !== 'acp') {
+      return;
+    }
+    if (!canLoadAcpSession()) {
       return;
     }
     if (isStreaming.value) {
@@ -510,22 +514,25 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // ACP Actions
-  async function initializeAcp(cwd: string) {
+  async function initializeAcp(cwd: string, codexAcpPath?: string) {
     console.log('[chatStore] initializeAcp called with cwd:', cwd);
     try {
       console.log('[chatStore] initializeAcp: calling acpService.start...');
-      const response = await acpService.start(cwd);
+      const response = await acpService.start(cwd, codexAcpPath);
       console.log('[chatStore] initializeAcp: acpService.start returned:', response);
       authMethods.value = response.authMethods;
       acpInitialized.value = true;
+      acpCapabilities.value = response.agentCapabilities ?? null;
       provider.value = 'acp';
       providerInitialized.value = true;
       openaiContextSessionId.value = null;
       setupAcpEventListener();
       if (activeSession.value?.acpSessionId) {
         try {
-          const loaded = await loadAcpSessionOrThrow(activeSession.value.acpSessionId);
-          applyAcpHistoryToActiveSession(loaded.history);
+          if (canLoadAcpSession()) {
+            const loaded = await loadAcpSessionOrThrow(activeSession.value.acpSessionId);
+            applyAcpHistoryToActiveSession(loaded.history);
+          }
         } catch {
           // error already set via setError
         }
@@ -556,8 +563,10 @@ export const useChatStore = defineStore('chat', () => {
     const session = activeSession.value!;
 
     if (session.acpSessionId) {
-      const loaded = await loadAcpSessionOrThrow(session.acpSessionId);
-      applyAcpHistoryToActiveSession(loaded.history);
+      if (canLoadAcpSession()) {
+        const loaded = await loadAcpSessionOrThrow(session.acpSessionId);
+        applyAcpHistoryToActiveSession(loaded.history);
+      }
       return session.acpSessionId;
     }
 
@@ -652,9 +661,14 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
     acpInitialized.value = false;
+    acpCapabilities.value = null;
     providerInitialized.value = false;
     setConnected(false);
     console.log('[chatStore] stopAcp done');
+  }
+
+  function canLoadAcpSession() {
+    return acpCapabilities.value?.loadSession !== false;
   }
 
   function setupAcpEventListener() {

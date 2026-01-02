@@ -50,7 +50,11 @@ fn parse_args() -> (PathBuf, Option<String>, McpTimeouts) {
     }
 
     let proxy_config = proxy_config
-        .or_else(|| std::env::var("OCTOVALVE_PROXY_CONFIG").ok().map(PathBuf::from))
+        .or_else(|| {
+            std::env::var("OCTOVALVE_PROXY_CONFIG")
+                .ok()
+                .map(PathBuf::from)
+        })
         .unwrap_or_else(|| PathBuf::from("config/local-proxy-config.toml"));
     (proxy_config, target, timeouts)
 }
@@ -81,7 +85,10 @@ async fn main() -> Result<(), String> {
 
     // 1) Validate MCP path: list_targets
     let result = mcp_proxy::call_tool(&proxy_config, "list_targets", json!({})).await?;
-    println!("list_targets result:\n{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    println!(
+        "list_targets result:\n{}",
+        serde_json::to_string_pretty(&result).unwrap_or_default()
+    );
 
     // 2) Optional: validate run_command end-to-end (requires target)
     if let Some(target) = target {
@@ -93,9 +100,14 @@ async fn main() -> Result<(), String> {
             "timeout_ms": 30000,
         });
         let result = mcp_proxy::call_tool(&proxy_config, "run_command", args).await?;
-        println!("run_command result:\n{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        println!(
+            "run_command result:\n{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
     } else {
-        eprintln!("(skip run_command) pass --target <name> to run a full command approval/execution test");
+        eprintln!(
+            "(skip run_command) pass --target <name> to run a full command approval/execution test"
+        );
         eprintln!("(timeout overrides) --mcp-initialize-timeout-ms <ms> --mcp-tools-call-timeout-ms <ms> --mcp-attempt-timeout-ms <ms>");
     }
 

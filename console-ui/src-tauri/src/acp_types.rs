@@ -101,7 +101,7 @@ pub struct ClientInfo {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
-    pub protocol_version: serde_json::Value,  // Can be string or number
+    pub protocol_version: serde_json::Value, // Can be string or number
     #[serde(default)]
     pub agent_capabilities: Option<AgentCapabilities>,
     #[serde(default)]
@@ -112,10 +112,12 @@ pub struct InitializeResult {
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct AgentCapabilities {
-    #[serde(default)]
+    #[serde(default, rename = "promptCapabilities", alias = "prompt")]
     pub prompt: Option<Value>,
-    #[serde(default)]
+    #[serde(default, rename = "mcpCapabilities", alias = "mcp")]
     pub mcp: Option<Value>,
+    #[serde(default, rename = "loadSession")]
+    pub load_session: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -153,7 +155,7 @@ pub struct AuthenticateParams {
 pub struct NewSessionParams {
     pub cwd: String,
     #[serde(default)]
-    pub mcp_servers: Vec<Value>,  // Always include, even if empty
+    pub mcp_servers: Vec<Value>, // Always include, even if empty
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -161,9 +163,9 @@ pub struct NewSessionParams {
 pub struct NewSessionResult {
     pub session_id: String,
     #[serde(default)]
-    pub modes: Value,  // Can be object or array depending on agent
+    pub modes: Value, // Can be object or array depending on agent
     #[serde(default)]
-    pub models: Value,  // Can be object or array depending on agent
+    pub models: Value, // Can be object or array depending on agent
     #[serde(default)]
     pub config_options: Vec<Value>,
 }
@@ -209,7 +211,7 @@ pub struct SessionModel {
 #[serde(rename_all = "camelCase")]
 pub struct PromptParams {
     pub session_id: String,
-    pub prompt: PromptContent,  // Changed from 'content' to 'prompt'
+    pub prompt: PromptContent, // Changed from 'content' to 'prompt'
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<Vec<ContextItem>>,
 }
@@ -226,7 +228,9 @@ pub enum ContentBlock {
 
 impl ContentBlock {
     pub fn text(s: &str) -> Self {
-        ContentBlock::Text { text: s.to_string() }
+        ContentBlock::Text {
+            text: s.to_string(),
+        }
     }
 }
 
@@ -324,6 +328,8 @@ pub enum PermissionRequestData {
 pub struct AcpInitResponse {
     pub agent_info: Option<AgentInfo>,
     pub auth_methods: Vec<AuthMethod>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_capabilities: Option<AgentCapabilities>,
 }
 
 #[derive(Debug, Serialize, Clone)]

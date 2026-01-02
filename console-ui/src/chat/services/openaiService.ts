@@ -45,6 +45,12 @@ export interface ChatStreamEvent {
  * Initialize the OpenAI client with configuration
  */
 export async function openaiInit(config: OpenAiConfig): Promise<void> {
+  console.log('[openaiService] init', {
+    baseUrl: config.baseUrl,
+    chatPath: config.chatPath ?? '',
+    model: config.model,
+    apiKeyLen: config.apiKey?.length ?? 0,
+  });
   return invoke('openai_init', { config });
 }
 
@@ -73,6 +79,7 @@ export async function openaiClearMessages(): Promise<void> {
  * Send the conversation and stream the response
  */
 export async function openaiSend(): Promise<void> {
+  console.log('[openaiService] send');
   return invoke('openai_send');
 }
 

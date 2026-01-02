@@ -34,10 +34,28 @@ const emit = defineEmits<{
 const activeTab = ref<ListTab>('pending');
 const selectedId = ref<string | null>(null);
 const isFullScreen = ref(false);
+const splitContainerRef = ref<HTMLDivElement | null>(null);
+const terminalHeight = ref<number | null>(null);
+const containerHeight = ref(0);
+const isResizing = ref(false);
+const terminalHeightStorageKey = 'console-ui.target-terminal.height';
+const minTerminalHeight = 240;
+const minContentHeight = 240;
+let resizeObserver: ResizeObserver | null = null;
+let resizeStartY = 0;
+let resizeStartHeight = 0;
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
 const currentList = computed(() => (activeTab.value === 'pending' ? pendingList.value : historyList.value));
+const terminalStyle = computed(() => {
+  if (!props.terminalOpen) {
+    return {};
+  }
+  const fallback = containerHeight.value > 0 ? containerHeight.value / 2 : minTerminalHeight;
+  const height = terminalHeight.value ?? fallback;
+  return { height: `${clampTerminalHeight(height)}px` };
+});
 const selectedIndex = computed(() => {
   if (!selectedId.value) {
     return currentList.value.length > 0 ? 0 : -1;
@@ -254,6 +272,117 @@ function handleTerminalToggle() {
   }
   emit('open-terminal');
 }
+
+function readStoredTerminalHeight() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const raw = window.localStorage.getItem(terminalHeightStorageKey);
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function persistTerminalHeight() {
+  if (typeof window === 'undefined' || terminalHeight.value === null) {
+    return;
+  }
+  window.localStorage.setItem(terminalHeightStorageKey, String(terminalHeight.value));
+}
+
+function clampTerminalHeight(value: number) {
+  if (containerHeight.value <= 0) {
+    return value;
+  }
+  const min = Math.min(minTerminalHeight, containerHeight.value);
+  const max = Math.max(min, containerHeight.value - minContentHeight);
+  return Math.min(max, Math.max(min, value));
+}
+
+function updateContainerHeight() {
+  if (!splitContainerRef.value) {
+    return;
+  }
+  const nextHeight = Math.round(splitContainerRef.value.getBoundingClientRect().height);
+  if (!nextHeight || nextHeight === containerHeight.value) {
+    return;
+  }
+  containerHeight.value = nextHeight;
+  if (terminalHeight.value !== null) {
+    terminalHeight.value = clampTerminalHeight(terminalHeight.value);
+  }
+}
+
+function ensureTerminalHeight() {
+  if (terminalHeight.value !== null || containerHeight.value <= 0) {
+    return;
+  }
+  terminalHeight.value = clampTerminalHeight(containerHeight.value / 2);
+}
+
+function handleResizeMove(event: MouseEvent) {
+  const dy = resizeStartY - event.clientY;
+  terminalHeight.value = clampTerminalHeight(resizeStartHeight + dy);
+}
+
+function stopResize() {
+  if (!isResizing.value) {
+    return;
+  }
+  isResizing.value = false;
+  window.removeEventListener('mousemove', handleResizeMove);
+  window.removeEventListener('mouseup', stopResize);
+  persistTerminalHeight();
+}
+
+function startResize(event: MouseEvent) {
+  if (!props.terminalOpen) {
+    return;
+  }
+  isResizing.value = true;
+  resizeStartY = event.clientY;
+  resizeStartHeight = terminalHeight.value ?? clampTerminalHeight(containerHeight.value / 2);
+  window.addEventListener('mousemove', handleResizeMove);
+  window.addEventListener('mouseup', stopResize);
+}
+
+terminalHeight.value = readStoredTerminalHeight();
+
+watch(
+  () => props.terminalOpen,
+  (open) => {
+    if (!open) {
+      return;
+    }
+    updateContainerHeight();
+    ensureTerminalHeight();
+  }
+);
+
+onMounted(() => {
+  updateContainerHeight();
+  ensureTerminalHeight();
+  if (typeof ResizeObserver !== 'undefined' && splitContainerRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      updateContainerHeight();
+    });
+    resizeObserver.observe(splitContainerRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  window.removeEventListener('mousemove', handleResizeMove);
+  window.removeEventListener('mouseup', stopResize);
+});
 </script>
 
 <template>
@@ -345,11 +474,8 @@ function handleTerminalToggle() {
       </div>
     </div>
 
-    <div class="flex-1 flex overflow-hidden min-h-0">
-      <div v-show="props.terminalOpen" class="flex-1 min-h-0">
-        <slot name="terminal" />
-      </div>
-      <div v-show="!props.terminalOpen" class="flex-1 flex overflow-hidden min-h-0">
+    <div ref="splitContainerRef" class="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div class="flex-1 min-h-0 flex overflow-hidden">
         <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
           <div class="flex border-b border-border">
             <button
@@ -564,6 +690,19 @@ function handleTerminalToggle() {
             请选择一条记录查看详情
           </div>
         </div>
+      </div>
+      <div
+        v-show="props.terminalOpen"
+        class="h-2 bg-surface border-t border-border cursor-row-resize"
+        :class="isResizing ? 'bg-accent/30 border-accent/40' : 'hover:bg-panel/80'"
+        @mousedown.prevent="startResize"
+      ></div>
+      <div
+        v-show="props.terminalOpen"
+        class="flex-shrink-0 min-h-0 relative overflow-hidden"
+        :style="terminalStyle"
+      >
+        <slot name="terminal" />
       </div>
     </div>
 

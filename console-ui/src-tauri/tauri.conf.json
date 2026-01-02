@@ -10,7 +10,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self'; connect-src http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;",
+      "csp": "default-src 'self'; connect-src ipc: http://127.0.0.1:19309 ws://127.0.0.1:19309; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;",
       "capabilities": [
         {
           "identifier": "main",

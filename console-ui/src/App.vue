@@ -144,7 +144,7 @@ async function initChatProvider() {
     } else {
       // ACP provider
       console.log('[initChatProvider] calling initializeAcp...');
-      await chatStore.initializeAcp(chatConfig.acp.path || '.');
+      await chatStore.initializeAcp('.', chatConfig.acp.path);
       console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
       
       // Authentication is optional - don't fail if it's not available

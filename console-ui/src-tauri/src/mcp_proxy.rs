@@ -42,7 +42,10 @@ async fn mcp_write_message<W: tokio::io::AsyncWrite + Unpin>(
     // Keep the reader compatible with Content-Length too, but write JSONL for best interop.
     let mut payload = serde_json::to_vec(value).map_err(|err| err.to_string())?;
     payload.push(b'\n');
-    writer.write_all(&payload).await.map_err(|err| err.to_string())?;
+    writer
+        .write_all(&payload)
+        .await
+        .map_err(|err| err.to_string())?;
     writer.flush().await.map_err(|err| err.to_string())?;
     Ok(())
 }
@@ -57,7 +60,9 @@ fn env_duration_ms(key: &str, default: Duration) -> Duration {
     Duration::from_millis(ms)
 }
 
-async fn mcp_read_message<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R) -> Result<Value, String> {
+async fn mcp_read_message<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<Value, String> {
     // Support both:
     // - JSONL: { ... }\n
     // - Content-Length framing: Content-Length: N\r\n\r\n<json>
@@ -163,7 +168,10 @@ fn resolve_octovalve_proxy_bin() -> Result<PathBuf, String> {
     let mut cursor = std::env::current_exe().map_err(|err| err.to_string())?;
     for _ in 0..8 {
         if let Some(parent) = cursor.parent() {
-            let release = parent.join("target").join("release").join("octovalve-proxy");
+            let release = parent
+                .join("target")
+                .join("release")
+                .join("octovalve-proxy");
             if release.exists() {
                 return Ok(release);
             }
@@ -177,8 +185,7 @@ fn resolve_octovalve_proxy_bin() -> Result<PathBuf, String> {
         }
     }
 
-    Err("failed to locate octovalve-proxy binary (set OCTOVALVE_PROXY_BIN to override)"
-        .to_string())
+    Err("failed to locate octovalve-proxy binary (set OCTOVALVE_PROXY_BIN to override)".to_string())
 }
 
 fn append_stderr(message: &mut String, stderr: &str) {
@@ -190,7 +197,11 @@ fn append_stderr(message: &mut String, stderr: &str) {
     message.push_str(trimmed);
 }
 
-pub async fn call_tool(proxy_config_path: &Path, tool_name: &str, arguments: Value) -> Result<Value, String> {
+pub async fn call_tool(
+    proxy_config_path: &Path,
+    tool_name: &str,
+    arguments: Value,
+) -> Result<Value, String> {
     let proxy_bin = resolve_octovalve_proxy_bin()?;
 
     let initialize_timeout = env_duration_ms(
@@ -290,7 +301,8 @@ pub async fn call_tool(proxy_config_path: &Path, tool_name: &str, arguments: Val
         if let Some(err) = resp.error {
             return Err(format!("mcp tools/call failed: {}", err.message));
         }
-        resp.result.ok_or_else(|| "mcp tools/call missing result".to_string())
+        resp.result
+            .ok_or_else(|| "mcp tools/call missing result".to_string())
     };
 
     let run = timeout(attempt_timeout, run)

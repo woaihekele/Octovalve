@@ -24,7 +24,7 @@ use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -1749,36 +1749,54 @@ fn send_terminal_message(
 // ACP Commands
 // ============================================================================
 
-fn resolve_codex_acp_path(app: &AppHandle) -> Result<PathBuf, String> {
-    // First check ~/.octovalve/codex-acp
+fn resolve_codex_acp_path(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(value) = configured {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+
     if let Ok(dir) = octovalve_dir(app) {
-        let custom_path = dir.join(".octovalve").join("codex-acp");
+        let custom_path = dir.join("codex-acp");
         if custom_path.exists() {
             return Ok(custom_path);
         }
     }
-    // Then check bundled sidecar
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dir = exe.parent().ok_or("failed to get exe dir")?;
-    #[cfg(windows)]
-    {
-        return Ok(dir.join(format!("codex-acp.exe")));
+
+    let search_path = build_console_path();
+    if let Some(found) = find_in_path("codex-acp", &search_path) {
+        return Ok(found);
     }
-    #[cfg(not(windows))]
-    {
-        return Ok(dir.join("codex-acp"));
+
+    Ok(PathBuf::from("codex-acp"))
+}
+
+fn find_in_path(program: &str, path_var: &str) -> Option<PathBuf> {
+    let candidates = path_var.split(':').filter(|value| !value.is_empty());
+    for dir in candidates {
+        let base = Path::new(dir);
+        #[cfg(windows)]
+        let candidate = base.join(format!("{program}.exe"));
+        #[cfg(not(windows))]
+        let candidate = base.join(program);
+        if candidate.exists() {
+            return Some(candidate);
+        }
     }
+    None
 }
 
 #[tauri::command]
 async fn acp_start(
     app: AppHandle,
     state: State<'_, AcpClientState>,
-    _cwd: String,
+    cwd: String,
+    codex_acp_path: Option<String>,
 ) -> Result<AcpInitResponse, String> {
-    eprintln!("[acp_start] called with cwd: {}", _cwd);
-    
-    let codex_acp_path = match resolve_codex_acp_path(&app) {
+    eprintln!("[acp_start] called with cwd: {}", cwd);
+
+    let codex_acp_path = match resolve_codex_acp_path(&app, codex_acp_path.as_deref()) {
         Ok(path) => {
             eprintln!("[acp_start] codex_acp_path resolved: {:?}", path);
             path
@@ -1788,7 +1806,7 @@ async fn acp_start(
             return Err(e);
         }
     };
-    
+
     // Stop existing client if any
     {
         let mut guard = state.0.lock().unwrap();
@@ -1826,19 +1844,19 @@ async fn acp_start(
         *guard = Some(client);
     }
 
-    eprintln!("[acp_start] success, agent_info: {:?}, auth_methods: {:?}", 
-              init_result.agent_info, init_result.auth_methods);
+    eprintln!(
+        "[acp_start] success, agent_info: {:?}, auth_methods: {:?}",
+        init_result.agent_info, init_result.auth_methods
+    );
     Ok(AcpInitResponse {
         agent_info: init_result.agent_info,
         auth_methods: init_result.auth_methods,
+        agent_capabilities: init_result.agent_capabilities,
     })
 }
 
 #[tauri::command]
-fn acp_authenticate(
-    state: State<'_, AcpClientState>,
-    method_id: String,
-) -> Result<(), String> {
+fn acp_authenticate(state: State<'_, AcpClientState>, method_id: String) -> Result<(), String> {
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
     client.authenticate(&method_id).map_err(|e| e.to_string())
@@ -1866,9 +1884,7 @@ fn acp_load_session(
 ) -> Result<LoadSessionResult, String> {
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
-    client
-        .load_session(&session_id)
-        .map_err(|e| e.to_string())
+    client.load_session(&session_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1903,7 +1919,7 @@ async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
         let mut guard = state.0.lock().unwrap();
         guard.take()
     };
-    
+
     // Stop in a blocking task to avoid blocking the async runtime
     if let Some(mut client) = client {
         tokio::task::spawn_blocking(move || {
@@ -1920,7 +1936,17 @@ async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
 // ============================================================================
 
 #[tauri::command]
-async fn openai_init(state: State<'_, OpenAiClientState>, config: OpenAiConfig) -> Result<(), String> {
+async fn openai_init(
+    state: State<'_, OpenAiClientState>,
+    config: OpenAiConfig,
+) -> Result<(), String> {
+    eprintln!(
+        "[openai_init] base_url={} chat_path={} model={} api_key_len={}",
+        config.base_url,
+        config.chat_path,
+        config.model,
+        config.api_key.len()
+    );
     let mut guard = state.0.lock().await;
     *guard = Some(std::sync::Arc::new(OpenAiClient::new(config)));
     Ok(())
@@ -1943,7 +1969,10 @@ async fn openai_add_message(
 }
 
 #[tauri::command]
-async fn openai_set_tools(state: State<'_, OpenAiClientState>, tools: Vec<Tool>) -> Result<(), String> {
+async fn openai_set_tools(
+    state: State<'_, OpenAiClientState>,
+    tools: Vec<Tool>,
+) -> Result<(), String> {
     let client = {
         let guard = state.0.lock().await;
         guard
@@ -1982,10 +2011,7 @@ async fn openai_cancel(state: State<'_, OpenAiClientState>) -> Result<(), String
 }
 
 #[tauri::command]
-async fn openai_send(
-    app: AppHandle,
-    state: State<'_, OpenAiClientState>,
-) -> Result<(), String> {
+async fn openai_send(app: AppHandle, state: State<'_, OpenAiClientState>) -> Result<(), String> {
     let client = {
         let guard = state.0.lock().await;
         guard
@@ -1993,12 +2019,12 @@ async fn openai_send(
             .ok_or("OpenAI client not initialized")?
             .clone()
     };
-     client.send_stream(&app).await
- }
+    client.send_stream(&app).await
+}
 
- #[tauri::command]
- async fn mcp_call_tool(
-     app: AppHandle,
+#[tauri::command]
+async fn mcp_call_tool(
+    app: AppHandle,
     proxy_state: State<'_, ProxyConfigState>,
     name: String,
     arguments: Value,

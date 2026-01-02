@@ -62,10 +62,7 @@ pub struct AcpClient {
 
 impl AcpClient {
     /// Start a new codex-acp process
-    pub fn start(
-        codex_acp_path: &PathBuf,
-        app_handle: AppHandle,
-    ) -> Result<Self, AcpError> {
+    pub fn start(codex_acp_path: &PathBuf, app_handle: AppHandle) -> Result<Self, AcpError> {
         let mut process = Command::new(codex_acp_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -118,7 +115,10 @@ impl AcpClient {
                 continue;
             }
 
-            eprintln!("[ACP reader] received line: {}", &line[..line.len().min(200)]);
+            eprintln!(
+                "[ACP reader] received line: {}",
+                &line[..line.len().min(200)]
+            );
 
             let message: AcpMessage = match serde_json::from_str(&line) {
                 Ok(m) => m,
@@ -130,7 +130,10 @@ impl AcpClient {
 
             match message {
                 AcpMessage::Notification(notification) => {
-                    eprintln!("[ACP reader] parsed as Notification: {}", notification.method);
+                    eprintln!(
+                        "[ACP reader] parsed as Notification: {}",
+                        notification.method
+                    );
                     Self::handle_notification(&app_handle, &notification);
                 }
                 AcpMessage::Response(response) => {
@@ -149,7 +152,10 @@ impl AcpClient {
                             // Emit as completion event
                             if let Some(result) = &response.result {
                                 if let Some(stop_reason) = result.get("stopReason") {
-                                    eprintln!("[ACP reader] emitting completion event: {:?}", stop_reason);
+                                    eprintln!(
+                                        "[ACP reader] emitting completion event: {:?}",
+                                        stop_reason
+                                    );
                                     let event = AcpEvent {
                                         event_type: "prompt/complete".to_string(),
                                         payload: result.clone(),
@@ -246,7 +252,7 @@ impl AcpClient {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "/".to_string())
         };
-        
+
         let params = NewSessionParams {
             cwd: absolute_cwd,
             mcp_servers: vec![],

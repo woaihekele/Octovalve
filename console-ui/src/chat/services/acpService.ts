@@ -21,9 +21,16 @@ export interface AuthMethod {
   description?: string;
 }
 
+export interface AgentCapabilities {
+  loadSession?: boolean;
+  promptCapabilities?: unknown;
+  mcpCapabilities?: unknown;
+}
+
 export interface AcpInitResponse {
   agentInfo: AgentInfo | null;
   authMethods: AuthMethod[];
+  agentCapabilities?: AgentCapabilities | null;
 }
 
 export interface SessionMode {
@@ -106,8 +113,8 @@ export interface CompletePayload {
 /**
  * Start the ACP client and initialize connection
  */
-export async function acpStart(cwd: string): Promise<AcpInitResponse> {
-  return invoke<AcpInitResponse>('acp_start', { cwd });
+export async function acpStart(cwd: string, codexAcpPath?: string): Promise<AcpInitResponse> {
+  return invoke<AcpInitResponse>('acp_start', { cwd, codexAcpPath });
 }
 
 /**
