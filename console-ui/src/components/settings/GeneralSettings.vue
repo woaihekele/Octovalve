@@ -31,13 +31,14 @@ function updateNotifications(value: boolean) {
     <div class="flex items-center justify-between gap-4">
       <div>
         <div class="text-sm font-medium">主题</div>
-        <div class="text-xs text-foreground-muted">系统/深色/浅色</div>
+        <div class="text-xs text-foreground-muted">系统/深色/浅色/Darcula</div>
       </div>
       <NSelect
         :value="props.settings.theme"
         :options="themeOptions"
         size="small"
         class="w-32"
+        to="body"
         @update:value="updateTheme"
       />
     </div>

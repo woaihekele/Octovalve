@@ -23,6 +23,23 @@
   color-scheme: dark;
 }
 
+:root[data-theme='darcula'] {
+  color-scheme: dark;
+  --color-bg: 43 43 43;
+  --color-panel: 60 63 65;
+  --color-panel-muted: 53 55 57;
+  --color-border: 85 85 85;
+  --color-text: 200 200 200;
+  --color-text-muted: 160 160 160;
+  --color-accent: 104 151 187;
+  --color-accent-soft: 33 66 131;
+  --color-success: 152 195 121;
+  --color-warning: 204 120 50;
+  --color-danger: 224 108 117;
+  --color-scrollbar: 85 85 85;
+  --color-scrollbar-track: 43 43 43;
+}
+
 :root[data-theme='light'] {
   color-scheme: light;
   --color-bg: 248 250 252;
@@ -63,6 +80,12 @@ body {
   border-radius: 10px;
 }
 
+:root[data-theme='darcula'] .chat-row__text pre,
+:root[data-theme='darcula'] .reasoning-block pre {
+  background: #2b2b2b;
+  border-color: #555555;
+}
+
 .chat-row__text pre code,
 .reasoning-block pre code {
   background: transparent;
@@ -72,6 +95,11 @@ body {
 .chat-row__text code {
   background: rgb(var(--color-panel-muted));
   border: 1px solid rgb(var(--color-border));
+}
+
+:root[data-theme='darcula'] .chat-row__text code {
+  background: #2b2b2b;
+  border-color: #555555;
 }
 
 .hljs-comment,
@@ -121,6 +149,74 @@ body {
 
 .hljs-strong {
   font-weight: 600;
+}
+
+:root[data-theme='darcula'] .hljs-comment,
+:root[data-theme='darcula'] .hljs-quote {
+  color: #808080;
+}
+
+:root[data-theme='darcula'] .hljs-keyword,
+:root[data-theme='darcula'] .hljs-selector-tag,
+:root[data-theme='darcula'] .hljs-subst,
+:root[data-theme='darcula'] .hljs-meta {
+  color: #cc7832;
+}
+
+:root[data-theme='darcula'] .hljs-string,
+:root[data-theme='darcula'] .hljs-symbol,
+:root[data-theme='darcula'] .hljs-bullet,
+:root[data-theme='darcula'] .hljs-addition {
+  color: #6a8759;
+}
+
+:root[data-theme='darcula'] .hljs-number,
+:root[data-theme='darcula'] .hljs-literal,
+:root[data-theme='darcula'] .hljs-variable,
+:root[data-theme='darcula'] .hljs-template-variable,
+:root[data-theme='darcula'] .hljs-attribute {
+  color: #6897bb;
+}
+
+:root[data-theme='darcula'] .hljs-title,
+:root[data-theme='darcula'] .hljs-section,
+:root[data-theme='darcula'] .hljs-function,
+:root[data-theme='darcula'] .hljs-name,
+:root[data-theme='darcula'] .hljs-selector-id,
+:root[data-theme='darcula'] .hljs-selector-class {
+  color: #a9b7c6;
+}
+
+:root[data-theme='darcula'] .hljs-type,
+:root[data-theme='darcula'] .hljs-built_in {
+  color: #ffc66d;
+}
+
+:root[data-theme='darcula'] .n-base-selection,
+:root[data-theme='darcula'] .n-base-selection .n-base-selection-label,
+:root[data-theme='darcula'] .n-base-selection .n-base-selection-label__render-label,
+:root[data-theme='darcula'] .n-base-selection .n-base-selection-input__content {
+  color: #c8c8c8;
+}
+
+:root[data-theme='darcula'] .n-base-selection .n-base-selection-placeholder {
+  color: #a0a0a0;
+}
+
+:root[data-theme='darcula'] .n-base-select-option__content,
+:root[data-theme='darcula'] .n-base-select-option__content .n-base-select-option__content__text,
+:root[data-theme='darcula'] .n-base-select-option__content .n-base-select-option__content__text * {
+  color: #c8c8c8;
+}
+
+:root[data-theme='darcula'] .n-button.n-button--primary-type,
+:root[data-theme='darcula'] .n-button.n-button--primary-type .n-button__content {
+  color: #ffffff !important;
+}
+
+:root[data-theme='darcula'] .n-base-select-menu {
+  max-height: 240px;
+  overflow: auto;
 }
 
 .terminal-tabs .n-tabs-nav {

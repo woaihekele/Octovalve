@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type * as Monaco from 'monaco-editor';
+import type { ResolvedTheme } from '../theme';
 
 const props = defineProps<{
   modelValue: string;
   language?: string;
   readOnly?: boolean;
   height?: string;
-  theme?: 'dark' | 'light';
+  theme?: ResolvedTheme;
 }>();
 
 const emit = defineEmits<{
@@ -23,7 +24,13 @@ let updatingFromEditor = false;
 let tomlRegistered = false;
 
 function resolveMonacoTheme() {
-  return props.theme === 'light' ? 'vs' : 'vs-dark';
+  if (props.theme === 'light') {
+    return 'vs';
+  }
+  if (props.theme === 'darcula') {
+    return 'darcula';
+  }
+  return 'vs-dark';
 }
 
 function applyMonacoTheme() {
@@ -74,12 +81,35 @@ function ensureTomlLanguage(monaco: typeof Monaco) {
   tomlRegistered = true;
 }
 
+function ensureDarculaTheme(monaco: typeof Monaco) {
+  try {
+    monaco.editor.defineTheme('darcula', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#2B2B2B',
+        'editor.foreground': '#A9B7C6',
+        'editorLineNumber.foreground': '#606366',
+        'editorCursor.foreground': '#A9B7C6',
+        'editor.selectionBackground': '#214283',
+        'editor.inactiveSelectionBackground': '#21428380',
+        'editorIndentGuide.background': '#3C3F41',
+        'editorIndentGuide.activeBackground': '#4E5254',
+      },
+    });
+  } catch {
+    // ignore defineTheme errors
+  }
+}
+
 async function initEditor() {
   if (!containerRef.value || editor) {
     return;
   }
   monacoApi = await import('monaco-editor');
   ensureTomlLanguage(monacoApi);
+  ensureDarculaTheme(monacoApi);
   monacoApi.editor.setTheme(resolveMonacoTheme());
   editor = monacoApi.editor.create(containerRef.value, {
     value: props.modelValue ?? '',

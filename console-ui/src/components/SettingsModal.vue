@@ -33,7 +33,7 @@ import {
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
 import { DEFAULT_SETTINGS, loadSettings } from '../settings';
 import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../types';
-import { THEME_OPTIONS } from '../theme';
+import { THEME_OPTIONS, type ResolvedTheme } from '../theme';
 import MonacoEditor from './MonacoEditor.vue';
 import { ChatProviderSettings } from './settings';
 import type { ChatProviderConfig } from '../types';
@@ -41,7 +41,7 @@ import type { ChatProviderConfig } from '../types';
 const props = defineProps<{
   isOpen: boolean;
   settings: AppSettings;
-  resolvedTheme: 'dark' | 'light';
+  resolvedTheme: ResolvedTheme;
 }>();
 
 const emit = defineEmits<{
@@ -918,13 +918,15 @@ watch(
                 <div class="flex items-center justify-between gap-4">
                   <div>
                     <div class="text-sm font-medium">主题</div>
-                    <div class="text-xs text-foreground-muted">系统/深色/浅色</div>
+                    <div class="text-xs text-foreground-muted">系统/深色/浅色/Darcula</div>
                   </div>
                   <n-select
                     v-model:value="localSettings.theme"
                     :options="themeOptions"
                     size="small"
                     class="w-32"
+                    to="body"
+                    placement="top-start"
                   />
                 </div>
                 <div class="flex items-center justify-between">
@@ -1339,7 +1341,8 @@ watch(
 <style scoped>
 .settings-card-shell {
   width: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .settings-card-shell--ready {

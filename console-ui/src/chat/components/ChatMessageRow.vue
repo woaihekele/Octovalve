@@ -627,7 +627,7 @@ watch(
     }
 
     :deep(a) {
-      color: #8b5cf6;
+      color: rgb(var(--color-accent));
       text-decoration: none;
       &:hover { text-decoration: underline; }
     }

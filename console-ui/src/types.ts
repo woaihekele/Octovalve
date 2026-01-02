@@ -1,5 +1,5 @@
 export type TargetStatus = 'ready' | 'down';
-export type ThemeMode = 'system' | 'dark' | 'light';
+export type ThemeMode = 'system' | 'dark' | 'light' | 'darcula';
 
 export interface ConfigFilePayload {
   path: string;

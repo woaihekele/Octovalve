@@ -1,15 +1,16 @@
 import type { ThemeMode } from './types';
 
-export type ResolvedTheme = 'dark' | 'light';
+export type ResolvedTheme = 'dark' | 'light' | 'darcula';
 
 export const THEME_OPTIONS = [
   { value: 'system', label: '系统' },
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
+  { value: 'darcula', label: 'Darcula' },
 ] as const;
 
 export function isThemeMode(value: unknown): value is ThemeMode {
-  return value === 'dark' || value === 'light' || value === 'system';
+  return value === 'dark' || value === 'light' || value === 'system' || value === 'darcula';
 }
 
 export function normalizeThemeMode(value: unknown, fallback: ThemeMode): ThemeMode {
@@ -19,6 +20,9 @@ export function normalizeThemeMode(value: unknown, fallback: ThemeMode): ThemeMo
 export function resolveTheme(mode: ThemeMode, prefersDark: boolean): ResolvedTheme {
   if (mode === 'system') {
     return prefersDark ? 'dark' : 'light';
+  }
+  if (mode === 'darcula') {
+    return 'darcula';
   }
   return mode;
 }

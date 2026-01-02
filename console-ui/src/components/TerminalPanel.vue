@@ -6,11 +6,12 @@ import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { terminalClose, terminalInput, terminalOpen, terminalResize } from '../api';
 import type { TargetInfo } from '../types';
+import type { ResolvedTheme } from '../theme';
 
 const props = defineProps<{
   target: TargetInfo;
   visible: boolean;
-  theme: 'dark' | 'light';
+  theme: ResolvedTheme;
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -106,6 +107,32 @@ const GITHUB_LIGHT_THEME: ITheme = {
   extendedAnsi: EXTENDED_ANSI_LIGHT,
 };
 
+const DARCULA_THEME: ITheme = {
+  background: '#2B2B2B',
+  foreground: '#A9B7C6',
+  cursor: '#A9B7C6',
+  cursorAccent: '#2B2B2B',
+  selectionBackground: 'rgba(104, 151, 187, 0.35)',
+  selectionInactiveBackground: 'rgba(104, 151, 187, 0.22)',
+  selectionForeground: '#A9B7C6',
+  black: '#000000',
+  red: '#cc666e',
+  green: '#6a8759',
+  yellow: '#bbb529',
+  blue: '#6897bb',
+  magenta: '#9876aa',
+  cyan: '#6d9cbe',
+  white: '#a9b7c6',
+  brightBlack: '#4e5254',
+  brightRed: '#d46a6a',
+  brightGreen: '#87af5f',
+  brightYellow: '#d0d050',
+  brightBlue: '#7aa6c2',
+  brightMagenta: '#b294bb',
+  brightCyan: '#83b7c9',
+  brightWhite: '#ffffff',
+};
+
 const GITHUB_DARK_THEME: ITheme = {
   background: '#0d1117',
   foreground: '#c9d1d9',
@@ -134,7 +161,13 @@ const GITHUB_DARK_THEME: ITheme = {
 };
 
 function resolveTerminalTheme() {
-  return props.theme === 'light' ? GITHUB_LIGHT_THEME : GITHUB_DARK_THEME;
+  if (props.theme === 'light') {
+    return GITHUB_LIGHT_THEME;
+  }
+  if (props.theme === 'darcula') {
+    return DARCULA_THEME;
+  }
+  return GITHUB_DARK_THEME;
 }
 
 function applyTerminalTheme() {
