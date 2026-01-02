@@ -30,8 +30,6 @@
       <div
         class="chat-row__bubble"
         v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)"
-        :ref="handleBubbleRef"
-        :style="resolvedBubbleStyle"
       >
         <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__thinking-inline">
           <span class="chat-row__thinking-inline-label">思考中</span>
@@ -58,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, type ComponentPublicInstance, type CSSProperties } from 'vue';
+import { computed, ref } from 'vue';
 import type { ChatMessage } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
 import ReasoningBlock from './ReasoningBlock.vue';
@@ -67,8 +65,6 @@ import ChatMarkdown from './ChatMarkdown.vue';
 interface Props {
   message: ChatMessage;
   isLast?: boolean;
-  registerBubble?: (messageId: string, el: HTMLElement | null) => void;
-  bubbleStyle?: (messageId: string) => CSSProperties | undefined;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -160,17 +156,6 @@ const assistantMarkdown = computed(() => {
   return `${base}${cursor}`;
 });
 
-const resolvedBubbleStyle = computed(() => {
-  return props.bubbleStyle?.(props.message.id);
-});
-
-const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
-  if (props.message.role !== 'assistant') {
-    return;
-  }
-  props.registerBubble?.(props.message.id, (el as HTMLElement | null) ?? null);
-};
-
 </script>
 
 <style scoped lang="scss">
@@ -260,12 +245,16 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
       max-width: 100%;
       width: 100%;
       padding: 0 14px;
+      min-width: 0;
     }
     
     .chat-row__bubble {
-      display: inline-block;
-      width: fit-content;
+      display: block;
+      width: 100%;
+      min-width: 0;
       max-width: 100%;
+      padding: 0;
+      overflow: visible;
       background: transparent;
       border: none;
       border-radius: 0;
@@ -283,6 +272,7 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
     display: flex;
     flex-direction: column;
     max-width: 90%;
+    min-width: 0;
   }
 
   &__thinking {
@@ -388,6 +378,7 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
     color: rgb(var(--color-text));
     word-break: break-word;
     overflow-wrap: anywhere;
+    min-width: 0;
 
     // Markdown elements
     :deep(p) {
@@ -430,6 +421,8 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
       margin: 10px 0;
       font-size: 13px;
       font-family: 'SF Mono', Monaco, Consolas, monospace;
+      max-width: 100%;
+      box-sizing: border-box;
 
       code {
         background: none;

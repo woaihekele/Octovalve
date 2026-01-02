@@ -32,8 +32,6 @@
           :key="message.id"
           :message="message"
           :is-last="message.id === messages[messages.length - 1]?.id"
-          :register-bubble="registerBubble"
-          :bubble-style="bubbleStyle"
         />
       </template>
       <div ref="scrollAnchor" class="chat-view__scroll-anchor" />
@@ -55,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch, nextTick, onMounted } from 'vue';
+import { ref, watch, nextTick, onMounted } from 'vue';
 import { NButton, NIcon } from 'naive-ui';
 import {
   ChatbubblesOutline,
@@ -108,62 +106,6 @@ const { stickToBottom, scrollToBottom, handleScroll, activateStickToBottom } = u
   messagesRef,
   contentRef
 );
-
-// Track per-message max width so bubbles can grow but never shrink.
-const bubbleWidths = ref<Record<string, number>>({});
-const bubbleElements = new Map<string, HTMLElement>();
-const bubbleObservers = new Map<string, ResizeObserver>();
-
-const updateBubbleWidth = (messageId: string, width: number) => {
-  if (!Number.isFinite(width) || width <= 0) return;
-  const current = bubbleWidths.value[messageId] ?? 0;
-  if (width > current) {
-    bubbleWidths.value = { ...bubbleWidths.value, [messageId]: width };
-  }
-};
-
-const registerBubble = (messageId: string, el: HTMLElement | null) => {
-  const prevEl = bubbleElements.get(messageId) || null;
-  if (prevEl === el) {
-    return;
-  }
-  if (prevEl) {
-    const prevObserver = bubbleObservers.get(messageId);
-    if (prevObserver) {
-      prevObserver.disconnect();
-      bubbleObservers.delete(messageId);
-    }
-    bubbleElements.delete(messageId);
-  }
-  if (!el) {
-    return;
-  }
-  bubbleElements.set(messageId, el);
-  if (typeof ResizeObserver !== 'undefined') {
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        updateBubbleWidth(messageId, entry.contentRect.width);
-      }
-    });
-    observer.observe(el);
-    bubbleObservers.set(messageId, observer);
-  } else {
-    requestAnimationFrame(() => {
-      updateBubbleWidth(messageId, el.getBoundingClientRect().width);
-    });
-  }
-};
-
-const bubbleStyle = (messageId: string) => {
-  const width = bubbleWidths.value[messageId];
-  return width ? { minWidth: `${width}px` } : undefined;
-};
-
-onBeforeUnmount(() => {
-  bubbleObservers.forEach((observer) => observer.disconnect());
-  bubbleObservers.clear();
-  bubbleElements.clear();
-});
 
 async function handleSend(content: string) {
   if (!content.trim()) return;
