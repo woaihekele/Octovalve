@@ -19,23 +19,25 @@
       </div>
     </div>
 
-    <div ref="messagesContainer" class="chat-view__messages" @scroll="handleScroll">
-      <div v-if="!hasMessages" class="chat-view__welcome">
+    <div ref="messagesRef" class="chat-view__messages" @scroll="handleScroll">
+      <div ref="contentRef" class="chat-view__messages-content">
+      <div v-if="messages.length === 0" class="chat-view__welcome">
         <n-icon :component="SparklesOutline" :size="48" class="chat-view__welcome-icon" />
         <h3>{{ greeting }}</h3>
         <p>开始对话来与 AI 助手交互</p>
       </div>
       <template v-else>
-        <ChatMessage
+        <ChatMessageRow
           v-for="message in messages"
           :key="message.id"
           :message="message"
-          :show-actions="isAskingForApproval && message.id === lastMessage?.id"
-          @approve="handleApprove(message.id)"
-          @reject="handleReject(message.id)"
+          :is-last="message.id === messages[messages.length - 1]?.id"
+          :register-bubble="registerBubble"
+          :bubble-style="bubbleStyle"
         />
       </template>
       <div ref="scrollAnchor" class="chat-view__scroll-anchor" />
+      </div>
     </div>
 
     <ChatInput
@@ -43,19 +45,17 @@
       v-model="inputValue"
       :is-streaming="isStreaming"
       :disabled="!isConnected"
-      :selected-images="selectedImages"
-      :selected-files="selectedFiles"
+      :provider="provider"
       placeholder="输入消息，按 Enter 发送..."
       @send="handleSend"
       @cancel="handleCancel"
-      @remove-image="removeImage"
-      @remove-file="removeFile"
+      @change-provider="handleChangeProvider"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { onBeforeUnmount, ref, watch, nextTick, onMounted } from 'vue';
 import { NButton, NIcon } from 'naive-ui';
 import {
   ChatbubblesOutline,
@@ -63,112 +63,151 @@ import {
   TrashOutline,
   SparklesOutline,
 } from '@vicons/ionicons5';
-import ChatMessage from './ChatMessage.vue';
+import type { ChatMessage } from '../types';
 import ChatInput from './ChatInput.vue';
-import { useChatService } from '../composables/useChatService';
-import { useChatState } from '../composables/useChatState';
+import ChatMessageRow from './ChatMessageRow.vue';
+import { useStickToBottom } from '../composables/useStickToBottom';
 
 interface Props {
+  isOpen?: boolean;
   title?: string;
   greeting?: string;
+  messages: ChatMessage[];
+  isStreaming?: boolean;
+  isConnected?: boolean;
+  provider?: 'acp' | 'openai';
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  isOpen: true,
   title: 'AI 助手',
   greeting: '你好，我是 AI 助手',
+  messages: () => [],
+  isStreaming: false,
+  isConnected: true,
+  provider: 'acp',
 });
 
-const {
-  messages,
-  isStreaming,
-  isConnected,
-  sendMessage,
-  cancelCurrentRequest,
-  approveAction,
-  rejectAction,
-  createSession,
-  clearMessages,
-} = useChatService();
+const emit = defineEmits<{
+  send: [content: string];
+  cancel: [];
+  'new-session': [];
+  clear: [];
+  'change-provider': [provider: 'acp' | 'openai'];
+}>();
 
-const chatState = useChatState(() => messages.value ?? []);
+const inputValue = ref('');
 
-const {
-  inputValue,
-  selectedImages,
-  selectedFiles,
-  lastMessage,
-  isAskingForApproval,
-  hasMessages,
-  clearInput,
-  removeImage,
-  removeFile,
-} = chatState;
-
-const messagesContainer = ref<HTMLElement | null>(null);
-const scrollAnchor = ref<HTMLElement | null>(null);
 const chatInputRef = ref<InstanceType<typeof ChatInput> | null>(null);
-const shouldAutoScroll = ref(true);
+
+const messagesRef = ref<HTMLElement | null>(null);
+const contentRef = ref<HTMLElement | null>(null);
+const scrollAnchor = ref<HTMLElement | null>(null);
+
+const { stickToBottom, scrollToBottom, handleScroll, activateStickToBottom } = useStickToBottom(
+  messagesRef,
+  contentRef
+);
+
+// Track per-message max width so bubbles can grow but never shrink.
+const bubbleWidths = ref<Record<string, number>>({});
+const bubbleElements = new Map<string, HTMLElement>();
+const bubbleObservers = new Map<string, ResizeObserver>();
+
+const updateBubbleWidth = (messageId: string, width: number) => {
+  if (!Number.isFinite(width) || width <= 0) return;
+  const current = bubbleWidths.value[messageId] ?? 0;
+  if (width > current) {
+    bubbleWidths.value = { ...bubbleWidths.value, [messageId]: width };
+  }
+};
+
+const registerBubble = (messageId: string, el: HTMLElement | null) => {
+  const prevEl = bubbleElements.get(messageId) || null;
+  if (prevEl === el) {
+    return;
+  }
+  if (prevEl) {
+    const prevObserver = bubbleObservers.get(messageId);
+    if (prevObserver) {
+      prevObserver.disconnect();
+      bubbleObservers.delete(messageId);
+    }
+    bubbleElements.delete(messageId);
+  }
+  if (!el) {
+    return;
+  }
+  bubbleElements.set(messageId, el);
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        updateBubbleWidth(messageId, entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    bubbleObservers.set(messageId, observer);
+  } else {
+    requestAnimationFrame(() => {
+      updateBubbleWidth(messageId, el.getBoundingClientRect().width);
+    });
+  }
+};
+
+const bubbleStyle = (messageId: string) => {
+  const width = bubbleWidths.value[messageId];
+  return width ? { minWidth: `${width}px` } : undefined;
+};
+
+onBeforeUnmount(() => {
+  bubbleObservers.forEach((observer) => observer.disconnect());
+  bubbleObservers.clear();
+  bubbleElements.clear();
+});
 
 async function handleSend(content: string) {
   if (!content.trim()) return;
 
-  clearInput();
-  shouldAutoScroll.value = true;
-
-  await sendMessage({
-    content,
-    images: selectedImages.value.length > 0 ? [...selectedImages.value] : undefined,
-    files: selectedFiles.value.length > 0 ? [...selectedFiles.value] : undefined,
-  });
+  activateStickToBottom();
+  emit('send', content);
+  inputValue.value = '';
 }
 
 function handleCancel() {
-  cancelCurrentRequest();
+  emit('cancel');
 }
 
 function handleNewSession() {
-  createSession();
-  clearInput();
+  emit('new-session');
+  inputValue.value = '';
 }
 
 function handleClearMessages() {
-  clearMessages();
-  clearInput();
+  emit('clear');
+  inputValue.value = '';
 }
 
-function handleApprove(messageId: string) {
-  approveAction(messageId);
-}
-
-function handleReject(messageId: string) {
-  rejectAction(messageId);
-}
-
-function handleScroll() {
-  if (!messagesContainer.value) return;
-  const { scrollTop, scrollHeight, clientHeight } = messagesContainer.value;
-  shouldAutoScroll.value = scrollHeight - scrollTop - clientHeight < 100;
-}
-
-function scrollToBottom() {
-  if (shouldAutoScroll.value && scrollAnchor.value) {
-    scrollAnchor.value.scrollIntoView({ behavior: 'smooth' });
-  }
+function handleChangeProvider(newProvider: 'acp' | 'openai') {
+  emit('change-provider', newProvider);
 }
 
 watch(
-  messages,
+  () => props.messages.length,
   () => {
     nextTick(scrollToBottom);
   },
-  { deep: true }
+  { flush: 'post' }
 );
 
 watch(
-  isStreaming,
-  (streaming) => {
-    if (streaming) {
-      nextTick(scrollToBottom);
+  () => props.isOpen,
+  (open) => {
+    if (open) {
+      nextTick(() => {
+        activateStickToBottom();
+        void scrollToBottom({ force: true, behavior: 'smooth' });
+        chatInputRef.value?.focus();
+      });
     }
   }
 );
@@ -214,6 +253,13 @@ onMounted(() => {
     flex: 1;
     overflow-y: auto;
     padding: 16px;
+    min-height: 0;
+  }
+
+  &__messages-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
   }
 
   &__welcome {

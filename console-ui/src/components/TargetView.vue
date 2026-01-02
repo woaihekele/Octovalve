@@ -18,6 +18,7 @@ const props = defineProps<{
   settings: AppSettings;
   pendingJumpToken: number;
   terminalOpen: boolean;
+  chatOpen: boolean;
   aiRiskMap: Record<string, AiRiskEntry>;
   aiEnabled: boolean;
 }>();
@@ -27,6 +28,7 @@ const emit = defineEmits<{
   (e: 'deny', id: string): void;
   (e: 'open-terminal'): void;
   (e: 'close-terminal'): void;
+  (e: 'toggle-chat'): void;
   (e: 'refresh-risk', payload: { target: string; id: string }): void;
 }>();
 
@@ -323,6 +325,31 @@ function handleTerminalToggle() {
           >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+
+        <button
+          class="p-2 rounded border transition-colors"
+          :class="
+            props.chatOpen
+              ? 'bg-panel/60 text-foreground border-accent/30'
+              : 'bg-panel/60 text-foreground border-border hover:border-accent/40'
+          "
+          @click="emit('toggle-chat')"
+          :aria-label="props.chatOpen ? '收起 AI 助手' : '展开 AI 助手'"
+          :title="props.chatOpen ? '收起 AI 助手' : '展开 AI 助手'"
+        >
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path v-if="!props.chatOpen" d="M10 6l6 6-6 6" />
+            <path v-else d="M14 6l-6 6 6 6" />
           </svg>
         </button>
       </div>

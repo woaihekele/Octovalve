@@ -260,8 +260,8 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
   border-radius: 12px;
   overflow: hidden;
-  background: rgba(139, 92, 246, 0.08);
-  border: 1px solid rgba(139, 92, 246, 0.15);
+  background: rgb(var(--color-panel-muted));
+  border: 1px solid rgb(var(--color-border));
 }
 
 .reasoning-header {

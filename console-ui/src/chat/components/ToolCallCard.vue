@@ -75,7 +75,7 @@ const statusLabel = computed(() => {
   margin: 8px 0;
   border-radius: 12px;
   border: 1px solid rgba(99, 102, 241, 0.2);
-  background: white;
+  background: rgb(var(--color-panel));
   overflow: hidden;
   font-size: 13px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -103,7 +103,7 @@ const statusLabel = computed(() => {
 .tool-name {
   font-weight: 600;
   font-size: 14px;
-  color: #1f2937;
+  color: rgb(var(--color-text));
   margin-bottom: 4px;
 }
 
@@ -117,12 +117,12 @@ const statusLabel = computed(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #9ca3af;
+  background: rgb(var(--color-text-muted));
 }
 
 .tool-status-text {
   font-size: 12px;
-  color: #6b7280;
+  color: rgb(var(--color-text-muted));
 }
 
 .tool-toggle {
@@ -134,16 +134,16 @@ const statusLabel = computed(() => {
   padding: 8px 12px;
   border: none;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(0, 0, 0, 0.02);
-  color: #6b7280;
+  background: rgb(var(--color-panel-muted));
+  color: rgb(var(--color-text-muted));
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .tool-toggle:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: #374151;
+  background: rgb(var(--color-panel));
+  color: rgb(var(--color-text));
 }
 
 .tool-toggle svg {
@@ -157,7 +157,7 @@ const statusLabel = computed(() => {
 .tool-output {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   padding: 10px 12px;
-  background: #f9fafb;
+  background: rgb(var(--color-panel-muted));
   max-height: 200px;
   overflow: auto;
 }
@@ -169,7 +169,7 @@ const statusLabel = computed(() => {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
-  color: #374151;
+  color: rgb(var(--color-text));
 }
 
 /* Status variations */

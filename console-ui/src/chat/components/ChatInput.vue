@@ -165,16 +165,16 @@ defineExpose({ focus });
   border-top: 1px solid rgb(var(--color-border));
 
   &__container {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: rgb(var(--color-panel-muted));
+    border: 1px solid rgb(var(--color-border));
     border-radius: 16px;
     overflow: hidden;
     transition: all 0.2s;
 
     &--focused {
-      border-color: #8b5cf6;
-      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
-      background: white;
+      border-color: rgb(var(--color-accent));
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+      background: rgb(var(--color-panel));
     }
   }
 
@@ -193,7 +193,7 @@ defineExpose({ focus });
     max-height: 200px;
 
     &::placeholder {
-      color: #9ca3af;
+      color: rgb(var(--color-text-muted));
     }
 
     &:disabled {
@@ -228,11 +228,11 @@ defineExpose({ focus });
     :deep(.n-base-selection) {
       --n-height: 26px;
       --n-font-size: 12px;
-      --n-border: 1px solid #e5e7eb;
-      --n-border-hover: 1px solid #d1d5db;
-      --n-border-active: 1px solid #8b5cf6;
-      --n-border-focus: 1px solid #8b5cf6;
-      --n-box-shadow-focus: 0 0 0 2px rgba(139, 92, 246, 0.1);
+      --n-border: 1px solid rgb(var(--color-border));
+      --n-border-hover: 1px solid rgb(var(--color-border));
+      --n-border-active: 1px solid rgb(var(--color-accent));
+      --n-border-focus: 1px solid rgb(var(--color-accent));
+      --n-box-shadow-focus: 0 0 0 2px rgba(99, 102, 241, 0.18);
       border-radius: 6px;
     }
   }

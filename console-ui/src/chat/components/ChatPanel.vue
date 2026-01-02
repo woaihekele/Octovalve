@@ -24,9 +24,6 @@
           <button class="chat-panel__btn" title="清空消息" @click="$emit('clear')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
-          <button class="chat-panel__btn" title="关闭" @click="$emit('close')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
         </div>
       </div>
 
@@ -96,7 +93,6 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  close: [];
   send: [content: string];
   cancel: [];
   'new-session': [];
@@ -237,7 +233,8 @@ watch(
     align-items: center;
     justify-content: space-between;
     padding: 12px 14px;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+    background: rgb(var(--color-panel));
+    border-bottom: 1px solid rgb(var(--color-border));
     flex-shrink: 0;
   }
 
@@ -278,7 +275,7 @@ watch(
   &__title-text {
     font-weight: 600;
     font-size: 14px;
-    color: white;
+    color: rgb(var(--color-text));
     letter-spacing: 0.3px;
   }
 
@@ -286,8 +283,9 @@ watch(
     font-size: 10px;
     font-weight: 500;
     padding: 2px 6px;
-    background: rgba(0, 0, 0, 0.2);
-    color: rgba(255, 255, 255, 0.9);
+    background: rgb(var(--color-panel-muted));
+    border: 1px solid rgb(var(--color-border));
+    color: rgb(var(--color-text-muted));
     border-radius: 4px;
     font-family: monospace;
   }
@@ -302,7 +300,7 @@ watch(
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.4);
+    background: rgb(var(--color-text-muted));
 
     &--connected {
       background: #4ade80;
@@ -312,7 +310,7 @@ watch(
 
   &__status-text {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.75);
+    color: rgb(var(--color-text-muted));
   }
 
   &__actions {
@@ -327,15 +325,15 @@ watch(
     width: 28px;
     height: 28px;
     border: none;
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.85);
+    background: rgb(var(--color-panel-muted));
+    color: rgb(var(--color-text-muted));
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
+      background: rgb(var(--color-panel));
+      color: rgb(var(--color-text));
     }
   }
 
