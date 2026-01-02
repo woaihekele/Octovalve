@@ -26,15 +26,11 @@
       @wheel.prevent
       @touchmove.prevent
     >
-      <MarkdownRender
-        :custom-id="previewCustomId || 'reasoning-preview'"
-        :content="displayedPreviewText"
-        :is-dark="props.isDark ?? true"
-        :max-live-nodes="0"
-        :batch-rendering="true"
-        :render-batch-size="16"
-        :render-batch-delay="8"
-        :final="previewStreamDone"
+      <ChatMarkdown
+        :text="displayedPreviewText"
+        :streaming="!previewStreamDone"
+        :content-key="previewCustomId || 'reasoning-preview'"
+        :smooth-options="props.smoothOptions"
       />
     </div>
 
@@ -55,8 +51,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
-import MarkdownRender from 'markstream-vue';
 import { useSmoothStream } from '../composables/useSmoothStream';
+import ChatMarkdown from './ChatMarkdown.vue';
 
 interface Props {
   show: boolean;

@@ -14,15 +14,11 @@
         @toggle="handleToggleThinking"
       >
         <template #body>
-          <MarkdownRender
-            :custom-id="`chat-thinking-${message.id}`"
-            :content="thinkingContent"
-            :is-dark="isDark"
-            :max-live-nodes="isStreaming ? 0 : undefined"
-            :batch-rendering="isStreaming"
-            :render-batch-size="16"
-            :render-batch-delay="8"
-            :final="!isStreaming"
+          <ChatMarkdown
+            :text="thinkingContent"
+            :streaming="isStreaming"
+            :content-key="`chat-thinking-${message.id}`"
+            :smooth-options="smoothOptions"
           />
         </template>
       </ReasoningBlock>
@@ -45,24 +41,15 @@
         </div>
         <div v-else class="chat-row__text">
           <template v-if="message.role === 'assistant'">
-            <MarkdownRender
-              :custom-id="`chat-${message.id}`"
-              :content="assistantMarkdown"
-              :is-dark="isDark"
-              :custom-html-tags="['thinking']"
-              :max-live-nodes="isStreaming ? 0 : undefined"
-              :batch-rendering="isStreaming"
-              :render-batch-size="16"
-              :render-batch-delay="8"
-              :final="!isStreaming"
+            <ChatMarkdown
+              :text="assistantMarkdown"
+              :streaming="isStreaming"
+              :content-key="`chat-${message.id}`"
+              :smooth-options="smoothOptions"
             />
           </template>
           <template v-else>
-            <MarkdownRender
-              :custom-id="`chat-${message.id}`"
-              :content="message.content"
-              :is-dark="isDark"
-            />
+            <ChatMarkdown :text="message.content" :streaming="false" :content-key="`chat-${message.id}`" />
           </template>
         </div>
       </div>
@@ -71,12 +58,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onBeforeUnmount, type ComponentPublicInstance, type CSSProperties } from 'vue';
-import hljs from 'highlight.js/lib/common';
-import MarkdownRender from 'markstream-vue';
+import { computed, ref, type ComponentPublicInstance, type CSSProperties } from 'vue';
 import type { ChatMessage } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
 import ReasoningBlock from './ReasoningBlock.vue';
+import ChatMarkdown from './ChatMarkdown.vue';
 
 interface Props {
   message: ChatMessage;
@@ -95,152 +81,6 @@ const emit = defineEmits<{
 
 const rowRef = ref<HTMLElement | null>(null);
 const thinkingOpen = ref(false);
-
-const highlightToken = ref(0);
-let highlightObserver: MutationObserver | null = null;
-
-const highlightThrottleMs = 250;
-let highlightLastAt = 0;
-let highlightTimer: number | null = null;
-
-function highlightCodeBlocks() {
-  const root = rowRef.value;
-  if (!root) {
-    return;
-  }
-  const pres = root.querySelectorAll('pre');
-  pres.forEach((pre) => {
-    const preEl = pre as HTMLElement;
-    let codeEl = preEl.querySelector('code') as HTMLElement | null;
-
-    if (!codeEl) {
-      codeEl = document.createElement('code');
-      codeEl.textContent = preEl.textContent ?? '';
-      preEl.textContent = '';
-      preEl.appendChild(codeEl);
-    }
-
-    // In streaming mode, the code block content is changing. Re-highlight by
-    // resetting to plain text before applying highlight.js again.
-    if (isStreaming.value && codeEl.classList.contains('hljs')) {
-      const raw = codeEl.textContent ?? '';
-      codeEl.classList.remove('hljs');
-      codeEl.removeAttribute('data-highlighted');
-      codeEl.textContent = raw;
-    } else if (codeEl.classList.contains('hljs')) {
-      return;
-    }
-    try {
-      hljs.highlightElement(codeEl);
-    } catch {
-      // ignore highlight errors
-    }
-  });
-}
-
-function requestHighlight({ force }: { force: boolean }) {
-  if (typeof window === 'undefined') {
-    void scheduleHighlight();
-    return;
-  }
-
-  const now = window.Date.now();
-  const elapsed = now - highlightLastAt;
-  if (force || elapsed >= highlightThrottleMs) {
-    highlightLastAt = now;
-    if (highlightTimer !== null) {
-      window.clearTimeout(highlightTimer);
-      highlightTimer = null;
-    }
-    void scheduleHighlight();
-    return;
-  }
-
-  if (highlightTimer !== null) {
-    return;
-  }
-
-  highlightTimer = window.setTimeout(() => {
-    highlightTimer = null;
-    highlightLastAt = window.Date.now();
-    void scheduleHighlight();
-  }, Math.max(0, highlightThrottleMs - elapsed));
-}
-
-function shouldRetryHighlight(): boolean {
-  const root = rowRef.value;
-  if (!root) {
-    return false;
-  }
-  const blocks = root.querySelectorAll('pre code');
-  if (blocks.length === 0) {
-    return true;
-  }
-  for (const block of Array.from(blocks)) {
-    if (!(block as HTMLElement).classList.contains('hljs')) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function runHighlightPass(token: number, attempt: number) {
-  if (highlightToken.value !== token) {
-    return;
-  }
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      if (highlightToken.value !== token) {
-        return;
-      }
-      highlightCodeBlocks();
-      if (attempt >= 3) {
-        return;
-      }
-      if (!shouldRetryHighlight()) {
-        return;
-      }
-      window.setTimeout(() => {
-        runHighlightPass(token, attempt + 1);
-      }, 80);
-    });
-  });
-}
-
-async function scheduleHighlight() {
-  const token = highlightToken.value + 1;
-  highlightToken.value = token;
-  await nextTick();
-  runHighlightPass(token, 0);
-}
-
-function ensureHighlightObserver() {
-  if (typeof MutationObserver === 'undefined') {
-    return;
-  }
-  const root = rowRef.value;
-  if (!root) {
-    return;
-  }
-  if (highlightObserver) {
-    return;
-  }
-  highlightObserver = new MutationObserver(() => {
-    requestHighlight({ force: false });
-  });
-  highlightObserver.observe(root, { childList: true, subtree: true, characterData: true });
-}
-
-onBeforeUnmount(() => {
-  if (highlightObserver) {
-    highlightObserver.disconnect();
-    highlightObserver = null;
-  }
-  if (typeof window !== 'undefined' && highlightTimer !== null) {
-    window.clearTimeout(highlightTimer);
-    highlightTimer = null;
-  }
-});
 
 const isStreaming = computed(() => {
   return props.message.status === 'streaming' && props.isLast;
@@ -308,7 +148,6 @@ const smoothOptions = computed(() => ({
 function handleToggleThinking() {
   thinkingOpen.value = !thinkingOpen.value;
   emit('toggle-thinking', thinkingOpen.value);
-  void scheduleHighlight();
 }
 
 const assistantMarkdown = computed(() => {
@@ -332,23 +171,6 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
   props.registerBubble?.(props.message.id, (el as HTMLElement | null) ?? null);
 };
 
-watch(
-  () => [props.message.content, props.message.reasoning, thinkingOpen.value, isStreaming.value],
-  () => {
-    ensureHighlightObserver();
-    requestHighlight({ force: false });
-  },
-  { immediate: true, flush: 'post' }
-);
-
-watch(
-  () => isStreaming.value,
-  (streaming) => {
-    if (!streaming) {
-      requestHighlight({ force: true });
-    }
-  }
-);
 </script>
 
 <style scoped lang="scss">
