@@ -2,6 +2,7 @@
 import { NSelect, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import type { AppSettings } from '../../types';
+import { THEME_OPTIONS } from '../../theme';
 
 const props = defineProps<{
   settings: AppSettings;
@@ -11,11 +12,10 @@ const emit = defineEmits<{
   (e: 'update', key: keyof AppSettings, value: unknown): void;
 }>();
 
-const themeOptions: SelectOption[] = [
-  { value: 'system', label: '系统' },
-  { value: 'dark', label: '深色' },
-  { value: 'light', label: '浅色' },
-];
+const themeOptions: SelectOption[] = THEME_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}));
 
 function updateTheme(value: string) {
   emit('update', 'theme', value);

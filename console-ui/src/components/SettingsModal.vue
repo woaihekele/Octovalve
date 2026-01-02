@@ -31,8 +31,9 @@ import {
   writeProfileProxyConfig,
 } from '../api';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../shortcuts';
-import { DEFAULT_SETTINGS } from '../settings';
+import { DEFAULT_SETTINGS, loadSettings } from '../settings';
 import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../types';
+import { THEME_OPTIONS } from '../theme';
 import MonacoEditor from './MonacoEditor.vue';
 import { ChatProviderSettings } from './settings';
 import type { ChatProviderConfig } from '../types';
@@ -64,11 +65,10 @@ function cloneSettings(source: AppSettings): AppSettings {
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('general');
-const themeOptions: SelectOption[] = [
-  { value: 'system', label: '系统' },
-  { value: 'dark', label: '深色' },
-  { value: 'light', label: '浅色' },
-];
+const themeOptions: SelectOption[] = THEME_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}));
 const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
 const shortcutFields = [
   { key: 'prevTarget', label: '上一个目标' },

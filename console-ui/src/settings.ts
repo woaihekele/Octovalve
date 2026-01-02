@@ -1,5 +1,6 @@
 import type { AiSettings, AppSettings, ChatProviderConfig } from './types';
 import { normalizeShortcut } from './shortcuts';
+import { normalizeThemeMode } from './theme';
 
 const SETTINGS_KEY = 'octovalve.console.settings';
 const DEFAULT_AI_PROMPT = [
@@ -72,12 +73,6 @@ export function loadSettings(): AppSettings {
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const parsedShortcuts: Partial<AppSettings['shortcuts']> = parsed.shortcuts ?? {};
     const parsedAi = (parsed.ai ?? {}) as Partial<AiSettings>;
-    const normalizeTheme = (value: unknown) => {
-      if (value === 'dark' || value === 'light' || value === 'system') {
-        return value;
-      }
-      return DEFAULT_SETTINGS.theme;
-    };
     const normalizeWithFallback = (value: unknown, fallback: string) => {
       if (value === '') {
         return '';
@@ -144,7 +139,7 @@ export function loadSettings(): AppSettings {
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
-      theme: normalizeTheme(parsed.theme),
+      theme: normalizeThemeMode(parsed.theme, DEFAULT_SETTINGS.theme),
       ai: normalizedAi,
       chat: normalizedChat,
       shortcuts: normalizedShortcuts,

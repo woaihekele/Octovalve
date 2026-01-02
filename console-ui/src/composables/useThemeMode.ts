@@ -1,14 +1,14 @@
 import { onBeforeUnmount, ref } from 'vue';
 import type { ThemeMode } from '../types';
+import { applyThemeToDocument, resolveTheme, type ResolvedTheme } from '../theme';
 
 export function useThemeMode() {
-  const resolvedTheme = ref<'dark' | 'light'>('dark');
+  const resolvedTheme = ref<ResolvedTheme>('dark');
   let stopSystemThemeListener: (() => void) | null = null;
 
-  function updateResolvedTheme(resolved: 'dark' | 'light', mode: ThemeMode) {
+  function updateResolvedTheme(resolved: ResolvedTheme, mode: ThemeMode) {
     resolvedTheme.value = resolved;
-    document.documentElement.dataset.theme = resolved;
-    document.documentElement.dataset.themeMode = mode;
+    applyThemeToDocument(resolved, mode);
   }
 
   function applyThemeMode(mode: ThemeMode) {
@@ -21,7 +21,7 @@ export function useThemeMode() {
     }
     if (mode === 'system') {
       const media = window.matchMedia('(prefers-color-scheme: dark)');
-      const update = () => updateResolvedTheme(media.matches ? 'dark' : 'light', mode);
+      const update = () => updateResolvedTheme(resolveTheme(mode, media.matches), mode);
       update();
       const handler = () => update();
       if (typeof media.addEventListener === 'function') {
@@ -33,7 +33,7 @@ export function useThemeMode() {
       }
       return;
     }
-    updateResolvedTheme(mode, mode);
+    updateResolvedTheme(resolveTheme(mode, false), mode);
   }
 
   onBeforeUnmount(() => {
