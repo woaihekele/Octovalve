@@ -26,12 +26,12 @@
       @wheel.prevent
       @touchmove.prevent
     >
-      <ChatMarkdown
-        :text="displayedPreviewText"
-        :streaming="!previewStreamDone"
-        :content-key="previewCustomId || 'reasoning-preview'"
-        :smooth-options="props.smoothOptions"
-      />
+      <div
+        v-for="(line, index) in previewLines"
+        :key="index"
+        :class="['reasoning-line', { empty: line === '' }]"
+        v-text="line || ' '"
+      ></div>
     </div>
 
     <div v-show="show" class="collapse-footer" @click="$emit('toggle')">
@@ -51,8 +51,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
-import { useSmoothStream } from '../composables/useSmoothStream';
-import ChatMarkdown from './ChatMarkdown.vue';
+import { useSmoothStream } from '../composables';
 
 interface Props {
   show: boolean;
@@ -135,7 +134,7 @@ defineEmits<{ (e: 'toggle'): void }>();
 const hasBody = computed(() => Boolean(props.bodyHtml) || Boolean(slots.body));
 
 const normalizePreviewText = (text: string): string => {
-  return text || '';
+  return (text || '').replace(/<\/?think(?:ing)?[^>]*>/gi, '');
 };
 
 const smoothOptions = computed(() => props.smoothOptions || {});
@@ -279,6 +278,27 @@ onBeforeUnmount(() => {
 .reasoning-body {
   padding: 10px 12px;
   color: rgb(var(--color-text));
+
+  :deep(pre) {
+    background: rgb(var(--color-panel-muted));
+    border: 1px solid rgb(var(--color-border));
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 12px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  :deep(pre code) {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+  }
 }
 
 .reasoning-preview {
