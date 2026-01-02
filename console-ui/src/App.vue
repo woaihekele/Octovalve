@@ -24,7 +24,6 @@ import NotificationBridge from './components/NotificationBridge.vue';
 import ChatHistoryModal from './chat/components/ChatHistoryModal.vue';
 import { loadSettings, saveSettings } from './settings';
 import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
-import { startWindowDrag } from './tauriWindow';
 import { useAiRiskQueue } from './composables/useAiRiskQueue';
 import { useTerminalState } from './composables/useTerminalState';
 import { useThemeMode } from './composables/useThemeMode';
@@ -420,6 +419,9 @@ function handleSettingsSave(value: AppSettings) {
 }
 
 function handleGlobalKey(event: KeyboardEvent) {
+  if (event.defaultPrevented) {
+    return;
+  }
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
   }
@@ -468,14 +470,6 @@ function handleGlobalKey(event: KeyboardEvent) {
       showNotification('没有待审批任务');
     }
   }
-}
-
-function handleTitleDrag(event: MouseEvent) {
-  if (event.button !== 0) {
-    return;
-  }
-  event.preventDefault();
-  void startWindowDrag();
 }
 
 onMounted(async () => {
@@ -543,9 +537,8 @@ watch(
       <NotificationBridge :payload="notification" :token="notificationToken" />
       <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
         <div
-          class="fixed top-0 left-0 right-0 h-7 z-30"
+          class="fixed top-0 left-0 right-0 h-7 z-[4000] pointer-events-auto"
           data-tauri-drag-region
-          @mousedown="handleTitleDrag"
         ></div>
 
         <Sidebar

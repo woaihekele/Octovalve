@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NButton, NPopover, NTag } from 'naive-ui';
 import { formatShortcut, matchesShortcut } from '../shortcuts';
-import { startWindowDrag } from '../tauriWindow';
 import type {
   AiRiskEntry,
   AppSettings,
@@ -248,14 +247,6 @@ function handleKeyDown(event: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', handleKeyDown));
 onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown));
 
-function handleTitleDrag(event: MouseEvent) {
-  if (event.button !== 0) {
-    return;
-  }
-  event.preventDefault();
-  void startWindowDrag();
-}
-
 function handleTerminalToggle() {
   if (props.terminalOpen) {
     emit('close-terminal');
@@ -271,7 +262,6 @@ function handleTerminalToggle() {
       v-if="!isFullScreen"
       class="h-16 border-b border-border flex items-center justify-between px-6 bg-panel/50"
       data-tauri-drag-region
-      @mousedown="handleTitleDrag"
     >
       <div class="flex items-center gap-4 min-w-0">
         <div class="min-w-0">

@@ -1,15 +1,18 @@
 <template>
   <n-modal :show="props.show" :mask-closable="true" :close-on-esc="true" @update:show="(v) => !v && emit('close')">
-    <n-card size="small" class="w-[36rem]" :bordered="true">
-      <template #header>历史会话</template>
-      <template #header-extra>
-        <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </n-button>
-      </template>
+    <div class="chat-history-modal-root">
+      <n-card size="small" class="w-[36rem]" :bordered="true">
+        <template #header>
+          <div>历史会话</div>
+        </template>
+        <template #header-extra>
+          <n-button text @click="emit('close')" aria-label="关闭" title="关闭">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </n-button>
+        </template>
 
       <div class="space-y-3">
         <div class="flex items-center justify-between">
@@ -34,7 +37,7 @@
               :class="s.id === props.activeSessionId ? 'text-foreground' : 'text-foreground-muted'"
               @click="emit('select', s.id)"
             >
-              <div class="text-sm font-medium truncate">{{ s.title }}</div>
+              <div class="text-sm font-medium truncate">{{ sessionTitle(s) }}</div>
               <div class="text-xs opacity-80 truncate">{{ formatMeta(s) }}</div>
             </button>
 
@@ -45,7 +48,8 @@
           </div>
         </div>
       </div>
-    </n-card>
+      </n-card>
+    </div>
   </n-modal>
 
   <n-modal v-model:show="confirmClearAllOpen" :mask-closable="true" :close-on-esc="true">
@@ -96,5 +100,16 @@ function formatMeta(session: ChatSession) {
   const dt = new Date(session.updatedAt);
   const time = dt.toLocaleString();
   return `${count} 条消息 · ${time}`;
+}
+
+function sessionTitle(session: ChatSession) {
+  const firstUser = session.messages.find((m) => m.role === 'user' && m.content.trim().length > 0);
+  const raw = (firstUser?.content ?? session.title).trim();
+  const singleLine = raw.replace(/\s+/g, ' ');
+  const maxLen = 80;
+  if (singleLine.length <= maxLen) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, maxLen - 1)}…`;
 }
 </script>

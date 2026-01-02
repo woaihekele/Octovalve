@@ -815,23 +815,32 @@ watch(
     :close-on-esc="!logModalOpen"
     @update:show="(value) => { if (!value && !logModalOpen) emit('close'); }"
   >
-    <div
-      ref="cardShellRef"
-      class="settings-card-shell"
-      :class="{ 'settings-card-shell--ready': cardShellReady }"
-      :style="cardShellStyle"
-    >
-      <div ref="cardInnerRef" class="w-full">
-        <n-card :bordered="true" :style="cardStyle" :content-style="cardContentStyle" size="large">
-          <template #header>设置</template>
-          <template #header-extra>
-            <n-button text :disabled="logModalOpen" @click="emit('close')" aria-label="关闭" title="关闭">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </n-button>
-          </template>
+    <div class="settings-modal-root">
+      <div
+        ref="cardShellRef"
+        class="settings-card-shell"
+        :class="{ 'settings-card-shell--ready': cardShellReady }"
+        :style="cardShellStyle"
+      >
+        <div ref="cardInnerRef" class="w-full">
+          <n-card :bordered="true" :style="cardStyle" :content-style="cardContentStyle" size="large">
+            <template #header>
+              <div>设置</div>
+            </template>
+            <template #header-extra>
+              <n-button
+                text
+                :disabled="logModalOpen"
+                @click="emit('close')"
+                aria-label="关闭"
+                title="关闭"
+              >
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </n-button>
+            </template>
 
           <n-tabs
             v-model:value="activeTab"
@@ -892,7 +901,8 @@ watch(
             <n-button @click="emit('close')">取消</n-button>
             <n-button type="primary" @click="save">保存</n-button>
           </div>
-        </n-card>
+          </n-card>
+        </div>
       </div>
     </div>
   </n-modal>
