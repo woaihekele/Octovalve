@@ -1,6 +1,6 @@
 <template>
   <div class="chat-row" :class="[`chat-row--${message.role}`, { 'chat-row--streaming': isStreaming }]">
-    <div class="chat-row__content">
+    <div ref="rowRef" class="chat-row__content">
       <!-- Thinking section (collapsible) -->
       <ReasoningBlock
         v-if="hasMeaningfulThinking"
@@ -71,7 +71,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, type ComponentPublicInstance, type CSSProperties } from 'vue';
+import { computed, ref, watch, nextTick, onBeforeUnmount, type ComponentPublicInstance, type CSSProperties } from 'vue';
+import hljs from 'highlight.js/lib/common';
 import MarkdownRender from 'markstream-vue';
 import type { ChatMessage } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
@@ -92,7 +93,154 @@ const emit = defineEmits<{
   (e: 'toggle-thinking', opened: boolean): void;
 }>();
 
+const rowRef = ref<HTMLElement | null>(null);
 const thinkingOpen = ref(false);
+
+const highlightToken = ref(0);
+let highlightObserver: MutationObserver | null = null;
+
+const highlightThrottleMs = 250;
+let highlightLastAt = 0;
+let highlightTimer: number | null = null;
+
+function highlightCodeBlocks() {
+  const root = rowRef.value;
+  if (!root) {
+    return;
+  }
+  const pres = root.querySelectorAll('pre');
+  pres.forEach((pre) => {
+    const preEl = pre as HTMLElement;
+    let codeEl = preEl.querySelector('code') as HTMLElement | null;
+
+    if (!codeEl) {
+      codeEl = document.createElement('code');
+      codeEl.textContent = preEl.textContent ?? '';
+      preEl.textContent = '';
+      preEl.appendChild(codeEl);
+    }
+
+    // In streaming mode, the code block content is changing. Re-highlight by
+    // resetting to plain text before applying highlight.js again.
+    if (isStreaming.value && codeEl.classList.contains('hljs')) {
+      const raw = codeEl.textContent ?? '';
+      codeEl.classList.remove('hljs');
+      codeEl.removeAttribute('data-highlighted');
+      codeEl.textContent = raw;
+    } else if (codeEl.classList.contains('hljs')) {
+      return;
+    }
+    try {
+      hljs.highlightElement(codeEl);
+    } catch {
+      // ignore highlight errors
+    }
+  });
+}
+
+function requestHighlight({ force }: { force: boolean }) {
+  if (typeof window === 'undefined') {
+    void scheduleHighlight();
+    return;
+  }
+
+  const now = window.Date.now();
+  const elapsed = now - highlightLastAt;
+  if (force || elapsed >= highlightThrottleMs) {
+    highlightLastAt = now;
+    if (highlightTimer !== null) {
+      window.clearTimeout(highlightTimer);
+      highlightTimer = null;
+    }
+    void scheduleHighlight();
+    return;
+  }
+
+  if (highlightTimer !== null) {
+    return;
+  }
+
+  highlightTimer = window.setTimeout(() => {
+    highlightTimer = null;
+    highlightLastAt = window.Date.now();
+    void scheduleHighlight();
+  }, Math.max(0, highlightThrottleMs - elapsed));
+}
+
+function shouldRetryHighlight(): boolean {
+  const root = rowRef.value;
+  if (!root) {
+    return false;
+  }
+  const blocks = root.querySelectorAll('pre code');
+  if (blocks.length === 0) {
+    return true;
+  }
+  for (const block of Array.from(blocks)) {
+    if (!(block as HTMLElement).classList.contains('hljs')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function runHighlightPass(token: number, attempt: number) {
+  if (highlightToken.value !== token) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (highlightToken.value !== token) {
+        return;
+      }
+      highlightCodeBlocks();
+      if (attempt >= 3) {
+        return;
+      }
+      if (!shouldRetryHighlight()) {
+        return;
+      }
+      window.setTimeout(() => {
+        runHighlightPass(token, attempt + 1);
+      }, 80);
+    });
+  });
+}
+
+async function scheduleHighlight() {
+  const token = highlightToken.value + 1;
+  highlightToken.value = token;
+  await nextTick();
+  runHighlightPass(token, 0);
+}
+
+function ensureHighlightObserver() {
+  if (typeof MutationObserver === 'undefined') {
+    return;
+  }
+  const root = rowRef.value;
+  if (!root) {
+    return;
+  }
+  if (highlightObserver) {
+    return;
+  }
+  highlightObserver = new MutationObserver(() => {
+    requestHighlight({ force: false });
+  });
+  highlightObserver.observe(root, { childList: true, subtree: true, characterData: true });
+}
+
+onBeforeUnmount(() => {
+  if (highlightObserver) {
+    highlightObserver.disconnect();
+    highlightObserver = null;
+  }
+  if (typeof window !== 'undefined' && highlightTimer !== null) {
+    window.clearTimeout(highlightTimer);
+    highlightTimer = null;
+  }
+});
 
 const isStreaming = computed(() => {
   return props.message.status === 'streaming' && props.isLast;
@@ -160,6 +308,7 @@ const smoothOptions = computed(() => ({
 function handleToggleThinking() {
   thinkingOpen.value = !thinkingOpen.value;
   emit('toggle-thinking', thinkingOpen.value);
+  void scheduleHighlight();
 }
 
 const assistantMarkdown = computed(() => {
@@ -182,6 +331,24 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
   }
   props.registerBubble?.(props.message.id, (el as HTMLElement | null) ?? null);
 };
+
+watch(
+  () => [props.message.content, props.message.reasoning, thinkingOpen.value, isStreaming.value],
+  () => {
+    ensureHighlightObserver();
+    requestHighlight({ force: false });
+  },
+  { immediate: true, flush: 'post' }
+);
+
+watch(
+  () => isStreaming.value,
+  (streaming) => {
+    if (!streaming) {
+      requestHighlight({ force: true });
+    }
+  }
+);
 </script>
 
 <style scoped lang="scss">
@@ -433,7 +600,8 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
     }
 
     :deep(pre) {
-      background: rgba(0, 0, 0, 0.2);
+      background: rgb(var(--color-panel-muted));
+      border: 1px solid rgb(var(--color-border));
       padding: 12px 14px;
       border-radius: 8px;
       overflow-x: auto;
@@ -443,13 +611,15 @@ const handleBubbleRef = (el: Element | ComponentPublicInstance | null) => {
 
       code {
         background: none;
+        border: none;
         padding: 0;
         font-size: inherit;
       }
     }
 
     :deep(code) {
-      background: rgba(0, 0, 0, 0.1);
+      background: rgb(var(--color-panel-muted));
+      border: 1px solid rgb(var(--color-border));
       padding: 2px 6px;
       border-radius: 4px;
       font-size: 13px;
