@@ -62,7 +62,8 @@
         "transparent": true,
         "titleBarStyle": "Overlay",
         "theme": "Dark",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "devtools": true
       }
     ],
     "macOSPrivateApi": true
