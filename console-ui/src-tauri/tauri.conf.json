@@ -20,7 +20,33 @@
           ],
           "permissions": [
             "core:default",
-            "core:window:allow-start-dragging"
+            "core:window:allow-start-dragging",
+            {
+              "identifier": "shell:allow-spawn",
+              "allow": [
+                {
+                  "name": "console",
+                  "sidecar": true
+                },
+                {
+                  "name": "octovalve-proxy",
+                  "sidecar": true
+                }
+              ]
+            },
+            {
+              "identifier": "shell:allow-execute",
+              "allow": [
+                {
+                  "name": "console",
+                  "sidecar": true
+                },
+                {
+                  "name": "octovalve-proxy",
+                  "sidecar": true
+                }
+              ]
+            }
           ]
         }
       ]
