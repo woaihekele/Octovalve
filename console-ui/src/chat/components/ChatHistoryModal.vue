@@ -14,7 +14,7 @@
       <div class="space-y-3">
         <div class="flex items-center justify-between">
           <div class="text-xs text-foreground-muted">选择一个会话继续对话（API）</div>
-          <n-button size="small" quaternary :disabled="props.sessions.length === 0" @click="emit('clear-all')">
+          <n-button size="small" quaternary :disabled="props.sessions.length === 0" @click="confirmClearAllOpen = true">
             全部清空
           </n-button>
         </div>
@@ -47,10 +47,23 @@
       </div>
     </n-card>
   </n-modal>
+
+  <n-modal v-model:show="confirmClearAllOpen" :mask-closable="true" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>确认清空</template>
+      <div class="text-sm text-foreground-muted">将删除所有历史会话，且无法恢复。是否继续？</div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="confirmClearAllOpen = false">取消</n-button>
+          <n-button type="error" @click="confirmClearAll">确认清空</n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { NButton, NCard, NModal } from 'naive-ui';
 import type { ChatSession } from '../types';
 
@@ -70,6 +83,13 @@ const emit = defineEmits<{
 const sortedSessions = computed(() => {
   return [...props.sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 });
+
+const confirmClearAllOpen = ref(false);
+
+function confirmClearAll() {
+  confirmClearAllOpen.value = false;
+  emit('clear-all');
+}
 
 function formatMeta(session: ChatSession) {
   const count = session.messages.length;

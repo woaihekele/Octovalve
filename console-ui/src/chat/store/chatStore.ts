@@ -84,6 +84,16 @@ export const useChatStore = defineStore('chat', () => {
   const openaiInitialized = ref(false);
   let openaiEventUnlisten: (() => void) | null = null;
   const openaiContextSessionId = ref<string | null>(null);
+  let openaiContextQueue: Promise<void> = Promise.resolve();
+
+  function enqueueOpenaiContextOp(op: () => Promise<void>) {
+    openaiContextQueue = openaiContextQueue
+      .then(op)
+      .catch((e) => {
+        console.warn('[chatStore] openai context op failed:', e);
+      });
+    return openaiContextQueue;
+  }
 
   // Getters
   const activeSession = computed(() =>
@@ -300,6 +310,14 @@ export const useChatStore = defineStore('chat', () => {
     if (activeSession.value && activeSession.value.provider === targetProvider) {
       activeSessionId.value = remaining[0]?.id ?? null;
     }
+    if (targetProvider === 'openai') {
+      openaiContextSessionId.value = null;
+      if (openaiInitialized.value && provider.value === 'openai') {
+        void enqueueOpenaiContextOp(async () => {
+          await openaiService.clearMessages();
+        });
+      }
+    }
     scheduleSaveToStorage();
   }
 
@@ -360,6 +378,15 @@ export const useChatStore = defineStore('chat', () => {
       activeSession.value.updatedAt = Date.now();
       scheduleSaveToStorage();
     }
+
+    if (provider.value === 'openai') {
+      openaiContextSessionId.value = null;
+      if (openaiInitialized.value) {
+        void enqueueOpenaiContextOp(async () => {
+          await openaiService.clearMessages();
+        });
+      }
+    }
   }
 
   function setConfig(newConfig: Partial<ChatConfig>) {
@@ -419,20 +446,22 @@ export const useChatStore = defineStore('chat', () => {
     if (isStreaming.value) {
       return;
     }
-    await openaiService.clearMessages();
-    const list = session?.messages ?? [];
-    for (const msg of list) {
-      if (msg.status === 'streaming') {
-        continue;
-      }
-      if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
-        const content = (msg.content || '').trim();
-        if (!content) {
+    await enqueueOpenaiContextOp(async () => {
+      await openaiService.clearMessages();
+      const list = session?.messages ?? [];
+      for (const msg of list) {
+        if (msg.status === 'streaming') {
           continue;
         }
-        await openaiService.addMessage({ role: msg.role, content });
+        if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
+          const content = (msg.content || '').trim();
+          if (!content) {
+            continue;
+          }
+          await openaiService.addMessage({ role: msg.role, content });
+        }
       }
-    }
+    });
     openaiContextSessionId.value = session?.id ?? null;
   }
 
@@ -740,7 +769,13 @@ export const useChatStore = defineStore('chat', () => {
       throw new Error('OpenAI not initialized');
     }
 
+    if (!content.trim()) {
+      return;
+    }
+
     await ensureOpenaiContextForActiveSession();
+
+    await openaiContextQueue;
 
     // Add user message to UI
     addMessage({
@@ -752,7 +787,11 @@ export const useChatStore = defineStore('chat', () => {
     });
 
     // Add user message to OpenAI context
-    await openaiService.addMessage({ role: 'user', content });
+    await enqueueOpenaiContextOp(async () => {
+      await openaiService.addMessage({ role: 'user', content });
+    });
+
+    await openaiContextQueue;
 
     // Add assistant placeholder
     const assistantMsg = addMessage({
@@ -812,7 +851,9 @@ export const useChatStore = defineStore('chat', () => {
         // Get the full content and add to OpenAI context
         const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
         if (msg) {
-          openaiService.addMessage({ role: 'assistant', content: msg.content });
+          void enqueueOpenaiContextOp(async () => {
+            await openaiService.addMessage({ role: 'assistant', content: msg.content });
+          });
         }
         updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
         currentAssistantMessageId.value = null;
@@ -867,7 +908,7 @@ export const useChatStore = defineStore('chat', () => {
     () => {
       scheduleSaveToStorage();
       if (provider.value === 'openai') {
-        void syncOpenaiContextForSession(activeSession.value);
+        openaiContextSessionId.value = null;
       }
     },
     { flush: 'post' }
