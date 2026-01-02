@@ -1,8 +1,14 @@
 <template>
   <div
     class="chat-panel"
-    :class="{ 'chat-panel--open': isOpen }"
+    :class="{ 'chat-panel--open': isOpen, 'chat-panel--resizing': isResizing }"
+    :style="panelStyle"
   >
+    <div
+      v-show="isOpen"
+      class="chat-panel__resizer"
+      @mousedown.prevent="startResize"
+    ></div>
     <div class="chat-panel__content">
       <div class="chat-panel__header">
         <div class="chat-panel__header-left">
@@ -64,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch, nextTick } from 'vue';
+import { onBeforeUnmount, ref, watch, nextTick, computed } from 'vue';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
 import type { ChatMessage } from '../types';
@@ -99,6 +105,74 @@ const emit = defineEmits<{
   clear: [];
   'change-provider': [provider: 'acp' | 'openai'];
 }>();
+
+const widthStorageKey = 'console-ui.chat-panel.width';
+const minPanelWidth = 320;
+const maxPanelWidth = 720;
+
+function clampWidth(value: number) {
+  return Math.min(maxPanelWidth, Math.max(minPanelWidth, value));
+}
+
+function readStoredWidth() {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  const raw = window.localStorage.getItem(widthStorageKey);
+  if (!raw) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return clampWidth(parsed);
+}
+
+const panelWidth = ref(readStoredWidth() ?? props.width);
+const isResizing = ref(false);
+
+const panelStyle = computed(() => {
+  return {
+    ['--chat-panel-width']: `${panelWidth.value}px`,
+  } as Record<string, string>;
+});
+
+let resizeStartX = 0;
+let resizeStartWidth = 0;
+
+function persistWidth() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(widthStorageKey, String(panelWidth.value));
+}
+
+function handleResizeMove(event: MouseEvent) {
+  const dx = resizeStartX - event.clientX;
+  panelWidth.value = clampWidth(resizeStartWidth + dx);
+}
+
+function stopResize() {
+  if (!isResizing.value) {
+    return;
+  }
+  isResizing.value = false;
+  window.removeEventListener('mousemove', handleResizeMove);
+  window.removeEventListener('mouseup', stopResize);
+  persistWidth();
+}
+
+function startResize(event: MouseEvent) {
+  if (!props.isOpen) {
+    return;
+  }
+  isResizing.value = true;
+  resizeStartX = event.clientX;
+  resizeStartWidth = panelWidth.value;
+  window.addEventListener('mousemove', handleResizeMove);
+  window.addEventListener('mouseup', stopResize);
+}
 
 const inputValue = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
@@ -170,6 +244,10 @@ onBeforeUnmount(() => {
   bubbleObservers.forEach((observer) => observer.disconnect());
   bubbleObservers.clear();
   bubbleElements.clear();
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', stopResize);
+  }
 });
 
 function handleSend(content: string) {
@@ -202,6 +280,7 @@ watch(
 
 <style scoped lang="scss">
 .chat-panel {
+  position: relative;
   height: 100%;
   width: 0;
   background: rgb(var(--color-panel));
@@ -211,20 +290,44 @@ watch(
   flex-shrink: 0;
 
   &--open {
-    width: 380px;
+    width: var(--chat-panel-width);
     min-width: 320px;
+  }
+
+  &--resizing {
+    transition: none;
+    user-select: none;
+  }
+
+  &__resizer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 2;
+    background: transparent;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
   }
 
   &__content {
     display: flex;
     flex-direction: column;
     height: 100%;
-    width: 380px;
+    width: var(--chat-panel-width);
     opacity: 0;
     transition: opacity 0.15s ease 0.1s;
 
     .chat-panel--open & {
       opacity: 1;
+    }
+
+    .chat-panel--resizing & {
+      transition: none;
     }
   }
 
