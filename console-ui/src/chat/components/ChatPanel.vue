@@ -24,6 +24,17 @@
           </div>
         </div>
         <div class="chat-panel__actions">
+          <button
+            v-if="provider === 'openai'"
+            class="chat-panel__btn"
+            title="历史会话"
+            @click="$emit('show-history')"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <polyline points="3 4 3 10 9 10" />
+            </svg>
+          </button>
           <button class="chat-panel__btn" title="新会话" @click="$emit('new-session')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
@@ -102,6 +113,7 @@ const emit = defineEmits<{
   send: [content: string];
   cancel: [];
   'new-session': [];
+  'show-history': [];
   clear: [];
   'change-provider': [provider: 'acp' | 'openai'];
 }>();

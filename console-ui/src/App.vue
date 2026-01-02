@@ -21,6 +21,7 @@ import TerminalPanel from './components/TerminalPanel.vue';
 import TargetView from './components/TargetView.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NotificationBridge from './components/NotificationBridge.vue';
+import ChatHistoryModal from './chat/components/ChatHistoryModal.vue';
 import { loadSettings, saveSettings } from './settings';
 import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
 import { startWindowDrag } from './tauriWindow';
@@ -40,6 +41,7 @@ const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connec
 const snapshotLoading = ref<Record<string, boolean>>({});
 const pendingJumpToken = ref(0);
 const { resolvedTheme, applyThemeMode } = useThemeMode();
+const isChatHistoryOpen = ref(false);
 const naiveTheme = computed(() => (resolvedTheme.value === 'light' ? null : darkTheme));
 function resolveRgbVar(name: string, fallback: string) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -245,6 +247,12 @@ function handleChatNewSession() {
 function handleChatClear() {
   chatStore.clearMessages();
 }
+
+function handleChatShowHistory() {
+  isChatHistoryOpen.value = true;
+}
+
+const openaiSessions = computed(() => chatStore.sessions.filter((s) => s.provider === 'openai'));
 
 function handleChangeProvider(newProvider: 'acp' | 'openai') {
   if (settings.value.chat.provider !== newProvider) {
@@ -663,6 +671,7 @@ watch(
             greeting="你好，我是 AI 助手"
             @send="handleChatSend"
             @cancel="handleChatCancel"
+            @show-history="handleChatShowHistory"
             @new-session="handleChatNewSession"
             @clear="handleChatClear"
             @change-provider="handleChangeProvider"
@@ -675,6 +684,16 @@ watch(
           :resolved-theme="resolvedTheme"
           @close="isSettingsOpen = false"
           @save="handleSettingsSave"
+        />
+
+        <ChatHistoryModal
+          :show="isChatHistoryOpen"
+          :sessions="openaiSessions"
+          :active-session-id="chatStore.activeSessionId"
+          @close="isChatHistoryOpen = false"
+          @select="(id) => { chatStore.setActiveSession(id); isChatHistoryOpen = false; }"
+          @delete="(id) => chatStore.deleteSessionForProvider(id, 'openai')"
+          @clear-all="() => chatStore.clearSessionsForProvider('openai')"
         />
       </div>
     </n-notification-provider>

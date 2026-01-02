@@ -117,13 +117,11 @@ export function useChatService() {
   }
 
   onMounted(() => {
-    store.loadFromStorage();
     connect();
   });
 
   onUnmounted(() => {
     disconnect();
-    store.saveToStorage();
   });
 
   return {

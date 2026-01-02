@@ -83,6 +83,7 @@ export const useChatStore = defineStore('chat', () => {
   // OpenAI state
   const openaiInitialized = ref(false);
   let openaiEventUnlisten: (() => void) | null = null;
+  const openaiContextSessionId = ref<string | null>(null);
 
   // Getters
   const activeSession = computed(() =>
@@ -249,6 +250,7 @@ export const useChatStore = defineStore('chat', () => {
   function createSession(title?: string): ChatSession {
     const session: ChatSession = {
       id: generateId(),
+      provider: provider.value,
       title: title ?? `会话 ${sessions.value.length + 1}`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -258,11 +260,13 @@ export const useChatStore = defineStore('chat', () => {
     };
     sessions.value.push(session);
     activeSessionId.value = session.id;
+    scheduleSaveToStorage();
     return session;
   }
 
   function setActiveSession(sessionId: string | null) {
     activeSessionId.value = sessionId;
+    scheduleSaveToStorage();
   }
 
   function deleteSession(sessionId: string) {
@@ -272,7 +276,31 @@ export const useChatStore = defineStore('chat', () => {
       if (activeSessionId.value === sessionId) {
         activeSessionId.value = sessions.value[0]?.id ?? null;
       }
+      scheduleSaveToStorage();
     }
+  }
+
+  function clearAllSessions() {
+    sessions.value = [];
+    activeSessionId.value = null;
+    scheduleSaveToStorage();
+  }
+
+  function deleteSessionForProvider(sessionId: string, targetProvider: ChatProvider) {
+    const session = sessions.value.find((s) => s.id === sessionId);
+    if (!session || session.provider !== targetProvider) {
+      return;
+    }
+    deleteSession(sessionId);
+  }
+
+  function clearSessionsForProvider(targetProvider: ChatProvider) {
+    const remaining = sessions.value.filter((s) => s.provider !== targetProvider);
+    sessions.value = remaining;
+    if (activeSession.value && activeSession.value.provider === targetProvider) {
+      activeSessionId.value = remaining[0]?.id ?? null;
+    }
+    scheduleSaveToStorage();
   }
 
   function addMessage(message: Omit<ChatMessage, 'id' | 'ts'>): ChatMessage {
@@ -286,6 +314,7 @@ export const useChatStore = defineStore('chat', () => {
     };
     activeSession.value!.messages.push(newMessage);
     activeSession.value!.updatedAt = Date.now();
+    scheduleSaveToStorage();
     return newMessage;
   }
 
@@ -295,6 +324,7 @@ export const useChatStore = defineStore('chat', () => {
     if (message) {
       Object.assign(message, updates);
       activeSession.value.updatedAt = Date.now();
+      scheduleSaveToStorage();
     }
   }
 
@@ -305,6 +335,7 @@ export const useChatStore = defineStore('chat', () => {
       message.content += content;
       message.partial = true;
       activeSession.value.updatedAt = Date.now();
+      scheduleSaveToStorage();
     }
   }
 
@@ -327,6 +358,7 @@ export const useChatStore = defineStore('chat', () => {
     if (activeSession.value) {
       activeSession.value.messages = [];
       activeSession.value.updatedAt = Date.now();
+      scheduleSaveToStorage();
     }
   }
 
@@ -340,7 +372,11 @@ export const useChatStore = defineStore('chat', () => {
       const stored = localStorage.getItem('octovalve-chat-sessions');
       if (stored) {
         const data = JSON.parse(stored);
-        sessions.value = data.sessions ?? [];
+        const rawSessions = (data.sessions ?? []) as ChatSession[];
+        sessions.value = rawSessions.map((s) => ({
+          ...s,
+          provider: (s as any).provider === 'acp' ? 'acp' : 'openai',
+        }));
         activeSessionId.value = data.activeSessionId ?? null;
       }
     } catch (e) {
@@ -362,6 +398,55 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleSaveToStorage() {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return;
+    }
+    if (saveTimer) {
+      return;
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveToStorage();
+    }, 400);
+  }
+
+  async function syncOpenaiContextForSession(session: ChatSession | null) {
+    if (!openaiInitialized.value || provider.value !== 'openai') {
+      return;
+    }
+    if (isStreaming.value) {
+      return;
+    }
+    await openaiService.clearMessages();
+    const list = session?.messages ?? [];
+    for (const msg of list) {
+      if (msg.status === 'streaming') {
+        continue;
+      }
+      if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
+        const content = (msg.content || '').trim();
+        if (!content) {
+          continue;
+        }
+        await openaiService.addMessage({ role: msg.role, content });
+      }
+    }
+    openaiContextSessionId.value = session?.id ?? null;
+  }
+
+  async function ensureOpenaiContextForActiveSession() {
+    const session = activeSession.value;
+    if (!session) {
+      return;
+    }
+    if (openaiContextSessionId.value === session.id) {
+      return;
+    }
+    await syncOpenaiContextForSession(session);
+  }
+
   // ACP Actions
   async function initializeAcp(cwd: string) {
     console.log('[chatStore] initializeAcp called with cwd:', cwd);
@@ -373,6 +458,7 @@ export const useChatStore = defineStore('chat', () => {
       acpInitialized.value = true;
       provider.value = 'acp';
       providerInitialized.value = true;
+      openaiContextSessionId.value = null;
       setupAcpEventListener();
       if (activeSession.value?.acpSessionId) {
         try {
@@ -640,6 +726,7 @@ export const useChatStore = defineStore('chat', () => {
       provider.value = 'openai';
       setupOpenaiEventListener();
       setConnected(true);
+      await syncOpenaiContextForSession(activeSession.value);
       console.log('[chatStore] initializeOpenai done');
     } catch (e) {
       console.error('[chatStore] initializeOpenai failed:', e);
@@ -652,6 +739,8 @@ export const useChatStore = defineStore('chat', () => {
     if (!openaiInitialized.value) {
       throw new Error('OpenAI not initialized');
     }
+
+    await ensureOpenaiContextForActiveSession();
 
     // Add user message to UI
     addMessage({
@@ -729,6 +818,7 @@ export const useChatStore = defineStore('chat', () => {
         currentAssistantMessageId.value = null;
       }
       setStreaming(false);
+      scheduleSaveToStorage();
     } else if (event.eventType === 'error' && event.error) {
       flushPending();
       setError(event.error);
@@ -768,7 +858,29 @@ export const useChatStore = defineStore('chat', () => {
     openaiInitialized.value = false;
     providerInitialized.value = false;
     setConnected(false);
+    openaiContextSessionId.value = null;
     console.log('[chatStore] stopOpenai done');
+  }
+
+  watch(
+    () => activeSessionId.value,
+    () => {
+      scheduleSaveToStorage();
+      if (provider.value === 'openai') {
+        void syncOpenaiContextForSession(activeSession.value);
+      }
+    },
+    { flush: 'post' }
+  );
+
+  if (typeof window !== 'undefined') {
+    loadFromStorage();
+  }
+  if (!activeSessionId.value && sessions.value.length > 0) {
+    activeSessionId.value = sessions.value[0].id;
+  }
+  if (sessions.value.length === 0) {
+    createSession('会话 1');
   }
 
   // Unified send message
@@ -797,6 +909,9 @@ export const useChatStore = defineStore('chat', () => {
     createSession,
     setActiveSession,
     deleteSession,
+    clearAllSessions,
+    deleteSessionForProvider,
+    clearSessionsForProvider,
     addMessage,
     updateMessage,
     appendToMessage,

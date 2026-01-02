@@ -59,6 +59,7 @@ export interface ChatMessage {
 
 export interface ChatSession {
   id: string;
+  provider: 'acp' | 'openai';
   title: string;
   createdAt: number;
   updatedAt: number;
