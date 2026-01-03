@@ -4,7 +4,7 @@ use crate::layers::policy::config::LimitsConfig;
 use crate::layers::policy::summary::request_summary;
 use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
-use protocol::control::{RequestSnapshot, ResultSnapshot, ServiceSnapshot};
+use protocol::control::{RequestSnapshot, ResultSnapshot, RunningSnapshot, ServiceSnapshot};
 use protocol::CommandResponse;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ use tokio::sync::{broadcast, mpsc};
 
 struct ServiceState {
     pending: Vec<PendingRequest>,
+    running: Vec<RunningSnapshot>,
     history: Vec<ResultSnapshot>,
     history_limit: usize,
 }
@@ -21,6 +22,7 @@ impl ServiceState {
     fn new(history: Vec<ResultSnapshot>, history_limit: usize) -> Self {
         Self {
             pending: Vec::new(),
+            running: Vec::new(),
             history,
             history_limit,
         }
@@ -38,6 +40,7 @@ impl ServiceState {
         let last_result = self.history.first().cloned();
         ServiceSnapshot {
             queue,
+            running: self.running.clone(),
             history: self.history.clone(),
             last_result,
         }

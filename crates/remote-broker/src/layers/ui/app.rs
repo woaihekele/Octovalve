@@ -79,6 +79,7 @@ impl AppState {
                 }
                 self.sync_pending_selection();
             }
+            ServiceEvent::RunningUpdated(_) => {}
             ServiceEvent::ResultUpdated(result) => {
                 self.last_result = Some(result.clone());
                 self.history.insert(0, result);

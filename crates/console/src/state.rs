@@ -180,6 +180,7 @@ impl ConsoleState {
                         .entry(name.to_string())
                         .or_insert_with(|| ServiceSnapshot {
                             queue: Vec::new(),
+                            running: Vec::new(),
                             history: Vec::new(),
                             last_result: None,
                         });
@@ -187,12 +188,25 @@ impl ConsoleState {
                 self.pending_count
                     .insert(name.to_string(), entry.queue.len());
             }
+            ServiceEvent::RunningUpdated(running) => {
+                let entry =
+                    self.snapshots
+                        .entry(name.to_string())
+                        .or_insert_with(|| ServiceSnapshot {
+                            queue: Vec::new(),
+                            running: Vec::new(),
+                            history: Vec::new(),
+                            last_result: None,
+                        });
+                entry.running = running;
+            }
             ServiceEvent::ResultUpdated(result) => {
                 let entry =
                     self.snapshots
                         .entry(name.to_string())
                         .or_insert_with(|| ServiceSnapshot {
                             queue: Vec::new(),
+                            running: Vec::new(),
                             history: Vec::new(),
                             last_result: None,
                         });

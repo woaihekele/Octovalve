@@ -18,6 +18,24 @@ pub struct RequestSnapshot {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RunningSnapshot {
+    pub id: String,
+    pub client: String,
+    pub target: String,
+    pub peer: String,
+    pub intent: String,
+    pub mode: CommandMode,
+    pub raw_command: String,
+    pub pipeline: Vec<CommandStage>,
+    pub cwd: Option<String>,
+    pub timeout_ms: Option<u64>,
+    pub max_output_bytes: Option<u64>,
+    pub received_at_ms: u64,
+    pub queued_for_secs: u64,
+    pub started_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResultSnapshot {
     pub id: String,
     pub status: CommandStatus,
@@ -38,6 +56,7 @@ pub struct ResultSnapshot {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServiceSnapshot {
     pub queue: Vec<RequestSnapshot>,
+    pub running: Vec<RunningSnapshot>,
     pub history: Vec<ResultSnapshot>,
     pub last_result: Option<ResultSnapshot>,
 }
@@ -46,6 +65,7 @@ pub struct ServiceSnapshot {
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum ServiceEvent {
     QueueUpdated(Vec<RequestSnapshot>),
+    RunningUpdated(Vec<RunningSnapshot>),
     ResultUpdated(ResultSnapshot),
     ConnectionsChanged,
 }

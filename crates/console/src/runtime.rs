@@ -538,6 +538,13 @@ async fn handle_response(
                         "control queue updated"
                     );
                 }
+                ServiceEvent::RunningUpdated(running) => {
+                    info!(
+                        target = %name,
+                        running_len = running.len(),
+                        "control running updated"
+                    );
+                }
                 ServiceEvent::ResultUpdated(result) => {
                     info!(
                         target = %name,
