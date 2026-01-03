@@ -53,6 +53,23 @@ export interface RequestSnapshot {
   received_at_ms: number;
 }
 
+export interface RunningSnapshot {
+  id: string;
+  client: string;
+  target: string;
+  peer: string;
+  intent: string;
+  mode: CommandMode;
+  raw_command: string;
+  pipeline: CommandStage[];
+  cwd?: string | null;
+  timeout_ms?: number | null;
+  max_output_bytes?: number | null;
+  received_at_ms: number;
+  queued_for_secs: number;
+  started_at_ms: number;
+}
+
 export interface ResultSnapshot {
   id: string;
   status: CommandStatus;
@@ -72,6 +89,7 @@ export interface ResultSnapshot {
 
 export interface ServiceSnapshot {
   queue: RequestSnapshot[];
+  running: RunningSnapshot[];
   history: ResultSnapshot[];
   last_result?: ResultSnapshot | null;
 }

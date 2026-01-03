@@ -6,6 +6,7 @@ import type {
   AiRiskEntry,
   AppSettings,
   RequestSnapshot,
+  RunningSnapshot,
   ResultSnapshot,
   ServiceSnapshot,
   TargetInfo,
@@ -43,9 +44,16 @@ let resizeObserver: ResizeObserver | null = null;
 let resizeStartY = 0;
 let resizeStartHeight = 0;
 
+type SnapshotItem = RequestSnapshot | RunningSnapshot | ResultSnapshot;
+
 const pendingList = computed(() => props.snapshot?.queue ?? []);
+const runningList = computed(() => props.snapshot?.running ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
-const combinedList = computed(() => [...pendingList.value, ...historyList.value]);
+const combinedList = computed(() => [
+  ...pendingList.value,
+  ...runningList.value,
+  ...historyList.value,
+]);
 const terminalStyle = computed(() => {
   if (!props.terminalOpen) {
     return {};
@@ -60,7 +68,7 @@ const selectedIndex = computed(() => {
   }
   return combinedList.value.findIndex((item) => item.id === selectedId.value);
 });
-const selectedItem = computed(() => {
+const selectedItem = computed<SnapshotItem | null>(() => {
   const index = selectedIndex.value;
   if (index < 0) {
     return null;
@@ -68,6 +76,7 @@ const selectedItem = computed(() => {
   return combinedList.value[index] ?? null;
 });
 const isPendingSelected = computed(() => (selectedItem.value ? isPendingItem(selectedItem.value) : false));
+const isRunningSelected = computed(() => (selectedItem.value ? isRunningItem(selectedItem.value) : false));
 const hostDisplay = computed(() => {
   const hostname = props.target.hostname?.trim();
   const ip = props.target.ip?.trim();
@@ -113,12 +122,30 @@ function formatTime(value: number) {
   return new Date(value).toLocaleString();
 }
 
-function formatPipeline(item: RequestSnapshot | ResultSnapshot) {
+function formatPipeline(item: SnapshotItem) {
   return item.pipeline.map((stage) => stage.argv.join(' ')).join(' | ');
 }
 
-function isPendingItem(item: RequestSnapshot | ResultSnapshot): item is RequestSnapshot {
-  return !('finished_at_ms' in item);
+function itemTimestamp(item: SnapshotItem) {
+  if (isPendingItem(item)) {
+    return item.received_at_ms;
+  }
+  if (isRunningItem(item)) {
+    return item.started_at_ms;
+  }
+  return item.finished_at_ms;
+}
+
+function isResultItem(item: SnapshotItem): item is ResultSnapshot {
+  return 'finished_at_ms' in item;
+}
+
+function isRunningItem(item: SnapshotItem): item is RunningSnapshot {
+  return 'started_at_ms' in item;
+}
+
+function isPendingItem(item: SnapshotItem): item is RequestSnapshot {
+  return !isResultItem(item) && !isRunningItem(item);
 }
 
 function formatSummary(result: ResultSnapshot) {
@@ -485,6 +512,9 @@ onBeforeUnmount(() => {
                 Pending {{ pendingList.length }}
               </span>
               <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
+                Running {{ runningList.length }}
+              </span>
+              <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
                 History {{ historyList.length }}
               </span>
             </div>
@@ -511,6 +541,12 @@ onBeforeUnmount(() => {
                     class="text-xs px-2 py-0.5 rounded bg-accent/20 text-accent"
                   >
                     pending
+                  </span>
+                  <span
+                    v-else-if="isRunningItem(item)"
+                    class="text-xs px-2 py-0.5 rounded bg-panel-muted text-foreground"
+                  >
+                    running
                   </span>
                   <span
                     v-else
@@ -561,7 +597,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex justify-between items-center text-xs text-foreground-muted">
                 <span>
-                  {{ isPendingItem(item) ? formatTime((item as RequestSnapshot).received_at_ms) : formatTime((item as ResultSnapshot).finished_at_ms) }}
+                  {{ formatTime(itemTimestamp(item)) }}
                 </span>
                 <span v-if="isPendingItem(item)" class="truncate">{{ (item as RequestSnapshot).intent }}</span>
               </div>
@@ -603,6 +639,16 @@ onBeforeUnmount(() => {
                     <div>
                       <div class="text-foreground-muted">Timeout</div>
                       <div class="text-foreground">{{ (selectedItem as RequestSnapshot).timeout_ms ?? '-' }} ms</div>
+                    </div>
+                  </template>
+                  <template v-else-if="isRunningSelected">
+                    <div>
+                      <div class="text-foreground-muted">Status</div>
+                      <div class="text-foreground">running</div>
+                    </div>
+                    <div>
+                      <div class="text-foreground-muted">Queued For</div>
+                      <div class="text-foreground">{{ (selectedItem as RunningSnapshot).queued_for_secs }}s</div>
                     </div>
                   </template>
                   <template v-else>
@@ -682,9 +728,10 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
-                <span v-if="!isPendingSelected">
+                <span v-if="!isPendingSelected && !isRunningSelected">
                   {{ buildOutput(selectedItem as ResultSnapshot) || '无输出' }}
                 </span>
+                <span v-else-if="isRunningSelected" class="text-foreground-muted">正在执行中，输出稍后出现。</span>
                 <span v-else class="text-foreground-muted">等待审批后输出将出现在此处。</span>
               </div>
             </div>
