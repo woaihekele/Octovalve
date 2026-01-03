@@ -401,9 +401,9 @@ impl OpenAiClient {
                     // Check finish reason
                     if let Some(reason) = choice.get("finish_reason").and_then(|r| r.as_str()) {
                         if reason == "tool_calls" {
-                            emit_tool_calls_event(app_handle, tool_calls, reason);
                             self.maybe_store_assistant_message(full_content, tool_calls)
                                 .await;
+                            emit_tool_calls_event(app_handle, tool_calls, reason);
                             return Ok(true);
                         }
                     }

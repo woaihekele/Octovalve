@@ -31,7 +31,7 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   result?: string;
 }
 

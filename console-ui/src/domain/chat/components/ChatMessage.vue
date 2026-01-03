@@ -127,6 +127,7 @@ function toolStatusType(status: ToolCall['status']): 'default' | 'info' | 'succe
     case 'completed':
       return 'success';
     case 'failed':
+    case 'cancelled':
       return 'error';
     default:
       return 'default';

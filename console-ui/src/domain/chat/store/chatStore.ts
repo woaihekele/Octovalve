@@ -87,6 +87,7 @@ export const useChatStore = defineStore('chat', () => {
   let openaiEventUnlisten: (() => void) | null = null;
   const openaiContextSessionId = ref<string | null>(null);
   let openaiContextQueue: Promise<void> = Promise.resolve();
+  let openaiToolAbortController: AbortController | null = null;
 
   function enqueueOpenaiContextOp(op: () => Promise<void>) {
     openaiContextQueue = openaiContextQueue
@@ -95,6 +96,40 @@ export const useChatStore = defineStore('chat', () => {
         console.warn('[chatStore] openai context op failed:', e);
       });
     return openaiContextQueue;
+  }
+
+  function beginOpenaiToolRun(): AbortSignal {
+    if (openaiToolAbortController) {
+      openaiToolAbortController.abort();
+    }
+    openaiToolAbortController = new AbortController();
+    return openaiToolAbortController.signal;
+  }
+
+  function abortOpenaiToolRun() {
+    if (openaiToolAbortController) {
+      openaiToolAbortController.abort();
+    }
+  }
+
+  function toolCancelPromise(signal: AbortSignal): Promise<'cancelled'> {
+    if (signal.aborted) {
+      return Promise.resolve('cancelled');
+    }
+    return new Promise((resolve) => {
+      const onAbort = () => {
+        signal.removeEventListener('abort', onAbort);
+        resolve('cancelled');
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  function isToolCallCancelled(messageId: string, toolCallId: string): boolean {
+    const session = activeSession.value;
+    const msg = session?.messages.find((m) => m.id === messageId);
+    const tc = msg?.toolCalls?.find((t) => t.id === toolCallId);
+    return tc?.status === 'cancelled';
   }
 
   // Getters
@@ -444,6 +479,47 @@ export const useChatStore = defineStore('chat', () => {
     }, 400);
   }
 
+  function isFinalToolCallStatus(status: ToolCall['status']) {
+    return status === 'completed' || status === 'failed' || status === 'cancelled';
+  }
+
+  function closePendingOpenaiToolCalls(reason: string): boolean {
+    const session = activeSession.value;
+    if (!session) {
+      return false;
+    }
+    let changed = false;
+    for (const msg of session.messages) {
+      if (msg.role !== 'assistant' || !Array.isArray(msg.toolCalls)) {
+        continue;
+      }
+      for (const tc of msg.toolCalls) {
+        if (tc.status !== 'pending' && tc.status !== 'running') {
+          if (isFinalToolCallStatus(tc.status)) {
+            const result = (tc.result || '').trim();
+            if (!result) {
+              tc.result = `工具调用已结束（${tc.status}），但没有返回结果。`;
+              changed = true;
+            }
+          }
+          continue;
+        }
+        const note = `工具调用已取消：${reason}`;
+        if (tc.result && tc.result.trim()) {
+          tc.result = `${tc.result}\n${note}`;
+        } else {
+          tc.result = note;
+        }
+        tc.status = 'cancelled';
+        changed = true;
+      }
+    }
+    if (changed) {
+      scheduleSaveToStorage();
+    }
+    return changed;
+  }
+
   async function syncOpenaiContextForSession(session: ChatSession | null) {
     if (!openaiInitialized.value || provider.value !== 'openai') {
       return;
@@ -461,28 +537,26 @@ export const useChatStore = defineStore('chat', () => {
 
         if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
           const content = (msg.content || '').trim();
-          if (content) {
-            if (msg.role === 'assistant' && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) {
-              const tool_calls = msg.toolCalls.map((tc) => {
-                const args = tc.arguments ? JSON.stringify(tc.arguments) : '{}';
-                return {
-                  id: tc.id,
-                  type: 'function',
-                  function: {
-                    name: tc.name,
-                    arguments: args,
-                  },
-                };
-              });
-              await openaiService.addMessage({ role: 'assistant', content, tool_calls });
-            } else {
-              await openaiService.addMessage({ role: msg.role, content });
-            }
+          if (msg.role === 'assistant' && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) {
+            const tool_calls = msg.toolCalls.map((tc) => {
+              const args = tc.arguments ? JSON.stringify(tc.arguments) : '{}';
+              return {
+                id: tc.id,
+                type: 'function',
+                function: {
+                  name: tc.name,
+                  arguments: args,
+                },
+              };
+            });
+            await openaiService.addMessage({ role: 'assistant', content, tool_calls });
+          } else if (content) {
+            await openaiService.addMessage({ role: msg.role, content });
           }
 
           if (Array.isArray(msg.toolCalls)) {
             for (const tc of msg.toolCalls) {
-              if (tc.status !== 'completed') {
+              if (!isFinalToolCallStatus(tc.status)) {
                 continue;
               }
               const result = (tc.result || '').trim();
@@ -908,7 +982,12 @@ export const useChatStore = defineStore('chat', () => {
       return;
     }
 
-    await ensureOpenaiContextForActiveSession();
+    const closed = closePendingOpenaiToolCalls('发送前自动收敛');
+    if (closed) {
+      await syncOpenaiContextForSession(activeSession.value);
+    } else {
+      await ensureOpenaiContextForActiveSession();
+    }
 
     await openaiContextQueue;
 
@@ -1050,8 +1129,13 @@ export const useChatStore = defineStore('chat', () => {
 
   async function handleOpenaiToolCalls(messageId: string, toolCalls: NonNullable<ChatStreamEvent['toolCalls']>) {
     setStreaming(true);
+    const toolSignal = beginOpenaiToolRun();
+    const cancelWait = toolCancelPromise(toolSignal);
 
     for (const tc of toolCalls) {
+      if (toolSignal.aborted || isToolCallCancelled(messageId, tc.id)) {
+        break;
+      }
       const name = tc.function?.name || '';
       if (!name) {
         updateToolCall(messageId, tc.id, { status: 'failed', result: 'Missing tool name' });
@@ -1068,21 +1152,16 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
 
-      try {
-        const result = await openaiService.mcpCallTool(name, args);
-        const text = extractToolResultText(result);
-
-        updateToolCall(messageId, tc.id, { status: 'completed', result: text });
-
-        await enqueueOpenaiContextOp(async () => {
-          await openaiService.addMessage({
-            role: 'tool',
-            content: text,
-            tool_call_id: tc.id,
-          });
-        });
-      } catch (e) {
-        const text = `Tool call failed: ${String(e)}`;
+      const callPromise = openaiService
+        .mcpCallTool(name, args)
+        .then((result) => ({ ok: true as const, result }))
+        .catch((error) => ({ ok: false as const, error }));
+      const outcome = await Promise.race([callPromise, cancelWait]);
+      if (outcome === 'cancelled' || toolSignal.aborted || isToolCallCancelled(messageId, tc.id)) {
+        break;
+      }
+      if (!outcome.ok) {
+        const text = `Tool call failed: ${String(outcome.error)}`;
         updateToolCall(messageId, tc.id, { status: 'failed', result: text });
         await enqueueOpenaiContextOp(async () => {
           await openaiService.addMessage({
@@ -1091,7 +1170,23 @@ export const useChatStore = defineStore('chat', () => {
             tool_call_id: tc.id,
           });
         });
+        continue;
       }
+
+      const text = extractToolResultText(outcome.result);
+      updateToolCall(messageId, tc.id, { status: 'completed', result: text });
+      await enqueueOpenaiContextOp(async () => {
+        await openaiService.addMessage({
+          role: 'tool',
+          content: text,
+          tool_call_id: tc.id,
+        });
+      });
+    }
+
+    if (toolSignal.aborted) {
+      setStreaming(false);
+      return;
     }
 
     await openaiContextQueue;
@@ -1119,6 +1214,7 @@ export const useChatStore = defineStore('chat', () => {
   async function cancelOpenai() {
     try {
       flushPending();
+      abortOpenaiToolRun();
       await openaiService.cancel();
     } catch (e) {
       console.warn('[chatStore] openai cancel failed:', e);
@@ -1132,6 +1228,9 @@ export const useChatStore = defineStore('chat', () => {
         updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
       }
       currentAssistantMessageId.value = null;
+    }
+    if (closePendingOpenaiToolCalls('用户停止')) {
+      await syncOpenaiContextForSession(activeSession.value);
     }
   }
 

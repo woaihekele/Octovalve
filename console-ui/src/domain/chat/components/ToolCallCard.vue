@@ -55,6 +55,7 @@ const statusPillClass = computed(() => {
     case 'completed':
       return 'bg-success/20 text-success';
     case 'failed':
+    case 'cancelled':
       return 'bg-danger/20 text-danger';
     case 'running':
       return 'bg-warning/20 text-warning';
@@ -70,6 +71,7 @@ const statusClass = computed(() => {
     case 'completed':
       return 'tool-status-completed';
     case 'failed':
+    case 'cancelled':
       return 'tool-status-failed';
     default:
       return 'tool-status-pending';
