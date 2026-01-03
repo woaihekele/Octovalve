@@ -318,7 +318,6 @@ async function syncTerminalLayout() {
   if (terminal.rows > 0) {
     terminal.refresh(0, terminal.rows - 1);
   }
-  terminal.focus();
   void terminalResize(sessionId, terminal.cols, terminal.rows);
 }
 
