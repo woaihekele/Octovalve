@@ -8,6 +8,12 @@ const props = defineProps<{
 
 const isExpanded = ref(false);
 
+const canExpand = computed(() => {
+  const args = props.toolCall.arguments;
+  const hasArgs = args && Object.keys(args).length > 0;
+  return hasArgs || Boolean(props.toolCall.result);
+});
+
 const argsSummary = computed(() => {
   const args = props.toolCall.arguments;
   if (!args || Object.keys(args).length === 0) {
@@ -43,11 +49,34 @@ const argsSummary = computed(() => {
       }
     })();
 
-    parts.push(`${k}=${formatted}`);
+    parts.push(`${k}: ${formatted}`);
   }
 
   const omitted = Math.max(0, Object.keys(args).length - parts.length);
-  return omitted > 0 ? `${parts.join(', ')}, +${omitted}` : parts.join(', ');
+  const summary = parts.join('\n');
+  return omitted > 0 ? `${summary}\n+${omitted}` : summary;
+});
+
+const formattedArgs = computed(() => {
+  const args = props.toolCall.arguments;
+  if (!args || Object.keys(args).length === 0) {
+    return '';
+  }
+  try {
+    return JSON.stringify(args, null, 2);
+  } catch {
+    return String(args);
+  }
+});
+
+const outputText = computed(() => {
+  if (props.toolCall.result) {
+    return props.toolCall.result;
+  }
+  if (props.toolCall.status === 'running' || props.toolCall.status === 'pending') {
+    return '执行中...';
+  }
+  return '暂无输出';
 });
 
 const statusPillClass = computed(() => {
@@ -88,12 +117,12 @@ const statusClass = computed(() => {
       <span class="tool-badge__label">工具调用</span>
       <span class="tool-badge__meta">
         <span class="tool-badge__name">{{ toolCall.name }}</span>
-        <span v-if="argsSummary" class="tool-badge__args">({{ argsSummary }})</span>
+        <span v-if="argsSummary" class="tool-badge__args">{{ argsSummary }}</span>
       </span>
       <span class="tool-status-pill" :class="statusPillClass">{{ toolCall.status }}</span>
     </div>
     <button 
-      v-if="toolCall.result" 
+      v-if="canExpand" 
       class="tool-toggle" 
       @click="isExpanded = !isExpanded"
     >
@@ -104,10 +133,18 @@ const statusClass = computed(() => {
       >
         <polyline points="6 9 12 15 18 9"/>
       </svg>
-      {{ isExpanded ? '收起输出' : '查看输出' }}
+      {{ isExpanded ? '收起详情' : '查看详情' }}
     </button>
-    <div v-if="isExpanded && toolCall.result" class="tool-output">
-      <pre>{{ toolCall.result }}</pre>
+    <div v-if="isExpanded && canExpand" class="tool-details">
+      <div class="tool-detail">
+        <div class="tool-detail__title">输入</div>
+        <pre v-if="formattedArgs">{{ formattedArgs }}</pre>
+        <div v-else class="tool-detail__empty">无输入参数</div>
+      </div>
+      <div class="tool-detail">
+        <div class="tool-detail__title">输出</div>
+        <pre>{{ outputText }}</pre>
+      </div>
     </div>
   </div>
 </template>
@@ -153,8 +190,9 @@ const statusClass = computed(() => {
 
 .tool-badge__meta {
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
@@ -172,6 +210,7 @@ const statusClass = computed(() => {
   font-weight: 400;
   font-size: 12px;
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  white-space: pre-wrap;
   word-break: break-all;
 }
 
@@ -214,15 +253,40 @@ const statusClass = computed(() => {
   transform: rotate(180deg);
 }
 
-.tool-output {
+.tool-details {
   border-top: 1px solid rgb(var(--color-border));
   padding: 10px 12px;
   background: rgb(var(--color-panel-muted));
-  max-height: 200px;
+  max-height: 240px;
   overflow: auto;
 }
 
-.tool-output pre {
+.tool-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-detail + .tool-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgb(var(--color-border));
+}
+
+.tool-detail__title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgb(var(--color-text-muted));
+}
+
+.tool-detail__empty {
+  font-size: 12px;
+  color: rgb(var(--color-text-muted));
+}
+
+.tool-details pre {
   margin: 0;
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
   font-size: 12px;

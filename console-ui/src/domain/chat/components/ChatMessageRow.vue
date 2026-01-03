@@ -24,7 +24,7 @@
       </ReasoningBlock>
       <!-- Tool calls -->
       <div v-if="message.toolCalls && message.toolCalls.length > 0" class="chat-row__tools">
-        <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc" />
+        <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc"/>
       </div>
       <!-- Main response bubble -->
       <div
@@ -47,7 +47,7 @@
             />
           </template>
           <template v-else>
-            <ChatMarkdown :text="message.content" :streaming="false" :content-key="`chat-${message.id}`" />
+            <ChatMarkdown :text="message.content" :streaming="false" :content-key="`chat-${message.id}`"/>
           </template>
         </div>
       </div>
@@ -56,8 +56,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import type { ChatMessage } from '../types';
+import {computed, ref} from 'vue';
+import type {ChatMessage} from '../types';
 import ToolCallCard from './ToolCallCard.vue';
 import ReasoningBlock from './ReasoningBlock.vue';
 import ChatMarkdown from './ChatMarkdown.vue';
@@ -92,24 +92,24 @@ const isDark = computed(() => {
 // Parse thinking content from <thinking> tags or reasoning_content
 const parsedContent = computed(() => {
   const content = props.message.content || '';
-  
+
   // Check for <thinking> tags
   const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
   if (thinkingMatch) {
     const thinking = thinkingMatch[1].trim();
     const response = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
-    return { thinking, response };
+    return {thinking, response};
   }
-  
+
   // Check for **Thinking** or **思考** headers
   const thinkingHeaderMatch = content.match(/^\*\*(?:Thinking|思考|Preparing)[^*]*\*\*\n?([\s\S]*?)(?=\n\n|$)/i);
   if (thinkingHeaderMatch) {
     const thinking = thinkingHeaderMatch[0].trim();
     const response = content.replace(thinkingHeaderMatch[0], '').trim();
-    return { thinking, response };
+    return {thinking, response};
   }
-  
-  return { thinking: '', response: content };
+
+  return {thinking: '', response: content};
 });
 
 const thinkingContent = computed(() => {
@@ -166,13 +166,13 @@ const assistantMarkdown = computed(() => {
 
   &--user {
     justify-content: flex-end;
-    
+
     .chat-row__content {
       align-items: flex-end;
       width: 100%;
       max-width: 100%;
     }
-    
+
     .chat-row__bubble {
       background: rgb(var(--color-panel-muted));
       border: 1px solid rgb(var(--color-border));
@@ -180,12 +180,12 @@ const assistantMarkdown = computed(() => {
       border-radius: 18px 18px 4px 18px;
       display: inline-block;
       width: auto;
-      padding-top: 9px;
-      padding-bottom: 7px;
+      padding-top: 8px;
+      padding-bottom: 8px;
       max-width: 80%;
       box-shadow: none;
     }
-    
+
     .chat-row__text {
       color: rgb(var(--color-text));
       display: inline-block;
@@ -239,7 +239,7 @@ const assistantMarkdown = computed(() => {
     justify-content: center;
     padding-left: 0;
     padding-right: 0;
-    
+
     .chat-row__content {
       align-items: stretch;
       max-width: 100%;
@@ -247,7 +247,7 @@ const assistantMarkdown = computed(() => {
       padding: 0 14px;
       min-width: 0;
     }
-    
+
     .chat-row__bubble {
       display: block;
       width: 100%;
@@ -264,8 +264,8 @@ const assistantMarkdown = computed(() => {
 
   &__tools {
     margin-bottom: 8px;
-    width: fit-content;
-    max-width: 90%;
+    width: 100%;
+    max-width: 100%;
   }
 
   &__content {
@@ -280,7 +280,7 @@ const assistantMarkdown = computed(() => {
     border-radius: 12px;
     background: rgba(139, 92, 246, 0.08);
     overflow: hidden;
-    
+
     &--open {
       .chat-row__thinking-toggle {
         border-bottom: 1px solid rgba(139, 92, 246, 0.15);
@@ -300,7 +300,7 @@ const assistantMarkdown = computed(() => {
     font-size: 12px;
     color: rgb(var(--color-text-muted));
     transition: all 0.2s ease;
-    
+
     &:hover {
       background: rgba(139, 92, 246, 0.1);
     }
@@ -330,10 +330,13 @@ const assistantMarkdown = computed(() => {
     font-size: 13px;
     line-height: 1.5;
     color: rgb(var(--color-text-muted));
-    
+
     :deep(p) {
       margin: 0 0 0.5em 0;
-      &:last-child { margin-bottom: 0; }
+
+      &:last-child {
+        margin-bottom: 0;
+      }
     }
   }
 
@@ -367,8 +370,13 @@ const assistantMarkdown = computed(() => {
       border-radius: 50%;
       animation: dot-bounce 1.4s ease-in-out infinite;
 
-      &:nth-child(2) { animation-delay: 0.15s; }
-      &:nth-child(3) { animation-delay: 0.3s; }
+      &:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+
+      &:nth-child(3) {
+        animation-delay: 0.3s;
+      }
     }
   }
 
@@ -383,7 +391,10 @@ const assistantMarkdown = computed(() => {
     // Markdown elements
     :deep(p) {
       margin: 0 0 0.75em 0;
-      &:last-child { margin-bottom: 0; }
+
+      &:last-child {
+        margin-bottom: 0;
+      }
     }
 
     :deep(ul), :deep(ol) {
@@ -398,12 +409,23 @@ const assistantMarkdown = computed(() => {
     :deep(h1), :deep(h2), :deep(h3), :deep(h4) {
       margin: 1em 0 0.5em 0;
       font-weight: 600;
-      &:first-child { margin-top: 0; }
+
+      &:first-child {
+        margin-top: 0;
+      }
     }
 
-    :deep(h1) { font-size: 1.4em; }
-    :deep(h2) { font-size: 1.2em; }
-    :deep(h3) { font-size: 1.1em; }
+    :deep(h1) {
+      font-size: 1.4em;
+    }
+
+    :deep(h2) {
+      font-size: 1.2em;
+    }
+
+    :deep(h3) {
+      font-size: 1.1em;
+    }
 
     :deep(blockquote) {
       margin: 0.5em 0;
@@ -444,7 +466,10 @@ const assistantMarkdown = computed(() => {
     :deep(a) {
       color: rgb(var(--color-accent));
       text-decoration: none;
-      &:hover { text-decoration: underline; }
+
+      &:hover {
+        text-decoration: underline;
+      }
     }
 
     :deep(hr) {
@@ -478,7 +503,9 @@ const assistantMarkdown = computed(() => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes typing {
@@ -493,11 +520,11 @@ const assistantMarkdown = computed(() => {
 }
 
 @keyframes cursor-blink {
-  0%, 100% { 
+  0%, 100% {
     opacity: 1;
     transform: scaleY(1);
   }
-  50% { 
+  50% {
     opacity: 0.3;
     transform: scaleY(0.8);
   }
