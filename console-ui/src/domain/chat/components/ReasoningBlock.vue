@@ -1,7 +1,7 @@
 <template>
   <div class="reasoning-block" v-if="hasBody">
     <div class="reasoning-header" @click="$emit('toggle')">
-      <span>{{ show ? '收起思考过程' : '展开思考过程' }}</span>
+      <span>{{ headerLabel }}</span>
       <svg class="caret" width="12" height="12" viewBox="0 0 24 24">
         <path
           :d="show ? 'M7 14l5-5 5 5' : 'M7 10l5 5 5-5'"
@@ -132,6 +132,7 @@ const startPreviewFollow = () => {
 defineEmits<{ (e: 'toggle'): void }>();
 
 const hasBody = computed(() => Boolean(props.bodyHtml) || Boolean(slots.body));
+const headerLabel = computed(() => (props.streaming ? 'Thinking' : 'Thought'));
 
 const normalizePreviewText = (text: string): string => {
   return (text || '').replace(/<\/?think(?:ing)?[^>]*>/gi, '');
