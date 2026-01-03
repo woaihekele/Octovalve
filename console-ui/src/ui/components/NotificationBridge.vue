@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue';
+import { h, watch } from 'vue';
 import { useNotification } from 'naive-ui';
 
 const props = defineProps<{
@@ -20,12 +20,29 @@ watch(
       return;
     }
     const target = props.payload.target;
+    const contentText = props.payload.count ? `${props.payload.count} 个待审批` : undefined;
+    const content = target && contentText
+      ? () =>
+          h(
+            'span',
+            {
+              style: {
+                cursor: 'pointer',
+                color: 'rgb(var(--color-accent))',
+              },
+              onClick: (event: MouseEvent) => {
+                event.stopPropagation();
+                emit('jump-pending', target);
+              },
+            },
+            contentText
+          )
+      : contentText;
     notification.create({
       title: props.payload.message,
-      content: props.payload.count ? `${props.payload.count} 个待审批` : undefined,
+      content,
       duration: 4000,
       type: props.payload.count ? 'warning' : 'success',
-      onClick: target ? () => emit('jump-pending', target) : undefined,
     });
   }
 );
