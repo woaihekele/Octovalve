@@ -236,7 +236,7 @@ watch(
   () => {
     void scrollPreviewToBottom();
   },
-  { flush: 'post' }
+  { flush: 'post', immediate: true }
 );
 
 watch(
