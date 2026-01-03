@@ -37,6 +37,7 @@ const notification = ref<{ message: string; count?: number; target?: string } | 
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
+const snapshotRefreshPending = ref<Record<string, boolean>>({});
 const pendingJumpToken = ref(0);
 const applyThemeMode = inject(APPLY_THEME_MODE, () => {});
 const resolvedTheme = inject(RESOLVED_THEME, ref<ResolvedTheme>('dark'));
@@ -260,6 +261,31 @@ function scheduleAiForAllTargets() {
   });
 }
 
+function shouldRefreshSnapshotFromTargetsSnapshot(target: TargetInfo, previousPending: number) {
+  const hasSnapshot = Boolean(snapshots.value[target.name]);
+  const isSelected = selectedTargetName.value === target.name;
+  const pendingChanged = target.pending_count !== previousPending;
+  if (settings.value.ai.enabled && target.pending_count > 0 && (target.pending_count > previousPending || !hasSnapshot)) {
+    return true;
+  }
+  if (isSelected && (pendingChanged || !hasSnapshot)) {
+    return true;
+  }
+  return false;
+}
+
+function shouldRefreshSnapshotFromTargetUpdate(target: TargetInfo, previousPending: number) {
+  const hasSnapshot = Boolean(snapshots.value[target.name]);
+  const isSelected = selectedTargetName.value === target.name;
+  if (isSelected) {
+    return true;
+  }
+  if (settings.value.ai.enabled && target.pending_count > 0 && (target.pending_count > previousPending || !hasSnapshot)) {
+    return true;
+  }
+  return false;
+}
+
 function updateTargets(list: TargetInfo[]) {
   targets.value = list;
   if (!selectedTargetName.value && list.length > 0) {
@@ -267,11 +293,8 @@ function updateTargets(list: TargetInfo[]) {
   }
   list.forEach((target) => {
     const previous = lastPendingCounts.value[target.name] ?? 0;
-    if (settings.value.ai.enabled) {
-      const hasSnapshot = Boolean(snapshots.value[target.name]);
-      if (target.pending_count > 0 && (target.pending_count > previous || !hasSnapshot)) {
-        void refreshSnapshot(target.name);
-      }
+    if (shouldRefreshSnapshotFromTargetsSnapshot(target, previous)) {
+      void refreshSnapshot(target.name);
     }
     lastPendingCounts.value[target.name] = target.pending_count;
   });
@@ -289,13 +312,10 @@ function applyTargetUpdate(target: TargetInfo) {
   if (settings.value.notificationsEnabled && target.pending_count > previous) {
     showNotification(`收到 ${target.name} 的新请求`, target.pending_count, target.name);
   }
-  lastPendingCounts.value[target.name] = target.pending_count;
-
-  if (settings.value.ai.enabled && target.pending_count > previous) {
+  if (shouldRefreshSnapshotFromTargetUpdate(target, previous)) {
     void refreshSnapshot(target.name);
-  } else if (selectedTargetName.value === target.name) {
-    refreshSnapshot(target.name);
   }
+  lastPendingCounts.value[target.name] = target.pending_count;
 }
 
 function handleEvent(event: ConsoleEvent) {
@@ -341,6 +361,7 @@ async function refreshTargets() {
 
 async function refreshSnapshot(name: string) {
   if (snapshotLoading.value[name]) {
+    snapshotRefreshPending.value[name] = true;
     return;
   }
   snapshotLoading.value[name] = true;
@@ -354,6 +375,10 @@ async function refreshSnapshot(name: string) {
     // ignore fetch errors; connection status handled by websocket
   } finally {
     snapshotLoading.value[name] = false;
+    if (snapshotRefreshPending.value[name]) {
+      snapshotRefreshPending.value[name] = false;
+      void refreshSnapshot(name);
+    }
   }
 }
 
