@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { NButton, NCard, NModal } from 'naive-ui';
 import {
   approveCommand,
   denyCommand,
@@ -67,7 +68,25 @@ const {
 
 // Chat store integration
 const chatStore = useChatStore();
-const { messages: chatMessages, isStreaming: chatIsStreaming, isConnected: chatIsConnected, providerInitialized } = storeToRefs(chatStore);
+const {
+  messages: chatMessages,
+  isStreaming: chatIsStreaming,
+  isConnected: chatIsConnected,
+  providerInitialized,
+  provider: chatProvider,
+} = storeToRefs(chatStore);
+const providerSwitchConfirmOpen = ref(false);
+const pendingProvider = ref<'acp' | 'openai' | null>(null);
+const providerSwitching = ref(false);
+const pendingProviderLabel = computed(() => {
+  if (pendingProvider.value === 'acp') {
+    return 'ACP';
+  }
+  if (pendingProvider.value === 'openai') {
+    return 'API';
+  }
+  return '未知';
+});
 
 // Initialize chat provider based on settings
 async function initChatProvider() {
@@ -98,30 +117,6 @@ async function initChatProvider() {
     console.warn('Chat provider initialization failed:', e);
   }
 }
-
-// Re-initialize when settings change
-watch(() => settings.value.chat.provider, async (newProvider, oldProvider) => {
-  if (newProvider !== oldProvider) {
-    console.log(`[Chat] Switching provider from ${oldProvider} to ${newProvider}`);
-    try {
-      // Stop current provider
-      if (oldProvider === 'openai') {
-        console.log('[Chat] Stopping OpenAI...');
-        await chatStore.stopOpenai();
-      } else {
-        console.log('[Chat] Stopping ACP...');
-        await chatStore.stopAcp();
-      }
-      console.log('[Chat] Previous provider stopped');
-      // Initialize new provider
-      console.log('[Chat] Initializing new provider...');
-      await initChatProvider();
-      console.log('[Chat] New provider initialized');
-    } catch (e) {
-      console.error('[Chat] Provider switch failed:', e);
-    }
-  }
-});
 
 // Call init after a short delay to let Tauri initialize
 setTimeout(initChatProvider, 500);
@@ -166,13 +161,17 @@ async function handleChatSend(content: string) {
   }
 }
 
-function handleChatCancel() {
+async function cancelActiveChat() {
   if (chatStore.provider === 'acp' && chatStore.acpInitialized) {
-    chatStore.cancelAcp();
+    await chatStore.cancelAcp();
   } else if (chatStore.provider === 'openai' && chatStore.openaiInitialized) {
-    chatStore.cancelOpenai();
+    await chatStore.cancelOpenai();
   }
   chatStore.setStreaming(false);
+}
+
+async function handleChatCancel() {
+  await cancelActiveChat();
 }
 
 function handleChatNewSession() {
@@ -190,9 +189,48 @@ function handleChatShowHistory() {
 const openaiSessions = computed(() => chatStore.sessions.filter((s) => s.provider === 'openai'));
 
 function handleChangeProvider(newProvider: 'acp' | 'openai') {
-  if (settings.value.chat.provider !== newProvider) {
-    settings.value.chat.provider = newProvider;
+  if (chatProvider.value === newProvider) {
+    return;
+  }
+  pendingProvider.value = newProvider;
+  providerSwitchConfirmOpen.value = true;
+}
+
+function cancelProviderSwitch() {
+  providerSwitchConfirmOpen.value = false;
+  pendingProvider.value = null;
+}
+
+async function stopActiveProvider() {
+  if (chatStore.provider === 'openai') {
+    await chatStore.stopOpenai();
+    return;
+  }
+  await chatStore.stopAcp();
+}
+
+async function confirmProviderSwitch() {
+  if (!pendingProvider.value || providerSwitching.value) {
+    return;
+  }
+  const targetProvider = pendingProvider.value;
+  providerSwitching.value = true;
+  try {
+    if (chatIsStreaming.value) {
+      await cancelActiveChat();
+    }
+    await stopActiveProvider();
+    settings.value.chat.provider = targetProvider;
     saveSettings(settings.value);
+    await initChatProvider();
+    chatStore.createSession();
+  } catch (e) {
+    console.error('[Chat] Provider switch failed:', e);
+    showNotification(`切换失败：${String(e)}`);
+  } finally {
+    providerSwitching.value = false;
+    providerSwitchConfirmOpen.value = false;
+    pendingProvider.value = null;
   }
 }
 
@@ -510,7 +548,7 @@ watch(
       :messages="chatMessages"
       :is-streaming="chatIsStreaming"
       :is-connected="chatIsConnected"
-      :provider="settings.chat.provider"
+      :provider="chatProvider"
       :is-history-open="isChatHistoryOpen"
       :openai-sessions="openaiSessions"
       :active-session-id="chatStore.activeSessionId"
@@ -533,6 +571,22 @@ watch(
       @close="isSettingsOpen = false"
       @save="handleSettingsSave"
     />
+
+    <n-modal v-model:show="providerSwitchConfirmOpen" :mask-closable="false" :close-on-esc="true">
+      <n-card size="small" class="w-[24rem]" :bordered="true">
+        <template #header>切换对话 Provider</template>
+        <div class="space-y-2 text-sm text-foreground-muted">
+          <div>切换到 {{ pendingProviderLabel }} 会创建一个全新的会话，历史会话保留。</div>
+          <div>当前正在生成的回复会被强制停止。</div>
+        </div>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <n-button :disabled="providerSwitching" @click="cancelProviderSwitch">取消</n-button>
+            <n-button type="primary" :disabled="providerSwitching" @click="confirmProviderSwitch">确认切换</n-button>
+          </div>
+        </template>
+      </n-card>
+    </n-modal>
 
   </div>
 </template>
