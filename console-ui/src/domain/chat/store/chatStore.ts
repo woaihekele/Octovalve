@@ -4,7 +4,7 @@ import type { ChatSession, ChatMessage, ChatConfig, ToolCall } from '../types';
 import type { AuthMethod, AcpEvent, AgentCapabilities } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
-import { fetchTargets } from '../../services/api';
+import { fetchTargets } from '../../../services/api';
 
 export type ChatProvider = 'acp' | 'openai';
 

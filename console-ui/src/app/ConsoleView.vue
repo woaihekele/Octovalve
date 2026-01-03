@@ -11,9 +11,9 @@ import {
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from '../services/api';
-import { useChatStore } from '../chat';
+import { useChatStore } from '../domain/chat';
 import { storeToRefs } from 'pinia';
-import type { AuthMethod } from './chat/services/acpService';
+import type { AuthMethod } from '../domain/chat/services/acpService';
 import { matchesShortcut } from '../shared/shortcuts';
 import ConsoleChatPane from '../ui/components/ConsoleChatPane.vue';
 import ConsoleLeftPane from '../ui/components/ConsoleLeftPane.vue';

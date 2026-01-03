@@ -27,9 +27,9 @@
 </template>
 
 <script setup lang="ts">
-import { ChatPanel } from '../../chat';
-import ChatHistoryModal from '../../chat/components/ChatHistoryModal.vue';
-import type { ChatMessage, ChatSession } from '../../chat/types';
+import { ChatPanel } from '../../domain/chat';
+import ChatHistoryModal from '../../domain/chat/components/ChatHistoryModal.vue';
+import type { ChatMessage, ChatSession } from '../../domain/chat/types';
 
 defineProps<{
   isChatOpen: boolean;
