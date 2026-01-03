@@ -4,7 +4,6 @@ import { Terminal, type ITheme } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import {
-  NAlert,
   NButton,
   NCard,
   NInput,
@@ -15,6 +14,7 @@ import {
   NSwitch,
   NTabPane,
   NTabs,
+  useNotification,
   type SelectOption,
 } from 'naive-ui';
 import {
@@ -66,9 +66,6 @@ const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('gener
 const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
 const configLoading = ref(false);
 const configBusy = ref(false);
-const configError = ref<string | null>(null);
-const configMessage = ref<string | null>(null);
-const configMessageType = ref<'success' | 'error' | 'warning' | 'info'>('success');
 const profiles = ref<ProfileSummary[]>([]);
 const activeProfile = ref<string | null>(null);
 const selectedProfile = ref<string | null>(null);
@@ -100,7 +97,7 @@ let logPollTimer: number | null = null;
 let logTerminal: Terminal | null = null;
 let logFitAddon: FitAddon | null = null;
 let logResizeObserver: ResizeObserver | null = null;
-let configMessageTimer: number | null = null;
+const notification = useNotification();
 const cardShellRef = ref<HTMLDivElement | null>(null);
 const cardInnerRef = ref<HTMLDivElement | null>(null);
 const cardHeight = ref<number | null>(null);
@@ -228,15 +225,11 @@ function updateShortcut(key: string, value: string) {
 }
 
 function showConfigMessage(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') {
-  configMessage.value = message;
-  configMessageType.value = type;
-  if (configMessageTimer !== null) {
-    window.clearTimeout(configMessageTimer);
-  }
-  configMessageTimer = window.setTimeout(() => {
-    configMessage.value = null;
-    configMessageTimer = null;
-  }, 4000);
+  notification.create({
+    title: message,
+    duration: 4000,
+    type,
+  });
 }
 
 function resetLogState() {
@@ -439,7 +432,6 @@ async function loadConfigCenter() {
     return;
   }
   configLoading.value = true;
-  configError.value = null;
   try {
     await loadProfiles(true);
     if (selectedProfile.value) {
@@ -447,7 +439,7 @@ async function loadConfigCenter() {
     }
     configLoaded.value = true;
   } catch (err) {
-    configError.value = String(err);
+    showConfigMessage(`加载配置失败：${String(err)}`, 'error');
   } finally {
     configLoading.value = false;
   }
@@ -716,9 +708,6 @@ function closeLogModal() {
 }
 
 onBeforeUnmount(() => {
-  if (configMessageTimer !== null) {
-    window.clearTimeout(configMessageTimer);
-  }
   stopLogPolling();
   disposeLogTerminal();
   stopCardObserver();
@@ -746,9 +735,6 @@ watch(
     }
     if (!open) {
       configLoaded.value = false;
-      configError.value = null;
-      configMessage.value = null;
-      configMessageType.value = 'success';
       confirmApplyOpen.value = false;
       logModalOpen.value = false;
       logStatusMessage.value = '';
@@ -799,7 +785,7 @@ watch(
 );
 
 watch(
-  () => [configLoading.value, configError.value, configMessage.value],
+  () => [configLoading.value],
   () => {
     if (activeTab.value === 'config') {
       void syncCardHeight();
@@ -872,9 +858,6 @@ watch(
                 :config-loading="configLoading"
                 :config-busy="configBusy"
                 :log-modal-open="logModalOpen"
-                :config-error="configError"
-                :config-message="configMessage"
-                :config-message-type="configMessageType"
                 :selected-profile="selectedProfile"
                 :profile-options="profileOptions"
                 :can-delete-profile="canDeleteProfile"

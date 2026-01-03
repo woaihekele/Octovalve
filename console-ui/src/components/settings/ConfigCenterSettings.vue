@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NAlert, NButton, NSelect, NSpin } from 'naive-ui';
+import { NButton, NSelect, NSpin } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import MonacoEditor from '../MonacoEditor.vue';
 import type { ConfigFilePayload } from '../../types';
@@ -10,9 +10,6 @@ const props = defineProps<{
   configLoading: boolean;
   configBusy: boolean;
   logModalOpen: boolean;
-  configError: string | null;
-  configMessage: string | null;
-  configMessageType: 'success' | 'error' | 'warning' | 'info';
   selectedProfile: string | null;
   profileOptions: SelectOption[];
   canDeleteProfile: boolean;
@@ -59,8 +56,6 @@ const statusText = computed(() => {
       <NSpin size="small" />
       <span>正在加载配置...</span>
     </div>
-    <NAlert v-else-if="props.configError" type="error" :bordered="false">加载失败：{{ props.configError }}</NAlert>
-
     <div v-else class="flex flex-col gap-3 min-h-0 flex-1">
       <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
         <div>
@@ -118,8 +113,6 @@ const statusText = computed(() => {
         </div>
       </div>
     </div>
-
-    <NAlert v-if="props.configMessage" :type="props.configMessageType" :bordered="false">{{ props.configMessage }}</NAlert>
 
     <div class="mt-4 flex items-center justify-between gap-3">
       <div class="text-xs text-foreground-muted">{{ statusText }}</div>
