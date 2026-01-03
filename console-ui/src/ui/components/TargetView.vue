@@ -5,7 +5,6 @@ import { formatShortcut, matchesShortcut } from '../../shared/shortcuts';
 import type {
   AiRiskEntry,
   AppSettings,
-  ListTab,
   RequestSnapshot,
   ResultSnapshot,
   ServiceSnapshot,
@@ -31,7 +30,6 @@ const emit = defineEmits<{
   (e: 'refresh-risk', payload: { target: string; id: string }): void;
 }>();
 
-const activeTab = ref<ListTab>('pending');
 const selectedId = ref<string | null>(null);
 const isFullScreen = ref(false);
 const splitContainerRef = ref<HTMLDivElement | null>(null);
@@ -47,7 +45,7 @@ let resizeStartHeight = 0;
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const historyList = computed(() => props.snapshot?.history ?? []);
-const currentList = computed(() => (activeTab.value === 'pending' ? pendingList.value : historyList.value));
+const combinedList = computed(() => [...pendingList.value, ...historyList.value]);
 const terminalStyle = computed(() => {
   if (!props.terminalOpen) {
     return {};
@@ -58,17 +56,18 @@ const terminalStyle = computed(() => {
 });
 const selectedIndex = computed(() => {
   if (!selectedId.value) {
-    return currentList.value.length > 0 ? 0 : -1;
+    return combinedList.value.length > 0 ? 0 : -1;
   }
-  return currentList.value.findIndex((item) => item.id === selectedId.value);
+  return combinedList.value.findIndex((item) => item.id === selectedId.value);
 });
 const selectedItem = computed(() => {
   const index = selectedIndex.value;
   if (index < 0) {
     return null;
   }
-  return currentList.value[index] ?? null;
+  return combinedList.value[index] ?? null;
 });
+const isPendingSelected = computed(() => (selectedItem.value ? isPendingItem(selectedItem.value) : false));
 const hostDisplay = computed(() => {
   const hostname = props.target.hostname?.trim();
   const ip = props.target.ip?.trim();
@@ -79,7 +78,7 @@ const hostDisplay = computed(() => {
 });
 
 watch(
-  () => [props.target.name, activeTab.value],
+  () => props.target.name,
   () => {
     selectByIndex(0);
   }
@@ -88,13 +87,17 @@ watch(
 watch(
   () => props.pendingJumpToken,
   () => {
-    activeTab.value = 'pending';
+    const firstPending = pendingList.value[0];
+    if (firstPending) {
+      selectedId.value = firstPending.id;
+      return;
+    }
     selectByIndex(0);
   }
 );
 
 watch(
-  () => currentList.value,
+  () => combinedList.value,
   (list) => {
     if (list.length === 0) {
       selectedId.value = null;
@@ -112,6 +115,10 @@ function formatTime(value: number) {
 
 function formatPipeline(item: RequestSnapshot | ResultSnapshot) {
   return item.pipeline.map((stage) => stage.argv.join(' ')).join(' | ');
+}
+
+function isPendingItem(item: RequestSnapshot | ResultSnapshot): item is RequestSnapshot {
+  return !('finished_at_ms' in item);
 }
 
 function formatSummary(result: ResultSnapshot) {
@@ -187,7 +194,7 @@ function refreshRisk(id: string) {
 }
 
 function selectByIndex(index: number) {
-  const item = currentList.value[index];
+  const item = combinedList.value[index];
   selectedId.value = item ? item.id : null;
 }
 
@@ -218,27 +225,21 @@ function handleKeyDown(event: KeyboardEvent) {
 
   if (key === 'j' || key === 'ArrowDown') {
     event.preventDefault();
-    if (currentList.value.length === 0) {
+    if (combinedList.value.length === 0) {
       return;
     }
-    const nextIndex = Math.min(Math.max(selectedIndex.value, 0) + 1, currentList.value.length - 1);
+    const nextIndex = Math.min(Math.max(selectedIndex.value, 0) + 1, combinedList.value.length - 1);
     selectByIndex(nextIndex);
     return;
   }
 
   if (key === 'k' || key === 'ArrowUp') {
     event.preventDefault();
-    if (currentList.value.length === 0) {
+    if (combinedList.value.length === 0) {
       return;
     }
     const nextIndex = Math.max(Math.max(selectedIndex.value, 0) - 1, 0);
     selectByIndex(nextIndex);
-    return;
-  }
-
-  if (matchesShortcut(event, props.settings.shortcuts.toggleList)) {
-    event.preventDefault();
-    activeTab.value = activeTab.value === 'pending' ? 'history' : 'pending';
     return;
   }
 
@@ -253,7 +254,7 @@ function handleKeyDown(event: KeyboardEvent) {
     return;
   }
 
-  if (activeTab.value === 'pending' && selectedItem.value) {
+  if (selectedItem.value && isPendingItem(selectedItem.value)) {
     if (matchesShortcut(event, props.settings.shortcuts.approve)) {
       emit('approve', selectedItem.value.id);
     } else if (matchesShortcut(event, props.settings.shortcuts.deny)) {
@@ -477,29 +478,24 @@ onBeforeUnmount(() => {
     <div ref="splitContainerRef" class="flex-1 flex flex-col overflow-hidden min-h-0">
       <div class="flex-1 min-h-0 flex overflow-hidden">
         <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
-          <div class="flex border-b border-border">
-            <button
-              class="flex-1 py-3 text-sm font-medium transition-colors"
-              :class="activeTab === 'pending' ? 'text-accent border-b-2 border-accent bg-accent/5' : 'text-foreground-muted hover:text-foreground'"
-              @click="activeTab = 'pending'"
-            >
-              Pending <span class="ml-1 text-xs bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">{{ pendingList.length }}</span>
-            </button>
-            <button
-              class="flex-1 py-3 text-sm font-medium transition-colors"
-              :class="activeTab === 'history' ? 'text-accent border-b-2 border-accent bg-accent/5' : 'text-foreground-muted hover:text-foreground'"
-              @click="activeTab = 'history'"
-            >
-              History <span class="ml-1 text-xs bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">{{ historyList.length }}</span>
-            </button>
+          <div class="flex items-center justify-between border-b border-border px-4 py-3">
+            <div class="text-sm font-medium text-foreground">记录</div>
+            <div class="flex items-center gap-2 text-xs text-foreground-muted">
+              <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
+                Pending {{ pendingList.length }}
+              </span>
+              <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
+                History {{ historyList.length }}
+              </span>
+            </div>
           </div>
 
           <div class="flex-1 overflow-y-auto min-h-0">
-            <div v-if="currentList.length === 0" class="p-8 text-center text-foreground-muted text-sm">
-              暂无 {{ activeTab === 'pending' ? 'Pending' : 'History' }} 记录。
+            <div v-if="combinedList.length === 0" class="p-8 text-center text-foreground-muted text-sm">
+              暂无记录。
             </div>
             <div
-              v-for="(item, index) in currentList"
+              v-for="(item, index) in combinedList"
               :key="item.id"
               class="p-4 border-b border-border cursor-pointer transition-colors"
               :class="item.id === selectedId ? 'bg-accent/20 border-l-4 border-l-accent' : 'hover:bg-panel-muted/30 border-l-4 border-l-transparent'"
@@ -509,57 +505,65 @@ onBeforeUnmount(() => {
                 <span class="font-mono text-sm line-clamp-1" :class="item.id === selectedId ? 'text-accent' : 'text-foreground'">
                   {{ item.raw_command }}
                 </span>
-                <span
-                  v-if="activeTab === 'history'"
-                  class="text-xs px-2 py-0.5 rounded"
-                  :class="(item as ResultSnapshot).status === 'completed' ? 'bg-success/20 text-success' : (item as ResultSnapshot).status === 'denied' ? 'bg-danger/20 text-danger' : 'bg-warning/20 text-warning'"
-                >
-                  {{ (item as ResultSnapshot).status }}
-                </span>
-                <n-popover v-else-if="props.aiEnabled" trigger="hover" placement="left" :delay="120">
-                  <template #trigger>
-                    <n-tag size="small" :type="aiTagType(getAiEntry(item.id))" :bordered="false">
-                      {{ aiLabel(getAiEntry(item.id)) }}
-                    </n-tag>
-                  </template>
-                  <div class="space-y-2 text-xs max-w-[260px]">
-                    <div class="font-medium text-foreground">AI 风险评估</div>
-                    <div v-if="getAiEntry(item.id)?.status === 'pending'" class="text-foreground-muted">检测中...</div>
-                    <div v-else-if="getAiEntry(item.id)?.status === 'error'" class="text-danger">
-                      {{ getAiEntry(item.id)?.error || '检测失败' }}
-                    </div>
-                    <template v-else>
-                      <div>
-                        <span class="text-foreground-muted">等级：</span>
-                        <span class="text-foreground">{{ aiLabel(getAiEntry(item.id)) }}</span>
+                <div class="flex items-center gap-2">
+                  <span
+                    v-if="isPendingItem(item)"
+                    class="text-xs px-2 py-0.5 rounded bg-accent/20 text-accent"
+                  >
+                    pending
+                  </span>
+                  <span
+                    v-else
+                    class="text-xs px-2 py-0.5 rounded"
+                    :class="(item as ResultSnapshot).status === 'completed' ? 'bg-success/20 text-success' : (item as ResultSnapshot).status === 'denied' ? 'bg-danger/20 text-danger' : 'bg-warning/20 text-warning'"
+                  >
+                    {{ (item as ResultSnapshot).status }}
+                  </span>
+                  <n-popover v-if="props.aiEnabled && isPendingItem(item)" trigger="hover" placement="left" :delay="120">
+                    <template #trigger>
+                      <n-tag size="small" :type="aiTagType(getAiEntry(item.id))" :bordered="false">
+                        {{ aiLabel(getAiEntry(item.id)) }}
+                      </n-tag>
+                    </template>
+                    <div class="space-y-2 text-xs max-w-[260px]">
+                      <div class="font-medium text-foreground">AI 风险评估</div>
+                      <div v-if="getAiEntry(item.id)?.status === 'pending'" class="text-foreground-muted">检测中...</div>
+                      <div v-else-if="getAiEntry(item.id)?.status === 'error'" class="text-danger">
+                        {{ getAiEntry(item.id)?.error || '检测失败' }}
                       </div>
-                      <div v-if="getAiEntry(item.id)?.reason">
-                        <span class="text-foreground-muted">原因：</span>
-                        <span class="text-foreground">{{ getAiEntry(item.id)?.reason }}</span>
-                      </div>
-                      <div v-if="getAiEntry(item.id)?.keyPoints?.length">
-                        <div class="text-foreground-muted mb-1">要点：</div>
-                        <div class="space-y-1">
-                          <div v-for="(point, pIndex) in getAiEntry(item.id)?.keyPoints" :key="pIndex">
-                            - {{ point }}
+                      <template v-else>
+                        <div>
+                          <span class="text-foreground-muted">等级：</span>
+                          <span class="text-foreground">{{ aiLabel(getAiEntry(item.id)) }}</span>
+                        </div>
+                        <div v-if="getAiEntry(item.id)?.reason">
+                          <span class="text-foreground-muted">原因：</span>
+                          <span class="text-foreground">{{ getAiEntry(item.id)?.reason }}</span>
+                        </div>
+                        <div v-if="getAiEntry(item.id)?.keyPoints?.length">
+                          <div class="text-foreground-muted mb-1">要点：</div>
+                          <div class="space-y-1">
+                            <div v-for="(point, pIndex) in getAiEntry(item.id)?.keyPoints" :key="pIndex">
+                              - {{ point }}
+                            </div>
                           </div>
                         </div>
+                      </template>
+                      <div class="text-foreground-muted">
+                        更新时间：{{ getAiEntry(item.id)?.updatedAt ? formatTime(getAiEntry(item.id)!.updatedAt) : '-' }}
                       </div>
-                    </template>
-                    <div class="text-foreground-muted">
-                      更新时间：{{ getAiEntry(item.id)?.updatedAt ? formatTime(getAiEntry(item.id)!.updatedAt) : '-' }}
+                      <div class="flex justify-end">
+                        <n-button size="tiny" @click.stop="refreshRisk(item.id)">刷新</n-button>
+                      </div>
                     </div>
-                    <div class="flex justify-end">
-                      <n-button size="tiny" @click.stop="refreshRisk(item.id)">刷新</n-button>
-                    </div>
-                  </div>
-                </n-popover>
+                  </n-popover>
+                </div>
               </div>
               <div class="flex justify-between items-center text-xs text-foreground-muted">
                 <span>
-                  {{ activeTab === 'pending' ? formatTime((item as RequestSnapshot).received_at_ms) : formatTime((item as ResultSnapshot).finished_at_ms) }}
+                  {{ isPendingItem(item) ? formatTime((item as RequestSnapshot).received_at_ms) : formatTime((item as ResultSnapshot).finished_at_ms) }}
                 </span>
-                <span v-if="activeTab === 'pending'" class="truncate">{{ (item as RequestSnapshot).intent }}</span>
+                <span v-if="isPendingItem(item)" class="truncate">{{ (item as RequestSnapshot).intent }}</span>
               </div>
             </div>
           </div>
@@ -595,7 +599,7 @@ onBeforeUnmount(() => {
                     <div class="text-foreground-muted">Pipeline</div>
                     <div class="text-foreground">{{ formatPipeline(selectedItem) || '-' }}</div>
                   </div>
-                  <template v-if="activeTab === 'pending'">
+                  <template v-if="isPendingSelected">
                     <div>
                       <div class="text-foreground-muted">Timeout</div>
                       <div class="text-foreground">{{ (selectedItem as RequestSnapshot).timeout_ms ?? '-' }} ms</div>
@@ -614,7 +618,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div v-if="activeTab === 'pending'" class="flex flex-col gap-2">
+              <div v-if="isPendingSelected" class="flex flex-col gap-2">
                 <button
                   class="flex items-center gap-2 bg-success hover:bg-success/90 text-white px-4 py-2 rounded shadow"
                   @click="emit('approve', selectedItem.id)"
@@ -633,7 +637,7 @@ onBeforeUnmount(() => {
             <div class="flex-1 flex flex-col overflow-hidden">
               <div class="flex items-center justify-between px-6 py-2 bg-panel/80 border-b border-border">
                 <span class="text-xs font-semibold text-foreground-muted uppercase">
-                  {{ activeTab === 'history' ? 'Execution Output' : 'Pending Preview' }}
+                  {{ isPendingSelected ? 'Pending Preview' : 'Execution Output' }}
                 </span>
                 <button
                   class="text-foreground-muted hover:text-foreground p-1 rounded hover:bg-panel-muted transition-colors"
@@ -678,7 +682,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
-                <span v-if="activeTab === 'history'">
+                <span v-if="!isPendingSelected">
                   {{ buildOutput(selectedItem as ResultSnapshot) || '无输出' }}
                 </span>
                 <span v-else class="text-foreground-muted">等待审批后输出将出现在此处。</span>
