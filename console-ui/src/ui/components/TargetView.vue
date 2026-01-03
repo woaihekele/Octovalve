@@ -506,7 +506,7 @@ onBeforeUnmount(() => {
       <div class="flex-1 min-h-0 flex overflow-hidden">
         <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
           <div class="flex items-center justify-between border-b border-border px-4 py-3">
-            <div class="text-sm font-medium text-foreground">记录</div>
+            <div class="text-sm font-medium text-foreground">命令列表</div>
             <div class="flex items-center gap-2 text-xs text-foreground-muted">
               <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
                 Pending {{ pendingList.length }}
