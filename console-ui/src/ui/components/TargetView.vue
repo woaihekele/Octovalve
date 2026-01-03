@@ -34,6 +34,7 @@ const emit = defineEmits<{
 const selectedId = ref<string | null>(null);
 const isFullScreen = ref(false);
 const splitContainerRef = ref<HTMLDivElement | null>(null);
+const terminalContainerRef = ref<HTMLDivElement | null>(null);
 const terminalHeight = ref<number | null>(null);
 const containerHeight = ref(0);
 const isResizing = ref(false);
@@ -240,7 +241,16 @@ function handleKeyDown(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
   }
-  if (props.terminalOpen) {
+  if (props.terminalOpen && terminalContainerRef.value) {
+    const target = event.target instanceof Node ? event.target : null;
+    if (target && terminalContainerRef.value.contains(target)) {
+      return;
+    }
+    const activeElement = document.activeElement;
+    if (activeElement && terminalContainerRef.value.contains(activeElement)) {
+      return;
+    }
+  } else if (props.terminalOpen) {
     return;
   }
 
@@ -746,6 +756,7 @@ onBeforeUnmount(() => {
         v-show="props.terminalOpen"
         class="flex-shrink-0 min-h-0 relative overflow-hidden"
         :style="terminalStyle"
+        ref="terminalContainerRef"
       >
         <slot name="terminal" />
       </div>
