@@ -5,13 +5,8 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tauri::Listener;
 
-#[path = "../acp_client.rs"]
-mod acp_client;
-#[path = "../acp_types.rs"]
-mod acp_types;
-
-use acp_client::AcpClient;
-use acp_types::SessionUpdate;
+use octovalve_console::clients::acp_client::AcpClient;
+use octovalve_console::clients::acp_types::SessionUpdate;
 
 #[derive(Debug, Deserialize)]
 struct AcpEventPayload {

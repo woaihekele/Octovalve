@@ -15,7 +15,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 
-use crate::acp_types::*;
+use crate::clients::acp_types::*;
 
 /// Error type for ACP operations
 #[derive(Debug)]

@@ -1,8 +1,7 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-#[path = "../mcp_client.rs"]
-mod mcp_client;
+use octovalve_console::clients::mcp_client::McpClient;
 
 #[derive(Clone, Debug)]
 struct OpenAiConfig {
@@ -83,7 +82,7 @@ async fn main() -> Result<(), String> {
         std::env::set_var("OCTOVALVE_MCP_ATTEMPT_TIMEOUT_MS", value.to_string());
     }
 
-    let client = mcp_client::McpClient::start(&proxy_config, "octovalve-console-openai").await?;
+    let client = McpClient::start(&proxy_config, "octovalve-console-openai").await?;
 
     // 1) Validate MCP path: list_tools
     let tools = client.list_tools().await?;

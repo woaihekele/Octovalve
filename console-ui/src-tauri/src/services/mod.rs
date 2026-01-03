@@ -1,0 +1,11 @@
+pub mod acp;
+pub mod ai_risk;
+pub mod config;
+pub mod console_http;
+pub mod console_sidecar;
+pub mod console_ws;
+pub mod logging;
+pub mod mcp;
+pub mod openai;
+pub mod profiles;
+pub mod terminal;

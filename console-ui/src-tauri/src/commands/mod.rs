@@ -1,0 +1,8 @@
+pub mod acp;
+pub mod ai;
+pub mod config;
+pub mod console;
+pub mod mcp;
+pub mod openai;
+pub mod profiles;
+pub mod terminal;
