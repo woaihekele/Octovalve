@@ -304,7 +304,7 @@ onBeforeUnmount(() => {
 
 .reasoning-preview {
   padding: 10px 12px;
-  max-height: 110px;
+  max-height: 40px;
   overflow: hidden;
 }
 
