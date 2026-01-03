@@ -47,8 +47,6 @@
       <div class="chat-panel__messages" ref="messagesRef" @scroll="handleScroll">
         <div ref="contentRef" class="chat-panel__messages-content">
           <div v-if="messages.length === 0" class="chat-panel__welcome">
-            <div class="chat-panel__welcome-icon">✨</div>
-            <h3>{{ greeting }}</h3>
             <p>开始对话来与 AI 助手交互</p>
           </div>
           <template v-else>
@@ -443,11 +441,6 @@ watch(
       margin: 0;
       font-size: 12px;
     }
-  }
-
-  &__welcome-icon {
-    font-size: 32px;
-    opacity: 0.6;
   }
 
   &__scroll-anchor {
