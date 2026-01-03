@@ -52,7 +52,14 @@ pub fn run() {
             crate::commands::openai::openai_send,
             crate::commands::mcp::mcp_call_tool
         ])
-        .setup(|app| crate::app::setup::init(app))
+        .setup(|app| {
+            crate::app::setup::init(app).map_err(|err| {
+                Box::<dyn std::error::Error>::from(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    err,
+                ))
+            })
+        })
         .plugin(tauri_plugin_shell::init())
         .on_window_event(crate::app::window_events::handle)
         .build(tauri::generate_context!())

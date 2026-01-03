@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use octovalve_console::clients::mcp_client::McpClient;
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct OpenAiConfig {
     base_url: String,
