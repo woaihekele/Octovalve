@@ -33,7 +33,7 @@ const selectedTargetName = ref<string | null>(null);
 const settings = ref(loadSettings());
 const isSettingsOpen = ref(false);
 const isChatOpen = ref(false);
-const notification = ref<{ message: string; count?: number } | null>(null);
+const notification = ref<{ message: string; count?: number; target?: string } | null>(null);
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
@@ -234,8 +234,8 @@ async function confirmProviderSwitch() {
   }
 }
 
-function showNotification(message: string, count?: number) {
-  notification.value = { message, count };
+function showNotification(message: string, count?: number, target?: string) {
+  notification.value = { message, count, target };
   notificationToken.value += 1;
 }
 
@@ -287,7 +287,7 @@ function applyTargetUpdate(target: TargetInfo) {
 
   const previous = lastPendingCounts.value[target.name] ?? 0;
   if (settings.value.notificationsEnabled && target.pending_count > previous) {
-    showNotification(`收到 ${target.name} 的新请求`, target.pending_count);
+    showNotification(`收到 ${target.name} 的新请求`, target.pending_count, target.name);
   }
   lastPendingCounts.value[target.name] = target.pending_count;
 
@@ -390,6 +390,15 @@ function refreshAiRisk(payload: { target: string; id: string }) {
 function handleSettingsSave(value: AppSettings) {
   settings.value = value;
   isSettingsOpen.value = false;
+}
+
+function handleNotificationJump(targetName: string) {
+  const target = targets.value.find((item) => item.name === targetName);
+  if (!target || target.pending_count === 0) {
+    return;
+  }
+  selectedTargetName.value = target.name;
+  pendingJumpToken.value += 1;
 }
 
 function handleGlobalKey(event: KeyboardEvent) {
@@ -506,7 +515,7 @@ watch(
 </script>
 
 <template>
-  <NotificationBridge :payload="notification" :token="notificationToken" />
+  <NotificationBridge :payload="notification" :token="notificationToken" @jump-pending="handleNotificationJump" />
   <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
     <div
       class="fixed top-0 left-0 right-0 h-7 z-[4000] pointer-events-auto"
