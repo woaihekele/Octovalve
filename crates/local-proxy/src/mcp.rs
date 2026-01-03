@@ -1,18 +1,18 @@
 use crate::state::{ProxyRuntimeDefaults, ProxyState, TargetListEntry};
 use anyhow::Context;
-use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage, CommandStatus};
-use rust_mcp_sdk::mcp_server::ServerHandler;
-use rust_mcp_sdk::schema::schema_utils::CallToolError;
-use rust_mcp_sdk::schema::{
-    CallToolRequest, CallToolResult, ContentBlock, ListToolsRequest, ListToolsResult, TextContent,
-    Tool, ToolAnnotations, ToolInputSchema,
+use rmcp::{
+    model::{
+        CallToolRequestParam, CallToolResult, Content, JsonObject, ListToolsResult,
+        PaginatedRequestParam, ServerInfo, Tool, ToolAnnotations,
+    },
+    ErrorData as McpError, RoleServer, ServerHandler,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
@@ -27,6 +27,7 @@ pub(crate) struct ProxyHandler {
     default_timeout_ms: u64,
     default_max_output_bytes: u64,
     tunnel_manager: Option<Arc<TunnelManager>>,
+    server_info: ServerInfo,
 }
 
 impl ProxyHandler {
@@ -35,6 +36,7 @@ impl ProxyHandler {
         client_id: String,
         defaults: ProxyRuntimeDefaults,
         tunnel_manager: Option<Arc<TunnelManager>>,
+        server_info: ServerInfo,
     ) -> Self {
         Self {
             state,
@@ -42,20 +44,18 @@ impl ProxyHandler {
             default_timeout_ms: defaults.timeout_ms,
             default_max_output_bytes: defaults.max_output_bytes,
             tunnel_manager,
+            server_info,
         }
     }
 
     fn tool_definition(&self, targets: &[String], default_target: Option<&String>) -> Tool {
-        let mut properties = HashMap::new();
+        let mut properties = Map::new();
         properties.insert(
             "command".to_string(),
             json!({
                 "type": "string",
                 "description": "Shell-like command line. Default mode executes via /bin/bash -lc."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
         let mut target_schema = json!({
             "type": "string",
@@ -65,19 +65,13 @@ impl ProxyHandler {
         if let Some(default) = default_target {
             target_schema["default"] = json!(default);
         }
-        properties.insert(
-            "target".to_string(),
-            target_schema.as_object().cloned().unwrap_or_default(),
-        );
+        properties.insert("target".to_string(), target_schema);
         properties.insert(
             "intent".to_string(),
             json!({
                 "type": "string",
                 "description": "Why this command is needed (required for audit)."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
         properties.insert(
             "mode".to_string(),
@@ -86,20 +80,14 @@ impl ProxyHandler {
                 "enum": ["shell", "argv"],
                 "default": "shell",
                 "description": "Execution mode: shell uses /bin/bash -lc, argv uses parsed pipeline."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
         properties.insert(
             "cwd".to_string(),
             json!({
                 "type": "string",
                 "description": "Working directory for the command."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
         properties.insert(
             "timeout_ms".to_string(),
@@ -107,10 +95,7 @@ impl ProxyHandler {
                 "type": "integer",
                 "minimum": 0,
                 "description": "Override command timeout in milliseconds."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
         properties.insert(
             "max_output_bytes".to_string(),
@@ -118,10 +103,7 @@ impl ProxyHandler {
                 "type": "integer",
                 "minimum": 0,
                 "description": "Override output size limit in bytes."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
         properties.insert(
             "env".to_string(),
@@ -129,29 +111,24 @@ impl ProxyHandler {
                 "type": "object",
                 "additionalProperties": { "type": "string" },
                 "description": "Extra environment variables."
-            })
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
+            }),
         );
 
-        let input_schema = ToolInputSchema::new(
-            vec![
-                "command".to_string(),
-                "intent".to_string(),
-                "target".to_string(),
-            ],
-            Some(properties),
+        let mut input_schema = Map::new();
+        input_schema.insert("type".to_string(), Value::String("object".to_string()));
+        input_schema.insert(
+            "required".to_string(),
+            json!(["command", "intent", "target"]),
         );
+        input_schema.insert("properties".to_string(), Value::Object(properties));
 
         Tool {
-            name: "run_command".to_string(),
+            name: "run_command".into(),
             description: Some(
-                "Forward command execution to a remote broker with manual approval. When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)".to_string(),
+                "Forward command execution to a remote broker with manual approval. When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)".into(),
             ),
-            input_schema,
+            input_schema: Arc::new(input_schema),
             output_schema: None,
-            meta: None,
             title: Some("Run Command".to_string()),
             annotations: Some(ToolAnnotations {
                 read_only_hint: Some(false),
@@ -160,17 +137,19 @@ impl ProxyHandler {
                 idempotent_hint: Some(false),
                 title: Some("Run Command".to_string()),
             }),
+            icons: None,
         }
     }
 
     fn list_targets_definition(&self) -> Tool {
-        let input_schema = ToolInputSchema::new(Vec::new(), Some(HashMap::new()));
+        let mut input_schema = Map::new();
+        input_schema.insert("type".to_string(), Value::String("object".to_string()));
+        input_schema.insert("properties".to_string(), Value::Object(Map::new()));
         Tool {
-            name: "list_targets".to_string(),
-            description: Some("List available targets configured in octovalve-proxy.".to_string()),
-            input_schema,
+            name: "list_targets".into(),
+            description: Some("List available targets configured in octovalve-proxy.".into()),
+            input_schema: Arc::new(input_schema),
             output_schema: None,
-            meta: None,
             title: Some("List Targets".to_string()),
             annotations: Some(ToolAnnotations {
                 read_only_hint: Some(true),
@@ -179,125 +158,127 @@ impl ProxyHandler {
                 idempotent_hint: Some(true),
                 title: Some("List Targets".to_string()),
             }),
+            icons: None,
         }
     }
 }
 
-#[async_trait]
 impl ServerHandler for ProxyHandler {
-    async fn handle_list_tools_request(
-        &self,
-        _: ListToolsRequest,
-        _: std::sync::Arc<dyn rust_mcp_sdk::McpServer>,
-    ) -> Result<ListToolsResult, rust_mcp_sdk::schema::RpcError> {
-        let (targets, default_target) = {
-            let state = self.state.read().await;
-            (state.target_names(), state.default_target())
-        };
-        Ok(ListToolsResult {
-            tools: vec![
-                self.tool_definition(&targets, default_target.as_ref()),
-                self.list_targets_definition(),
-            ],
-            next_cursor: None,
-            meta: None,
-        })
+    fn get_info(&self) -> ServerInfo {
+        self.server_info.clone()
     }
 
-    async fn handle_call_tool_request(
+    fn list_tools(
         &self,
-        request: CallToolRequest,
-        _: std::sync::Arc<dyn rust_mcp_sdk::McpServer>,
-    ) -> Result<CallToolResult, CallToolError> {
-        match request.params.name.as_str() {
-            "run_command" => {
-                let args = parse_arguments(request.params.arguments)
-                    .map_err(|err| CallToolError::invalid_arguments("run_command", Some(err)))?;
-                let pipeline = parse_pipeline(&args.command)
-                    .map_err(|err| CallToolError::invalid_arguments("run_command", Some(err)))?;
+        _: Option<PaginatedRequestParam>,
+        _: rmcp::service::RequestContext<RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
+        async move {
+            let (targets, default_target) = {
+                let state = self.state.read().await;
+                (state.target_names(), state.default_target())
+            };
+            Ok(ListToolsResult::with_all_items(vec![
+                self.tool_definition(&targets, default_target.as_ref()),
+                self.list_targets_definition(),
+            ]))
+        }
+    }
 
-                let forward = {
-                    let state = self.state.read().await;
-                    state.forward_spec(&args.target).map_err(|err| {
-                        CallToolError::invalid_arguments("run_command", Some(err.to_string()))
-                    })?
-                };
-                let addr = if let Some(forward) = forward {
-                    let manager = self.tunnel_manager.as_ref().ok_or_else(|| {
-                        CallToolError::invalid_arguments(
-                            "run_command",
-                            Some("tunnel manager not available".to_string()),
-                        )
-                    })?;
-                    let local_addr = manager
-                        .ensure_forward(&self.client_id, &forward)
-                        .await
-                        .map_err(|err| {
-                            CallToolError::invalid_arguments("run_command", Some(err.to_string()))
+    fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        _: rmcp::service::RequestContext<RoleServer>,
+    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
+        async move {
+            match request.name.as_ref() {
+                "run_command" => {
+                    let args = parse_arguments(request.arguments)
+                        .map_err(|err| McpError::invalid_params(err, None))?;
+                    let pipeline = parse_pipeline(&args.command)
+                        .map_err(|err| McpError::invalid_params(err, None))?;
+
+                    let forward = {
+                        let state = self.state.read().await;
+                        state
+                            .forward_spec(&args.target)
+                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?
+                    };
+                    let addr = if let Some(forward) = forward {
+                        let manager = self.tunnel_manager.as_ref().ok_or_else(|| {
+                            McpError::invalid_params("tunnel manager not available", None)
                         })?;
+                        let local_addr = manager
+                            .ensure_forward(&self.client_id, &forward)
+                            .await
+                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?;
+                        {
+                            let mut state = self.state.write().await;
+                            state.note_tunnel_ready(&args.target);
+                        }
+                        local_addr
+                    } else {
+                        let mut state = self.state.write().await;
+                        let addr = state
+                            .target_addr(&args.target)
+                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?;
+                        state.note_tunnel_ready(&args.target);
+                        addr
+                    };
+
+                    let mode = args.mode.unwrap_or(CommandMode::Shell);
+                    let request = CommandRequest {
+                        id: Uuid::new_v4().to_string(),
+                        client: self.client_id.clone(),
+                        target: args.target.clone(),
+                        intent: args.intent,
+                        mode,
+                        raw_command: args.command.clone(),
+                        cwd: args.cwd,
+                        env: args.env,
+                        timeout_ms: Some(args.timeout_ms.unwrap_or(self.default_timeout_ms)),
+                        max_output_bytes: Some(
+                            args.max_output_bytes
+                                .unwrap_or(self.default_max_output_bytes),
+                        ),
+                        pipeline,
+                    };
+
+                    let response = match send_request(&addr, &request).await {
+                        Ok(response) => response,
+                        Err(err) => CommandResponse::error(request.id.clone(), err.to_string()),
+                    };
+
                     {
                         let mut state = self.state.write().await;
-                        state.note_tunnel_ready(&args.target);
-                    }
-                    local_addr
-                } else {
-                    let mut state = self.state.write().await;
-                    let addr = state.target_addr(&args.target).map_err(|err| {
-                        CallToolError::invalid_arguments("run_command", Some(err.to_string()))
-                    })?;
-                    state.note_tunnel_ready(&args.target);
-                    addr
-                };
-
-                let mode = args.mode.unwrap_or(CommandMode::Shell);
-                let request = CommandRequest {
-                    id: Uuid::new_v4().to_string(),
-                    client: self.client_id.clone(),
-                    target: args.target.clone(),
-                    intent: args.intent,
-                    mode,
-                    raw_command: args.command.clone(),
-                    cwd: args.cwd,
-                    env: args.env,
-                    timeout_ms: Some(args.timeout_ms.unwrap_or(self.default_timeout_ms)),
-                    max_output_bytes: Some(
-                        args.max_output_bytes
-                            .unwrap_or(self.default_max_output_bytes),
-                    ),
-                    pipeline,
-                };
-
-                let response = match send_request(&addr, &request).await {
-                    Ok(response) => response,
-                    Err(err) => CommandResponse::error(request.id.clone(), err.to_string()),
-                };
-
-                {
-                    let mut state = self.state.write().await;
-                    match response.status {
-                        CommandStatus::Completed
-                        | CommandStatus::Denied
-                        | CommandStatus::Approved => {
-                            state.note_success(&request.target);
-                        }
-                        CommandStatus::Error => {
-                            if let Some(error) = response.error.as_ref() {
-                                state.note_failure(&request.target, error);
+                        match response.status {
+                            CommandStatus::Completed
+                            | CommandStatus::Denied
+                            | CommandStatus::Approved => {
+                                state.note_success(&request.target);
+                            }
+                            CommandStatus::Error => {
+                                if let Some(error) = response.error.as_ref() {
+                                    state.note_failure(&request.target, error);
+                                }
                             }
                         }
                     }
-                }
 
-                Ok(response_to_tool_result(response))
+                    Ok(response_to_tool_result(response))
+                }
+                "list_targets" => {
+                    let targets = {
+                        let mut state = self.state.write().await;
+                        state.list_targets()
+                    };
+                    Ok(targets_to_tool_result(targets))
+                }
+                _ => Err(McpError::invalid_params(
+                    format!("unknown tool: {}", request.name),
+                    None,
+                )),
             }
-            "list_targets" => {
-                let targets = {
-                    let mut state = self.state.write().await;
-                    state.list_targets()
-                };
-                Ok(targets_to_tool_result(targets))
-            }
-            _ => Ok(CallToolError::unknown_tool(request.params.name).into()),
         }
     }
 }
@@ -314,7 +295,7 @@ struct RunCommandArgs {
     env: Option<BTreeMap<String, String>>,
 }
 
-fn parse_arguments(args: Option<Map<String, Value>>) -> Result<RunCommandArgs, String> {
+fn parse_arguments(args: Option<JsonObject>) -> Result<RunCommandArgs, String> {
     let map = args.ok_or_else(|| "missing arguments".to_string())?;
     serde_json::from_value(Value::Object(map)).map_err(|err| err.to_string())
 }
@@ -393,21 +374,19 @@ fn response_to_tool_result(response: CommandResponse) -> CallToolResult {
     }
 
     let text = message.join("\n");
-    let mut structured = serde_json::to_value(&response)
-        .ok()
-        .and_then(|value| value.as_object().cloned());
+    let mut structured = serde_json::to_value(&response).ok();
 
     if matches!(
         response.status,
         CommandStatus::Error | CommandStatus::Denied
     ) {
-        structured
-            .get_or_insert_with(Map::new)
-            .insert("is_error".to_string(), Value::Bool(true));
+        if let Some(Value::Object(map)) = structured.as_mut() {
+            map.insert("is_error".to_string(), Value::Bool(true));
+        }
     }
 
     CallToolResult {
-        content: vec![ContentBlock::from(TextContent::new(text, None, None))],
+        content: vec![Content::text(text)],
         is_error: Some(matches!(
             response.status,
             CommandStatus::Denied | CommandStatus::Error
@@ -421,10 +400,10 @@ fn targets_to_tool_result(targets: Vec<TargetListEntry>) -> CallToolResult {
     let payload = json!({ "targets": targets });
     let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
     CallToolResult {
-        content: vec![ContentBlock::from(TextContent::new(text, None, None))],
+        content: vec![Content::text(text)],
         is_error: Some(false),
         meta: None,
-        structured_content: payload.as_object().cloned(),
+        structured_content: Some(payload),
     }
 }
 

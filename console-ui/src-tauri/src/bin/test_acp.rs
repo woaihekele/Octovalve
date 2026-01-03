@@ -136,10 +136,7 @@ fn main() -> Result<(), String> {
                                     "agent_thought_chunk" => {}
                                     "available_commands_update" => {
                                         if let Some(commands) = update.get("availableCommands") {
-                                            eprintln!(
-                                                "\n[available_commands] {}",
-                                                commands
-                                            );
+                                            eprintln!("\n[available_commands] {}", commands);
                                         }
                                     }
                                     other => {
@@ -155,14 +152,12 @@ fn main() -> Result<(), String> {
                                 full_text.push_str(&content);
                                 eprint!("{}", content);
                             }
-                            Ok(SessionUpdate::ToolCallStart { name, arguments, .. }) => {
+                            Ok(SessionUpdate::ToolCallStart {
+                                name, arguments, ..
+                            }) => {
                                 eprintln!("\n[tool_call_start] name={name} args={arguments:?}");
                             }
-                            Ok(SessionUpdate::ToolCallEnd {
-                                result,
-                                error,
-                                ..
-                            }) => {
+                            Ok(SessionUpdate::ToolCallEnd { result, error, .. }) => {
                                 eprintln!("\n[tool_call_end] result={result:?} error={error:?}");
                             }
                             Ok(SessionUpdate::PermissionRequest { request_id, .. }) => {

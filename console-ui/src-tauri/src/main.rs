@@ -2,7 +2,7 @@
 
 mod acp_client;
 mod acp_types;
-mod mcp_proxy;
+mod mcp_client;
 mod openai_client;
 
 use std::collections::HashMap;
@@ -50,6 +50,7 @@ struct AppLogState {
 
 use acp_client::{AcpClient, AcpClientState};
 use acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
+use mcp_client::McpClientState;
 use openai_client::{ChatMessage, OpenAiClient, OpenAiClientState, OpenAiConfig, Tool};
 
 #[derive(Clone, serde::Serialize)]
@@ -165,6 +166,7 @@ fn main() {
         .manage(ConsoleStreamState(Mutex::new(false)))
         .manage(TerminalSessions(Mutex::new(HashMap::new())))
         .manage(AcpClientState::default())
+        .manage(McpClientState::default())
         .manage(OpenAiClientState(tokio::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             list_profiles,
@@ -2110,6 +2112,7 @@ async fn openai_send(app: AppHandle, state: State<'_, OpenAiClientState>) -> Res
 async fn mcp_call_tool(
     app: AppHandle,
     proxy_state: State<'_, ProxyConfigState>,
+    mcp_state: State<'_, McpClientState>,
     name: String,
     arguments: Value,
 ) -> Result<Value, String> {
@@ -2119,5 +2122,5 @@ async fn mcp_call_tool(
     }
     let proxy_path = PathBuf::from(status.path);
     let _ = app;
-    mcp_proxy::call_tool(&proxy_path, &name, arguments).await
+    mcp_state.call_tool(&proxy_path, &name, arguments).await
 }

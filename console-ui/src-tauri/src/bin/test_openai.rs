@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-#[path = "../mcp_proxy.rs"]
-mod mcp_proxy;
+#[path = "../mcp_client.rs"]
+mod mcp_client;
 
 #[derive(Clone, Debug)]
 struct OpenAiConfig {
@@ -83,14 +83,23 @@ async fn main() -> Result<(), String> {
         std::env::set_var("OCTOVALVE_MCP_ATTEMPT_TIMEOUT_MS", value.to_string());
     }
 
-    // 1) Validate MCP path: list_targets
-    let result = mcp_proxy::call_tool(&proxy_config, "list_targets", json!({})).await?;
+    let client = mcp_client::McpClient::start(&proxy_config, "octovalve-console-openai").await?;
+
+    // 1) Validate MCP path: list_tools
+    let tools = client.list_tools().await?;
+    println!(
+        "list_tools result:\n{}",
+        serde_json::to_string_pretty(&tools).unwrap_or_default()
+    );
+
+    // 2) Validate MCP path: list_targets
+    let result = client.call_tool("list_targets", json!({})).await?;
     println!(
         "list_targets result:\n{}",
         serde_json::to_string_pretty(&result).unwrap_or_default()
     );
 
-    // 2) Optional: validate run_command end-to-end (requires target)
+    // 3) Optional: validate run_command end-to-end (requires target)
     if let Some(target) = target {
         let args: Value = json!({
             "command": "echo octovalve-mcp-ok",
@@ -99,7 +108,7 @@ async fn main() -> Result<(), String> {
             "mode": "shell",
             "timeout_ms": 30000,
         });
-        let result = mcp_proxy::call_tool(&proxy_config, "run_command", args).await?;
+        let result = client.call_tool("run_command", args).await?;
         println!(
             "run_command result:\n{}",
             serde_json::to_string_pretty(&result).unwrap_or_default()
@@ -110,6 +119,8 @@ async fn main() -> Result<(), String> {
         );
         eprintln!("(timeout overrides) --mcp-initialize-timeout-ms <ms> --mcp-tools-call-timeout-ms <ms> --mcp-attempt-timeout-ms <ms>");
     }
+
+    client.shutdown().await;
 
     Ok(())
 }

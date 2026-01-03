@@ -1,4 +1,5 @@
 use futures_util::StreamExt;
+use humantime::format_rfc3339;
 use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -8,10 +9,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
+use std::time::SystemTime;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{watch, Mutex};
-use std::time::SystemTime;
-use humantime::format_rfc3339;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -164,10 +164,7 @@ impl OpenAiClient {
             let tool_calls_len = msg.tool_calls.as_ref().map(|v| v.len()).unwrap_or(0);
             self.log_line(&format!(
                 "[openai_send] msg[{}] role={} content_len={} tool_calls={}",
-                idx,
-                msg.role,
-                content_len,
-                tool_calls_len
+                idx, msg.role, content_len, tool_calls_len
             ));
         }
 
@@ -205,7 +202,9 @@ impl OpenAiClient {
                     "[openai_send] reqwest error is_timeout={} is_connect={} status={}",
                     err.is_timeout(),
                     err.is_connect(),
-                    err.status().map(|v| v.to_string()).unwrap_or_else(|| "none".to_string())
+                    err.status()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "none".to_string())
                 ));
                 self.log_line(&format!("[openai_send] reqwest error={:?}", err));
                 return Err(format!("Request failed: {}", err));
@@ -318,7 +317,8 @@ impl OpenAiClient {
             || data.contains("\"finish_reason\": \"stop\"")
         {
             emit_complete_event(app_handle, tool_calls);
-            self.maybe_store_assistant_message(full_content, tool_calls).await;
+            self.maybe_store_assistant_message(full_content, tool_calls)
+                .await;
             return Ok(true);
         }
 
@@ -326,7 +326,9 @@ impl OpenAiClient {
             if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array()) {
                 if let Some(choice) = choices.first() {
                     if let Some(delta) = choice.get("delta") {
-                        if let Some(reasoning) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
+                        if let Some(reasoning) =
+                            delta.get("reasoning_content").and_then(|c| c.as_str())
+                        {
                             let event = ChatStreamEvent {
                                 event_type: "reasoning".to_string(),
                                 content: Some(reasoning.to_string()),
@@ -363,10 +365,9 @@ impl OpenAiClient {
                         // Tool calls delta
                         if let Some(tc) = delta.get("tool_calls").and_then(|t| t.as_array()) {
                             for tc_delta in tc {
-                                let index = tc_delta
-                                    .get("index")
-                                    .and_then(|i| i.as_u64())
-                                    .unwrap_or(0) as usize;
+                                let index =
+                                    tc_delta.get("index").and_then(|i| i.as_u64()).unwrap_or(0)
+                                        as usize;
 
                                 // Ensure tool_calls has enough elements
                                 while tool_calls.len() <= index {
@@ -387,7 +388,9 @@ impl OpenAiClient {
                                     if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
                                         tool_calls[index].function.name = name.to_string();
                                     }
-                                    if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
+                                    if let Some(args) =
+                                        func.get("arguments").and_then(|a| a.as_str())
+                                    {
                                         tool_calls[index].function.arguments.push_str(args);
                                     }
                                 }
@@ -399,7 +402,8 @@ impl OpenAiClient {
                     if let Some(reason) = choice.get("finish_reason").and_then(|r| r.as_str()) {
                         if reason == "tool_calls" {
                             emit_tool_calls_event(app_handle, tool_calls, reason);
-                            self.maybe_store_assistant_message(full_content, tool_calls).await;
+                            self.maybe_store_assistant_message(full_content, tool_calls)
+                                .await;
                             return Ok(true);
                         }
                     }
@@ -409,11 +413,7 @@ impl OpenAiClient {
         Ok(false)
     }
 
-    async fn maybe_store_assistant_message(
-        &self,
-        full_content: &str,
-        tool_calls: &[ToolCall],
-    ) {
+    async fn maybe_store_assistant_message(&self, full_content: &str, tool_calls: &[ToolCall]) {
         if full_content.is_empty() && tool_calls.is_empty() {
             return;
         }
@@ -480,8 +480,7 @@ fn strip_sse_data_prefix(line: &str) -> Option<&str> {
     if let Some(data) = line.strip_prefix("data: ") {
         return Some(data);
     }
-    line.strip_prefix("data:")
-        .map(|value| value.trim_start())
+    line.strip_prefix("data:").map(|value| value.trim_start())
 }
 
 fn build_http_client() -> Result<Client, reqwest::Error> {

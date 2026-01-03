@@ -7,12 +7,11 @@ mod tunnel;
 use clap::Parser;
 use cli::Args;
 use mcp::ProxyHandler;
-use rust_mcp_sdk::mcp_server::server_runtime;
-use rust_mcp_sdk::schema::{
-    Implementation, InitializeResult, ServerCapabilities, ServerCapabilitiesTools,
-    LATEST_PROTOCOL_VERSION,
+use rmcp::model::{
+    Implementation, InitializeResult, ProtocolVersion, ServerCapabilities, ToolsCapability,
 };
-use rust_mcp_sdk::{McpServer, StdioTransport, TransportOptions};
+use rmcp::service::ServiceExt;
+use rmcp::transport::stdio;
 use state::{build_proxy_state, ProxyState};
 use std::io;
 use std::path::PathBuf;
@@ -63,24 +62,32 @@ async fn main() -> anyhow::Result<()> {
             name: "octovalve_proxy".to_string(),
             version: "0.1.0".to_string(),
             title: Some("Octovalve Proxy".to_string()),
+            icons: None,
+            website_url: None,
         },
         capabilities: ServerCapabilities {
-            tools: Some(ServerCapabilitiesTools { list_changed: None }),
+            tools: Some(ToolsCapability { list_changed: None }),
             ..Default::default()
         },
-        meta: None,
         instructions: Some(
             "Use run_command to execute commands on a target after approval. target is required. Use list_targets to see available targets."
                 .to_string(),
         ),
-        protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
+        protocol_version: ProtocolVersion::V_2025_06_18,
     };
 
-    let transport = StdioTransport::new(TransportOptions::default())
+    let handler = ProxyHandler::new(
+        Arc::clone(&state),
+        args.client_id,
+        defaults,
+        tunnel_manager,
+        server_details,
+    );
+    let server = handler
+        .serve_with_ct(stdio(), shutdown.clone())
+        .await
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-    let handler = ProxyHandler::new(Arc::clone(&state), args.client_id, defaults, tunnel_manager);
-    let server = server_runtime::create_server(server_details, transport, handler);
-    let result = server.start().await;
+    let result = server.waiting().await;
     shutdown.cancel();
     shutdown_tunnels(Arc::clone(&state)).await;
     result.map_err(|err| anyhow::anyhow!(err.to_string()))?;
