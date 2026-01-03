@@ -103,7 +103,6 @@ function statusClass(target: TargetInfo) {
           ></path>
         </svg>
       </button>
-      <div>Pending Total: {{ props.pendingTotal }}</div>
     </div>
   </aside>
 </template>
