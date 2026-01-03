@@ -28,6 +28,17 @@ impl ServiceState {
         }
     }
 
+    fn start_running(&mut self, running: RunningSnapshot) {
+        self.running.retain(|item| item.id != running.id);
+        self.running.insert(0, running);
+    }
+
+    fn finish_running(&mut self, id: &str) -> bool {
+        let before = self.running.len();
+        self.running.retain(|item| item.id != id);
+        before != self.running.len()
+    }
+
     fn push_result(&mut self, result: ResultSnapshot) {
         self.history.insert(0, result);
         if self.history.len() > self.history_limit {
@@ -154,6 +165,11 @@ async fn handle_server_event(
         }
         ServerEvent::Request(pending) => {
             if auto_approve_allowed && whitelist.allows_request(&pending.request) {
+                let started_at = SystemTime::now();
+                let running_snapshot = running_snapshot_from_pending(&pending, started_at);
+                state.start_running(running_snapshot);
+                let _ = event_tx.send(ServiceEvent::RunningUpdated(state.running.clone()));
+
                 let result_tx = result_tx.clone();
                 let whitelist = Arc::clone(whitelist);
                 let limits = Arc::clone(limits);
@@ -197,6 +213,11 @@ async fn handle_command(
                 tracing::info!(event = "queue.updated", queue_len = state.pending.len());
                 let queue = build_queue_snapshots(&state.pending);
                 let _ = event_tx.send(ServiceEvent::QueueUpdated(queue));
+
+                let started_at = SystemTime::now();
+                let running_snapshot = running_snapshot_from_pending(&pending, started_at);
+                state.start_running(running_snapshot);
+                let _ = event_tx.send(ServiceEvent::RunningUpdated(state.running.clone()));
 
                 let result_tx = result_tx.clone();
                 let whitelist = Arc::clone(whitelist);
@@ -258,6 +279,9 @@ fn handle_result_snapshot(
     state: &mut ServiceState,
     event_tx: &broadcast::Sender<ServiceEvent>,
 ) {
+    if state.finish_running(&result.id) {
+        let _ = event_tx.send(ServiceEvent::RunningUpdated(state.running.clone()));
+    }
     state.push_result(result.clone());
     let _ = event_tx.send(ServiceEvent::ResultUpdated(result));
 }
@@ -289,6 +313,33 @@ fn to_request_snapshot(pending: &PendingRequest) -> RequestSnapshot {
         timeout_ms: request.timeout_ms,
         max_output_bytes: request.max_output_bytes,
         received_at_ms: system_time_ms(pending.received_at),
+    }
+}
+
+fn running_snapshot_from_pending(
+    pending: &PendingRequest,
+    started_at: SystemTime,
+) -> RunningSnapshot {
+    let request = &pending.request;
+    let queued_for_secs = started_at
+        .duration_since(pending.received_at)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_else(|_| pending.queued_at.elapsed().as_secs());
+    RunningSnapshot {
+        id: request.id.clone(),
+        client: request.client.clone(),
+        target: request.target.clone(),
+        peer: pending.peer.clone(),
+        intent: request.intent.clone(),
+        mode: request.mode.clone(),
+        raw_command: request.raw_command.clone(),
+        pipeline: request.pipeline.clone(),
+        cwd: request.cwd.clone(),
+        timeout_ms: request.timeout_ms,
+        max_output_bytes: request.max_output_bytes,
+        received_at_ms: system_time_ms(pending.received_at),
+        queued_for_secs,
+        started_at_ms: system_time_ms(started_at),
     }
 }
 
