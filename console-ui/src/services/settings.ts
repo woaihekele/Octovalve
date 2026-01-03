@@ -58,6 +58,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     deny: 'KeyD',
     fullScreen: 'KeyR',
     toggleList: 'Tab',
+    openSettings: 'Meta+Comma',
   },
 };
 
@@ -107,6 +108,7 @@ export function loadSettings(): AppSettings {
       deny: normalizeWithFallback(parsedShortcuts.deny, DEFAULT_SETTINGS.shortcuts.deny),
       fullScreen: normalizeWithFallback(parsedShortcuts.fullScreen, DEFAULT_SETTINGS.shortcuts.fullScreen),
       toggleList: normalizeWithFallback(parsedShortcuts.toggleList, DEFAULT_SETTINGS.shortcuts.toggleList),
+      openSettings: normalizeWithFallback(parsedShortcuts.openSettings, DEFAULT_SETTINGS.shortcuts.openSettings),
     };
     const normalizedAi: AiSettings = {
       enabled: Boolean(parsedAi.enabled),

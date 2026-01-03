@@ -155,15 +155,6 @@ function toolStatusType(status: ToolCall['status']): 'default' | 'info' | 'succe
     border-left: 3px solid var(--color-danger);
   }
 
-  &--streaming {
-    .chat-message__text {
-      &::after {
-        content: '▊';
-        animation: blink 1s infinite;
-      }
-    }
-  }
-
   &__avatar {
     flex-shrink: 0;
     width: 32px;

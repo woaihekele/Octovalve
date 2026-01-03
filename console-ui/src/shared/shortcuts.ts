@@ -113,6 +113,7 @@ function formatCode(code: string): string {
     PageUp: 'PageUp',
     PageDown: 'PageDown',
     Insert: 'Insert',
+    Comma: ',',
   };
   return map[code] ?? code;
 }
@@ -124,7 +125,7 @@ function looksLikeCode(value: string): boolean {
     /^Numpad[0-9]$/.test(value) ||
     /^F([1-9]|1[0-9]|2[0-4])$/.test(value) ||
     /^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight)$/.test(value) ||
-    /^(Tab|Escape|Space|Enter|Backspace|Delete|Home|End|PageUp|PageDown|Insert)$/.test(value)
+    /^(Tab|Escape|Space|Enter|Backspace|Delete|Home|End|PageUp|PageDown|Insert|Comma)$/.test(value)
   );
 }
 
@@ -159,6 +160,7 @@ function keyToCode(key: string): string | null {
     arrowdown: 'ArrowDown',
     arrowleft: 'ArrowLeft',
     arrowright: 'ArrowRight',
+    ',': 'Comma',
   };
   return named[normalized] ?? null;
 }

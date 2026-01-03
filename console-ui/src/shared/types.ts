@@ -156,5 +156,6 @@ export interface AppSettings {
     deny: string;
     fullScreen: string;
     toggleList: string;
+    openSettings: string;
   };
 }

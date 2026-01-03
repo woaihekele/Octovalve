@@ -21,6 +21,7 @@ const shortcutFields = [
   { key: 'deny', label: '拒绝' },
   { key: 'toggleList', label: '切换 Pending/History' },
   { key: 'fullScreen', label: '全屏输出' },
+  { key: 'openSettings', label: '打开设置' },
 ] as const;
 
 type ShortcutField = (typeof shortcutFields)[number]['key'];

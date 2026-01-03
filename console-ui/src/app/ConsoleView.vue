@@ -405,6 +405,11 @@ function handleGlobalKey(event: KeyboardEvent) {
   if (event.defaultPrevented) {
     return;
   }
+  if (matchesShortcut(event, settings.value.shortcuts.openSettings)) {
+    event.preventDefault();
+    isSettingsOpen.value = true;
+    return;
+  }
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return;
   }
