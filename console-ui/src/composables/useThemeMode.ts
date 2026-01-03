@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue';
-import type { ThemeMode } from '../types';
-import { applyThemeToDocument, resolveTheme, type ResolvedTheme } from '../theme';
+import type { ThemeMode } from '../shared/types';
+import { applyThemeToDocument, resolveTheme, type ResolvedTheme } from '../shared/theme';
 
 export function useThemeMode() {
   const resolvedTheme = ref<ResolvedTheme>('dark');

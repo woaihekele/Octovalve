@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue';
-import { aiRiskAssess } from '../api';
-import type { AiRiskApiResponse, AiRiskEntry, AppSettings, RequestSnapshot, ServiceSnapshot } from '../types';
+import { aiRiskAssess } from '../services/api';
+import type { AiRiskApiResponse, AiRiskEntry, AppSettings, RequestSnapshot, ServiceSnapshot } from '../shared/types';
 
 const AI_RISK_CACHE_KEY = 'octovalve.console.ai_risk_cache';
 const AI_RISK_CACHE_LIMIT = 2000;

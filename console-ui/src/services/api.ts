@@ -7,7 +7,7 @@ import type {
   ProfilesStatus,
   ServiceSnapshot,
   TargetInfo,
-} from './types';
+} from '../shared/types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';

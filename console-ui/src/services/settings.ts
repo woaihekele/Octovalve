@@ -1,6 +1,6 @@
-import type { AiSettings, AppSettings, ChatProviderConfig } from './types';
-import { normalizeShortcut } from './shortcuts';
-import { normalizeThemeMode } from './theme';
+import type { AiSettings, AppSettings, ChatProviderConfig } from '../shared/types';
+import { normalizeShortcut } from '../shared/shortcuts';
+import { normalizeThemeMode } from '../shared/theme';
 
 const SETTINGS_KEY = 'octovalve.console.settings';
 const DEFAULT_AI_PROMPT = [

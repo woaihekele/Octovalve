@@ -2,7 +2,7 @@
 import { computed, provide } from 'vue';
 import { NConfigProvider, NNotificationProvider, darkTheme } from 'naive-ui';
 import ConsoleView from './ConsoleView.vue';
-import { useThemeMode } from './composables/useThemeMode';
+import { useThemeMode } from '../composables/useThemeMode';
 import { APPLY_THEME_MODE, RESOLVED_THEME } from './appContext';
 
 const { resolvedTheme, applyThemeMode } = useThemeMode();

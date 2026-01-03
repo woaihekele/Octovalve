@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NButton, NPopover, NTag } from 'naive-ui';
-import { formatShortcut, matchesShortcut } from '../shortcuts';
+import { formatShortcut, matchesShortcut } from '../shared/shortcuts';
 import type {
   AiRiskEntry,
   AppSettings,
@@ -10,7 +10,7 @@ import type {
   ResultSnapshot,
   ServiceSnapshot,
   TargetInfo,
-} from '../types';
+} from '../shared/types';
 const props = defineProps<{
   target: TargetInfo;
   snapshot: ServiceSnapshot | null;

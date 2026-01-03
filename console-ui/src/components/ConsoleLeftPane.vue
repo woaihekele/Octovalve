@@ -114,8 +114,8 @@
 
 <script setup lang="ts">
 import { NTabPane, NTabs } from 'naive-ui';
-import type { ResolvedTheme } from '../theme';
-import type { AiRiskEntry, AppSettings, ServiceSnapshot, TargetInfo } from '../types';
+import type { ResolvedTheme } from '../shared/theme';
+import type { AiRiskEntry, AppSettings, ServiceSnapshot, TargetInfo } from '../shared/types';
 import Sidebar from './Sidebar.vue';
 import TargetView from './TargetView.vue';
 import TerminalPanel from './TerminalPanel.vue';

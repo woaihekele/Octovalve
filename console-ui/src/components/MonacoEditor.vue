@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type * as Monaco from 'monaco-editor';
-import type { ResolvedTheme } from '../theme';
+import type { ResolvedTheme } from '../shared/theme';
 
 const props = defineProps<{
   modelValue: string;

@@ -10,20 +10,20 @@ import {
   openConsoleStream,
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
-} from './api';
-import { useChatStore } from './chat';
+} from '../services/api';
+import { useChatStore } from '../chat';
 import { storeToRefs } from 'pinia';
 import type { AuthMethod } from './chat/services/acpService';
-import { matchesShortcut } from './shortcuts';
-import ConsoleChatPane from './components/ConsoleChatPane.vue';
-import ConsoleLeftPane from './components/ConsoleLeftPane.vue';
-import SettingsModal from './components/SettingsModal.vue';
-import NotificationBridge from './components/NotificationBridge.vue';
-import { loadSettings, saveSettings } from './settings';
-import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
-import { useAiRiskQueue } from './composables/useAiRiskQueue';
-import { useTerminalState } from './composables/useTerminalState';
-import type { ResolvedTheme } from './theme';
+import { matchesShortcut } from '../shared/shortcuts';
+import ConsoleChatPane from '../components/ConsoleChatPane.vue';
+import ConsoleLeftPane from '../components/ConsoleLeftPane.vue';
+import SettingsModal from '../components/SettingsModal.vue';
+import NotificationBridge from '../components/NotificationBridge.vue';
+import { loadSettings, saveSettings } from '../services/settings';
+import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from '../shared/types';
+import { useAiRiskQueue } from '../composables/useAiRiskQueue';
+import { useTerminalState } from '../composables/useTerminalState';
+import type { ResolvedTheme } from '../shared/theme';
 import { APPLY_THEME_MODE, RESOLVED_THEME } from './appContext';
 
 const targets = ref<TargetInfo[]>([]);

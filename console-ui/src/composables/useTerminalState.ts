@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue';
-import type { TargetInfo } from '../types';
+import type { TargetInfo } from '../shared/types';
 
 type TerminalTab = {
   id: string;
