@@ -134,6 +134,16 @@ defineEmits<{ (e: 'toggle'): void }>();
 const hasBody = computed(() => Boolean(props.bodyHtml) || Boolean(slots.body));
 const headerLabel = computed(() => (props.streaming ? 'Thinking' : 'Thought'));
 
+const scrollPreviewToBottom = async () => {
+  if (!showPreview.value) {
+    return;
+  }
+  await nextTick();
+  if (previewRef.value) {
+    previewRef.value.scrollTop = previewRef.value.scrollHeight;
+  }
+};
+
 const normalizePreviewText = (text: string): string => {
   return (text || '').replace(/<\/?think(?:ing)?[^>]*>/gi, '');
 };
@@ -186,6 +196,9 @@ watch(
     }
 
     previewStreamDone.value = !streaming;
+    if (!streaming) {
+      void scrollPreviewToBottom();
+    }
   },
   { immediate: true }
 );
@@ -217,6 +230,14 @@ const previewLines = computed(() => {
 const showPreview = computed(() => {
   return !props.show && (props.previewActive ?? true) && previewLines.value.length > 0;
 });
+
+watch(
+  () => displayedPreviewText.value,
+  () => {
+    void scrollPreviewToBottom();
+  },
+  { flush: 'post' }
+);
 
 watch(
   () => showPreview.value,
