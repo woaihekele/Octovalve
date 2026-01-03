@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TargetInfo } from '../shared/types';
+import type { TargetInfo } from '../../shared/types';
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 

@@ -2,7 +2,7 @@
 import { NButton, NInput, NInputNumber, NSelect, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import { DEFAULT_SETTINGS } from '../../settings';
-import type { AppSettings } from '../../shared/types';
+import type { AppSettings } from '../../../shared/types';
 
 const props = defineProps<{
   settings: AppSettings['ai'];

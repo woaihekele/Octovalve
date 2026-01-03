@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { NButton, NInput } from 'naive-ui';
-import { eventToShortcut, formatShortcut, normalizeShortcut } from '../../shared/shortcuts';
+import { eventToShortcut, formatShortcut, normalizeShortcut } from '../../../shared/shortcuts';
 import { DEFAULT_SETTINGS } from '../../settings';
-import type { AppSettings } from '../../shared/types';
+import type { AppSettings } from '../../../shared/types';
 
 const props = defineProps<{
   settings: AppSettings;

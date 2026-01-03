@@ -29,12 +29,12 @@ import {
   selectProfile,
   writeProfileBrokerConfig,
   writeProfileProxyConfig,
-} from '../services/api';
-import { loadSettings } from '../services/settings';
-import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../shared/types';
-import { type ResolvedTheme } from '../shared/theme';
+} from '../../services/api';
+import { loadSettings } from '../../services/settings';
+import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../../shared/types';
+import { type ResolvedTheme } from '../../shared/theme';
 import { AiInspectionSettings, ChatProviderSettings, ConfigCenterSettings, GeneralSettings, ShortcutsSettings } from './settings';
-import type { ChatProviderConfig } from '../shared/types';
+import type { ChatProviderConfig } from '../../shared/types';
 
 const props = defineProps<{
   isOpen: boolean;

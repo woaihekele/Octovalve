@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NSelect, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
-import type { AppSettings } from '../../shared/types';
+import type { AppSettings } from '../../../shared/types';
 import { THEME_OPTIONS } from '../../theme';
 
 const props = defineProps<{
