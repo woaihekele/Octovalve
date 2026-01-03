@@ -122,10 +122,6 @@ function formatTime(value: number) {
   return new Date(value).toLocaleString();
 }
 
-function formatPipeline(item: SnapshotItem) {
-  return item.pipeline.map((stage) => stage.argv.join(' ')).join(' | ');
-}
-
 function itemTimestamp(item: SnapshotItem) {
   if (isPendingItem(item)) {
     return item.received_at_ms;
@@ -610,7 +606,9 @@ onBeforeUnmount(() => {
             <div class="border-b border-border bg-panel/30 p-6 flex justify-between gap-6">
               <div class="flex-1">
                 <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Command</h3>
-                <code class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border">
+                <code
+                  class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border max-h-40 overflow-y-auto whitespace-pre-wrap break-words"
+                >
                   {{ selectedItem.raw_command }}
                 </code>
 
@@ -630,10 +628,6 @@ onBeforeUnmount(() => {
                   <div>
                     <div class="text-foreground-muted">Peer</div>
                     <div class="text-foreground">{{ selectedItem.peer }}</div>
-                  </div>
-                  <div>
-                    <div class="text-foreground-muted">Pipeline</div>
-                    <div class="text-foreground">{{ formatPipeline(selectedItem) || '-' }}</div>
                   </div>
                   <template v-if="isPendingSelected">
                     <div>
