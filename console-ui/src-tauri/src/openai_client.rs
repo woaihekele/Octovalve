@@ -1,18 +1,17 @@
 use futures_util::StreamExt;
-use reqwest::{Client, Url};
+use reqwest::redirect::Policy;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::sync::{watch, Mutex};
-use tokio::time::{timeout, Duration};
-
-const OPENAI_HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-const OPENAI_HTTP_IO_TIMEOUT: Duration = Duration::from_secs(120);
-const OPENAI_RAW_CANCELLED: &str = "openai_http_cancelled";
+use std::time::SystemTime;
+use humantime::format_rfc3339;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,17 +81,38 @@ pub struct OpenAiClient {
     messages: Arc<Mutex<Vec<ChatMessage>>>,
     tools: Arc<Mutex<Vec<Tool>>>,
     cancel_tx: watch::Sender<u64>,
+    log_path: PathBuf,
 }
 
 impl OpenAiClient {
-    pub fn new(config: OpenAiConfig) -> Self {
+    pub fn new(config: OpenAiConfig, log_path: PathBuf) -> Self {
         let (cancel_tx, _cancel_rx) = watch::channel(0u64);
+        let http_client = match build_http_client() {
+            Ok(client) => {
+                log_to_path(
+                    &log_path,
+                    "[openai_client] reqwest configured http1_only=true redirect=none pool_idle=0",
+                );
+                client
+            }
+            Err(err) => {
+                log_to_path(
+                    &log_path,
+                    &format!(
+                        "[openai_client] reqwest build failed: {}; falling back to default",
+                        err
+                    ),
+                );
+                Client::new()
+            }
+        };
         Self {
             config,
-            http_client: Client::new(),
+            http_client,
             messages: Arc::new(Mutex::new(Vec::new())),
             tools: Arc::new(Mutex::new(Vec::new())),
             cancel_tx,
+            log_path,
         }
     }
 
@@ -132,26 +152,23 @@ impl OpenAiClient {
             self.config.base_url.trim_end_matches('/'),
             self.config.chat_path
         );
-        let parsed_url = Url::parse(&url).map_err(|e| format!("Invalid url: {}", e))?;
-        let use_raw_http = should_use_raw_http(&parsed_url);
-
-        eprintln!(
+        self.log_line(&format!(
             "[openai_send] url={} model={} messages={} tools={}",
             url,
             self.config.model,
             messages.len(),
             tools.len()
-        );
+        ));
         for (idx, msg) in messages.iter().enumerate() {
             let content_len = msg.content.len();
             let tool_calls_len = msg.tool_calls.as_ref().map(|v| v.len()).unwrap_or(0);
-            eprintln!(
+            self.log_line(&format!(
                 "[openai_send] msg[{}] role={} content_len={} tool_calls={}",
                 idx,
                 msg.role,
                 content_len,
                 tool_calls_len
-            );
+            ));
         }
 
         let mut body = json!({
@@ -165,68 +182,85 @@ impl OpenAiClient {
         }
 
         let body_json = serde_json::to_string(&body).unwrap_or_default();
-        eprintln!("[openai_send] body_len={}", body_json.len());
+        self.log_line(&format!("[openai_send] body_len={}", body_json.len()));
 
-        if use_raw_http {
-            if let Some(host) = parsed_url.host_str() {
-                eprintln!("[openai_send] raw_http host={} port={}", host, parsed_url.port_or_known_default().unwrap_or(0));
-            }
-            let response = match raw_http_request_with_timeout(
-                "POST",
-                &parsed_url,
-                Some(&body_json),
-                &self.config.api_key,
-                &mut cancel_rx,
-                start_seq,
-            )
-            .await
-            {
-                Ok(response) => response,
-                Err(err) if err == OPENAI_RAW_CANCELLED => {
-                    emit_cancelled_event(app_handle);
-                    return Ok(());
-                }
-                Err(err) => return Err(err),
-            };
-
-            if response.status / 100 != 2 {
-                let text = String::from_utf8_lossy(&response.body).to_string();
-                let body_preview: String = body_json.chars().take(1024).collect();
-                eprintln!(
-                    "[openai_send] status={} body_len={} body_preview={}",
-                    response.status,
-                    text.len(),
-                    body_preview
-                );
-                eprintln!("[openai_send] response_body={}", text);
-                return Err(format!("API error {}: {}", response.status, text));
-            }
-
-            let text = String::from_utf8_lossy(&response.body).to_string();
-            return self.process_sse_body(app_handle, &text).await;
-        }
-
-        let response = self
+        self.log_line("[openai_send] reqwest request start http1_only=true redirect=none");
+        let request = self
             .http_client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+            .header("Accept", "*/*")
+            .header("Accept-Encoding", "identity")
+            .header("Connection", "close")
+            .header("User-Agent", "octovalve-console")
+            .body(body_json.clone())
+            .build()
+            .map_err(|e| format!("Request build failed: {}", e))?;
+        let started = Instant::now();
+        let response = match self.http_client.execute(request).await {
+            Ok(response) => response,
+            Err(err) => {
+                self.log_line(&format!(
+                    "[openai_send] reqwest error is_timeout={} is_connect={} status={}",
+                    err.is_timeout(),
+                    err.is_connect(),
+                    err.status().map(|v| v.to_string()).unwrap_or_else(|| "none".to_string())
+                ));
+                self.log_line(&format!("[openai_send] reqwest error={:?}", err));
+                return Err(format!("Request failed: {}", err));
+            }
+        };
+        let elapsed_ms = started.elapsed().as_millis();
+        let version = format!("{:?}", response.version());
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown");
+        let content_encoding = response
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("none");
+        let transfer_encoding = response
+            .headers()
+            .get(reqwest::header::TRANSFER_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("none");
+        let server = response
+            .headers()
+            .get("server")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown");
+        let via = response
+            .headers()
+            .get("via")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("none");
+        self.log_line(&format!(
+            "[openai_send] reqwest response status={} elapsed_ms={} version={} content_type={} content_encoding={} transfer_encoding={} server={} via={}",
+            response.status(),
+            elapsed_ms,
+            version,
+            content_type,
+            content_encoding,
+            transfer_encoding,
+            server,
+            via
+        ));
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             let body_preview: String = body_json.chars().take(1024).collect();
-            eprintln!(
+            self.log_line(&format!(
                 "[openai_send] status={} body_len={} body_preview={}",
                 status,
                 text.len(),
                 body_preview
-            );
-            eprintln!("[openai_send] response_body={}", text);
+            ));
+            self.log_line(&format!("[openai_send] response_body={}", text));
             return Err(format!("API error {}: {}", status, text));
         }
 
@@ -268,31 +302,6 @@ impl OpenAiClient {
                     }
                 }
             }
-        }
-        Ok(())
-    }
-
-    async fn process_sse_body(&self, app_handle: &AppHandle, body: &str) -> Result<(), String> {
-        let mut full_content = String::new();
-        let mut tool_calls: Vec<ToolCall> = Vec::new();
-        let mut saw_data = false;
-
-        for raw_line in body.lines() {
-            let line = raw_line.trim();
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-            if let Some(data) = strip_sse_data_prefix(line) {
-                saw_data = true;
-                let done = self.handle_sse_data(app_handle, data, &mut full_content, &mut tool_calls).await?;
-                if done {
-                    return Ok(());
-                }
-            }
-        }
-
-        if !saw_data {
-            return Err("OpenAI stream response missing data".to_string());
         }
         Ok(())
     }
@@ -420,6 +429,10 @@ impl OpenAiClient {
             tool_call_id: None,
         });
     }
+
+    fn log_line(&self, message: &str) {
+        let _ = append_log_line(&self.log_path, message);
+    }
 }
 
 fn emit_cancelled_event(app_handle: &AppHandle) {
@@ -471,168 +484,28 @@ fn strip_sse_data_prefix(line: &str) -> Option<&str> {
         .map(|value| value.trim_start())
 }
 
-fn should_use_raw_http(url: &Url) -> bool {
-    if url.scheme() != "http" {
-        return false;
-    }
-    matches!(url.host_str(), Some("localhost") | Some("127.0.0.1") | Some("::1"))
-}
-
-struct RawHttpResponse {
-    status: u16,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
-}
-
-async fn raw_http_request_with_timeout(
-    method: &str,
-    url: &Url,
-    body: Option<&str>,
-    api_key: &str,
-    cancel_rx: &mut watch::Receiver<u64>,
-    start_seq: u64,
-) -> Result<RawHttpResponse, String> {
-    let host = url
-        .host_str()
-        .ok_or_else(|| "openai http missing host".to_string())?;
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| "openai http missing port".to_string())?;
-    let addr = format!("{}:{}", host, port);
-    let path = match url.query() {
-        Some(query) => format!("{}?{}", url.path(), query),
-        None => url.path().to_string(),
-    };
-
-    let mut stream = timeout(OPENAI_HTTP_CONNECT_TIMEOUT, TcpStream::connect(&addr))
-        .await
-        .map_err(|_| "openai http connect timed out".to_string())?
-        .map_err(|err| err.to_string())?;
-
-    let host_header = if (url.scheme() == "http" && port == 80)
-        || (url.scheme() == "https" && port == 443)
-    {
-        host.to_string()
-    } else {
-        format!("{}:{}", host, port)
-    };
-
-    let mut request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {host_header}\r\nAccept: */*\r\nConnection: close\r\n"
-    );
-    if !api_key.is_empty() {
-        request.push_str(&format!("Authorization: Bearer {}\r\n", api_key));
-    }
-    if let Some(body) = body {
-        request.push_str("Content-Type: application/json\r\n");
-        request.push_str(&format!("Content-Length: {}\r\n", body.len()));
-        request.push_str("\r\n");
-        request.push_str(body);
-    } else {
-        request.push_str("\r\n");
-    }
-
-    timeout(OPENAI_HTTP_IO_TIMEOUT, stream.write_all(request.as_bytes()))
-        .await
-        .map_err(|_| "openai http write timed out".to_string())?
-        .map_err(|err| err.to_string())?;
-
-    let buffer = read_to_end_with_cancel(&mut stream, cancel_rx, start_seq).await?;
-    let (status, headers, body) = parse_http_response_bytes(&buffer)?;
-    Ok(RawHttpResponse { status, headers, body })
-}
-
-async fn read_to_end_with_cancel(
-    stream: &mut TcpStream,
-    cancel_rx: &mut watch::Receiver<u64>,
-    start_seq: u64,
-) -> Result<Vec<u8>, String> {
-    let mut buffer = Vec::new();
-    let mut chunk = vec![0u8; 8192];
-    loop {
-        tokio::select! {
-            _ = cancel_rx.changed() => {
-                if *cancel_rx.borrow() != start_seq {
-                    return Err(OPENAI_RAW_CANCELLED.to_string());
-                }
-            }
-            read_res = timeout(OPENAI_HTTP_IO_TIMEOUT, stream.read(&mut chunk)) => {
-                let read_res = read_res.map_err(|_| "openai http read timed out".to_string())?;
-                let n = read_res.map_err(|err| err.to_string())?;
-                if n == 0 {
-                    break;
-                }
-                buffer.extend_from_slice(&chunk[..n]);
-            }
-        }
-    }
-    Ok(buffer)
-}
-
-fn parse_http_response_bytes(bytes: &[u8]) -> Result<(u16, HashMap<String, String>, Vec<u8>), String> {
-    let header_end = bytes
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or_else(|| "openai http response missing header".to_string())?;
-    let head = String::from_utf8_lossy(&bytes[..header_end]);
-    let body_bytes = &bytes[(header_end + 4)..];
-    let mut lines = head.lines();
-    let status = lines
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|code| code.parse::<u16>().ok())
-        .unwrap_or(0);
-    let mut headers = HashMap::new();
-    for line in lines {
-        if let Some((name, value)) = line.split_once(':') {
-            headers.insert(name.trim().to_lowercase(), value.trim().to_string());
-        }
-    }
-    let body = if headers
-        .get("transfer-encoding")
-        .map(|value| value.to_lowercase().contains("chunked"))
-        .unwrap_or(false)
-    {
-        decode_chunked_body(body_bytes)?
-    } else {
-        body_bytes.to_vec()
-    };
-    Ok((status, headers, body))
-}
-
-fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>, String> {
-    let mut output = Vec::new();
-    let mut index = 0usize;
-    while index < body.len() {
-        let line_end = find_crlf(body, index)
-            .ok_or_else(|| "openai http chunked response missing size line".to_string())?;
-        let line = String::from_utf8_lossy(&body[index..line_end]);
-        let size_str = line.split(';').next().unwrap_or("").trim();
-        let size = usize::from_str_radix(size_str, 16)
-            .map_err(|_| "openai http chunked size parse failed".to_string())?;
-        index = line_end + 2;
-        if size == 0 {
-            break;
-        }
-        if index + size > body.len() {
-            return Err("openai http chunked body truncated".to_string());
-        }
-        output.extend_from_slice(&body[index..index + size]);
-        index += size;
-        if index + 2 > body.len() || &body[index..index + 2] != b"\r\n" {
-            return Err("openai http chunked body missing terminator".to_string());
-        }
-        index += 2;
-    }
-    Ok(output)
-}
-
-fn find_crlf(body: &[u8], start: usize) -> Option<usize> {
-    body[start..]
-        .windows(2)
-        .position(|window| window == b"\r\n")
-        .map(|offset| start + offset)
+fn build_http_client() -> Result<Client, reqwest::Error> {
+    Client::builder()
+        .http1_only()
+        .redirect(Policy::none())
+        .pool_max_idle_per_host(0)
+        .build()
 }
 
 // Global client state
 pub struct OpenAiClientState(pub Mutex<Option<Arc<OpenAiClient>>>);
+
+fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| err.to_string())?;
+    let ts = format_rfc3339(SystemTime::now()).to_string();
+    writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn log_to_path(path: &Path, message: &str) {
+    let _ = append_log_line(path, message);
+}

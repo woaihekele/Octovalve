@@ -228,7 +228,6 @@ fn main() {
             if proxy_status.present {
                 let proxy_path = PathBuf::from(proxy_status.path.clone());
                 if let Err(err) = start_console(&app_handle, &proxy_path, &app_log) {
-                    eprintln!("failed to start console sidecar: {err}");
                     let _ = append_log_line(&app_log, &format!("console start failed: {err}"));
                 }
             } else {
@@ -359,7 +358,7 @@ fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result
         {
             Ok(file) => file,
             Err(err) => {
-                eprintln!("failed to open console log: {err}");
+                let _ = append_log_line(&app_log, &format!("failed to open console log: {err}"));
                 return;
             }
         };
@@ -1794,15 +1793,22 @@ async fn acp_start(
     cwd: String,
     codex_acp_path: Option<String>,
 ) -> Result<AcpInitResponse, String> {
-    eprintln!("[acp_start] called with cwd: {}", cwd);
+    let log_path = app.state::<AppLogState>().app_log.clone();
+    let _ = append_log_line(&log_path, &format!("[acp_start] called with cwd: {}", cwd));
 
     let codex_acp_path = match resolve_codex_acp_path(&app, codex_acp_path.as_deref()) {
         Ok(path) => {
-            eprintln!("[acp_start] codex_acp_path resolved: {:?}", path);
+            let _ = append_log_line(
+                &log_path,
+                &format!("[acp_start] codex_acp_path resolved: {:?}", path),
+            );
             path
         }
         Err(e) => {
-            eprintln!("[acp_start] failed to resolve codex_acp_path: {}", e);
+            let _ = append_log_line(
+                &log_path,
+                &format!("[acp_start] failed to resolve codex_acp_path: {}", e),
+            );
             return Err(e);
         }
     };
@@ -1811,29 +1817,39 @@ async fn acp_start(
     {
         let mut guard = state.0.lock().unwrap();
         if let Some(mut client) = guard.take() {
-            eprintln!("[acp_start] stopping existing client");
+            let _ = append_log_line(&log_path, "[acp_start] stopping existing client");
             client.stop();
         }
     }
 
     // Start new client in blocking task
-    eprintln!("[acp_start] starting new client...");
+    let _ = append_log_line(&log_path, "[acp_start] starting new client...");
     let app_clone = app.clone();
+    let log_path_clone = log_path.clone();
     let result = tokio::task::spawn_blocking(move || {
-        eprintln!("[acp_start] spawn_blocking: calling AcpClient::start");
+        let _ = append_log_line(
+            &log_path_clone,
+            "[acp_start] spawn_blocking: calling AcpClient::start",
+        );
         let client = AcpClient::start(&codex_acp_path, app_clone)?;
-        eprintln!("[acp_start] spawn_blocking: client started, calling initialize");
+        let _ = append_log_line(
+            &log_path_clone,
+            "[acp_start] spawn_blocking: client started, calling initialize",
+        );
         let init_result = client.initialize()?;
-        eprintln!("[acp_start] spawn_blocking: initialize done");
+        let _ = append_log_line(
+            &log_path_clone,
+            "[acp_start] spawn_blocking: initialize done",
+        );
         Ok::<_, acp_client::AcpError>((client, init_result))
     })
     .await
     .map_err(|e| {
-        eprintln!("[acp_start] task error: {}", e);
+        let _ = append_log_line(&log_path, &format!("[acp_start] task error: {}", e));
         format!("Task error: {}", e)
     })?
     .map_err(|e| {
-        eprintln!("[acp_start] ACP error: {}", e);
+        let _ = append_log_line(&log_path, &format!("[acp_start] ACP error: {}", e));
         e.to_string()
     })?;
     let (client, init_result) = result;
@@ -1844,9 +1860,12 @@ async fn acp_start(
         *guard = Some(client);
     }
 
-    eprintln!(
-        "[acp_start] success, agent_info: {:?}, auth_methods: {:?}",
-        init_result.agent_info, init_result.auth_methods
+    let _ = append_log_line(
+        &log_path,
+        &format!(
+            "[acp_start] success, agent_info: {:?}, auth_methods: {:?}",
+            init_result.agent_info, init_result.auth_methods
+        ),
     );
     Ok(AcpInitResponse {
         agent_info: init_result.agent_info,
@@ -1890,18 +1909,22 @@ fn acp_load_session(
 #[tauri::command]
 fn acp_prompt(
     state: State<'_, AcpClientState>,
+    log_state: State<'_, AppLogState>,
     content: String,
     context: Option<Vec<ContextItem>>,
 ) -> Result<(), String> {
-    eprintln!("[acp_prompt] called with content: {}", content);
+    let _ = append_log_line(
+        &log_state.app_log,
+        &format!("[acp_prompt] called with content: {}", content),
+    );
     let guard = state.0.lock().unwrap();
     let client = guard.as_ref().ok_or("ACP client not started")?;
-    eprintln!("[acp_prompt] calling client.prompt...");
+    let _ = append_log_line(&log_state.app_log, "[acp_prompt] calling client.prompt...");
     client.prompt(&content, context).map_err(|e| {
-        eprintln!("[acp_prompt] error: {}", e);
+        let _ = append_log_line(&log_state.app_log, &format!("[acp_prompt] error: {}", e));
         e.to_string()
     })?;
-    eprintln!("[acp_prompt] done");
+    let _ = append_log_line(&log_state.app_log, "[acp_prompt] done");
     Ok(())
 }
 
@@ -1938,18 +1961,79 @@ async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
 #[tauri::command]
 async fn openai_init(
     state: State<'_, OpenAiClientState>,
+    log_state: State<'_, AppLogState>,
     config: OpenAiConfig,
 ) -> Result<(), String> {
-    eprintln!(
-        "[openai_init] base_url={} chat_path={} model={} api_key_len={}",
-        config.base_url,
-        config.chat_path,
-        config.model,
-        config.api_key.len()
+    let http_proxy = env_flag("HTTP_PROXY");
+    let https_proxy = env_flag("HTTPS_PROXY");
+    let all_proxy = env_flag("ALL_PROXY");
+    let no_proxy = std::env::var("NO_PROXY").unwrap_or_default();
+    let no_proxy_has_localhost = no_proxy
+        .split(',')
+        .any(|value| matches!(value.trim(), "localhost" | "127.0.0.1" | "::1"));
+    let no_proxy_status = if no_proxy.is_empty() {
+        "unset".to_string()
+    } else {
+        format!("set(len={})", no_proxy.len())
+    };
+    let http_proxy_lower = env_flag("http_proxy");
+    let https_proxy_lower = env_flag("https_proxy");
+    let all_proxy_lower = env_flag("all_proxy");
+    let no_proxy_lower = std::env::var("no_proxy").unwrap_or_default();
+    let no_proxy_lower_has_localhost = no_proxy_lower
+        .split(',')
+        .any(|value| matches!(value.trim(), "localhost" | "127.0.0.1" | "::1"));
+    let no_proxy_lower_status = if no_proxy_lower.is_empty() {
+        "unset".to_string()
+    } else {
+        format!("set(len={})", no_proxy_lower.len())
+    };
+    let _ = append_log_line(
+        &log_state.app_log,
+        &format!(
+            "[openai_init] base_url={} chat_path={} model={} api_key_len={}",
+            config.base_url,
+            config.chat_path,
+            config.model,
+            config.api_key.len()
+        ),
+    );
+    let _ = append_log_line(
+        &log_state.app_log,
+        &format!(
+            "[openai_init] env HTTP_PROXY={} HTTPS_PROXY={} ALL_PROXY={} NO_PROXY={} NO_PROXY_has_localhost={}",
+            http_proxy,
+            https_proxy,
+            all_proxy,
+            no_proxy_status,
+            no_proxy_has_localhost
+        ),
+    );
+    let _ = append_log_line(
+        &log_state.app_log,
+        &format!(
+            "[openai_init] env http_proxy={} https_proxy={} all_proxy={} no_proxy={} no_proxy_has_localhost={}",
+            http_proxy_lower,
+            https_proxy_lower,
+            all_proxy_lower,
+            no_proxy_lower_status,
+            no_proxy_lower_has_localhost
+        ),
     );
     let mut guard = state.0.lock().await;
-    *guard = Some(std::sync::Arc::new(OpenAiClient::new(config)));
+    *guard = Some(std::sync::Arc::new(OpenAiClient::new(
+        config,
+        log_state.app_log.clone(),
+    )));
     Ok(())
+}
+
+fn env_flag(key: &str) -> String {
+    match std::env::var(key) {
+        Ok(value) if value.is_empty() => "empty".to_string(),
+        Ok(value) => format!("set(len={})", value.len()),
+        Err(_) => "unset".to_string(),
+    }
 }
 
 #[tauri::command]

@@ -1,14 +1,18 @@
 //! ACP client for managing codex-acp subprocess and protocol communication.
 
 use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
+use humantime::format_rfc3339;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 
 use crate::acp_types::*;
@@ -58,6 +62,7 @@ pub struct AcpClient {
     pending_requests: PendingRequests,
     session_id: Mutex<Option<String>>,
     init_result: Mutex<Option<InitializeResult>>,
+    app_handle: AppHandle,
 }
 
 impl AcpClient {
@@ -84,8 +89,9 @@ impl AcpClient {
 
         // Spawn reader thread
         let pending_clone = pending_requests.clone();
+        let app_handle_clone = app_handle.clone();
         let reader_handle = std::thread::spawn(move || {
-            Self::read_loop(stdout, pending_clone, app_handle);
+            Self::read_loop(stdout, pending_clone, app_handle_clone);
         });
         Ok(Self {
             process,
@@ -95,18 +101,19 @@ impl AcpClient {
             pending_requests,
             session_id: Mutex::new(None),
             init_result: Mutex::new(None),
+            app_handle,
         })
     }
 
     /// Read loop for processing messages from codex-acp
     fn read_loop(stdout: ChildStdout, pending: PendingRequests, app_handle: AppHandle) {
-        eprintln!("[ACP reader] starting read loop");
+        log_line(&app_handle, "[ACP reader] starting read loop");
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("[ACP reader] read error: {}", e);
+                    log_line(&app_handle, &format!("[ACP reader] read error: {}", e));
                     break;
                 }
             };
@@ -115,29 +122,38 @@ impl AcpClient {
                 continue;
             }
 
-            eprintln!(
-                "[ACP reader] received line: {}",
-                &line[..line.len().min(200)]
+            log_line(
+                &app_handle,
+                &format!(
+                    "[ACP reader] received line: {}",
+                    &line[..line.len().min(200)]
+                ),
             );
 
             let message: AcpMessage = match serde_json::from_str(&line) {
                 Ok(m) => m,
                 Err(e) => {
-                    eprintln!("[ACP reader] parse error: {}", e);
+                    log_line(&app_handle, &format!("[ACP reader] parse error: {}", e));
                     continue;
                 }
             };
 
             match message {
                 AcpMessage::Notification(notification) => {
-                    eprintln!(
-                        "[ACP reader] parsed as Notification: {}",
-                        notification.method
+                    log_line(
+                        &app_handle,
+                        &format!(
+                            "[ACP reader] parsed as Notification: {}",
+                            notification.method
+                        ),
                     );
                     Self::handle_notification(&app_handle, &notification);
                 }
                 AcpMessage::Response(response) => {
-                    eprintln!("[ACP reader] parsed as Response, id: {:?}", response.id);
+                    log_line(
+                        &app_handle,
+                        &format!("[ACP reader] parsed as Response, id: {:?}", response.id),
+                    );
                     if let Some(id) = response.id {
                         let mut pending_guard = pending.lock().unwrap();
                         if let Some(sender) = pending_guard.remove(&id) {
@@ -152,16 +168,25 @@ impl AcpClient {
                             // Emit as completion event
                             if let Some(result) = &response.result {
                                 if let Some(stop_reason) = result.get("stopReason") {
-                                    eprintln!(
-                                        "[ACP reader] emitting completion event: {:?}",
-                                        stop_reason
+                                    log_line(
+                                        &app_handle,
+                                        &format!(
+                                            "[ACP reader] emitting completion event: {:?}",
+                                            stop_reason
+                                        ),
                                     );
                                     let event = AcpEvent {
                                         event_type: "prompt/complete".to_string(),
                                         payload: result.clone(),
                                     };
                                     if let Err(e) = app_handle.emit("acp-event", &event) {
-                                        eprintln!("[ACP] Failed to emit completion event: {}", e);
+                                        log_line(
+                                            &app_handle,
+                                            &format!(
+                                                "[ACP] Failed to emit completion event: {}",
+                                                e
+                                            ),
+                                        );
                                     }
                                 }
                             }
@@ -174,13 +199,16 @@ impl AcpClient {
 
     /// Handle incoming notifications from codex-acp
     fn handle_notification(app_handle: &AppHandle, notification: &JsonRpcNotification) {
-        eprintln!("[ACP] Emitting notification: {}", notification.method);
+        log_line(
+            app_handle,
+            &format!("[ACP] Emitting notification: {}", notification.method),
+        );
         let event = AcpEvent {
             event_type: notification.method.clone(),
             payload: notification.params.clone().unwrap_or(Value::Null),
         };
         if let Err(e) = app_handle.emit("acp-event", &event) {
-            eprintln!("[ACP] Failed to emit event: {}", e);
+            log_line(app_handle, &format!("[ACP] Failed to emit event: {}", e));
         }
     }
 
@@ -339,13 +367,34 @@ impl AcpClient {
 
     /// Stop the codex-acp process
     pub fn stop(&mut self) {
-        eprintln!("[ACP] stop: killing process");
+        log_line(&self.app_handle, "[ACP] stop: killing process");
         let _ = self.process.kill();
         // Don't wait for reader thread - it will exit when stdout closes
         // Just detach it by taking the handle
         let _ = self.reader_handle.take();
-        eprintln!("[ACP] stop: done");
+        log_line(&self.app_handle, "[ACP] stop: done");
     }
+}
+
+fn log_line(app_handle: &AppHandle, message: &str) {
+    let Ok(config_dir) = app_handle.path().app_config_dir() else {
+        return;
+    };
+    let logs_dir = config_dir.join("logs");
+    let _ = fs::create_dir_all(&logs_dir);
+    let log_path = logs_dir.join("app.log");
+    let _ = append_log_line(&log_path, message);
+}
+
+fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| err.to_string())?;
+    let ts = format_rfc3339(SystemTime::now()).to_string();
+    writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 impl Drop for AcpClient {
