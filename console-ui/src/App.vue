@@ -11,17 +11,15 @@ import {
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from './api';
-import { NButton, NConfigProvider, NNotificationProvider, NTabPane, NTabs, darkTheme } from 'naive-ui';
-import { ChatPanel, useChatStore } from './chat';
+import { NConfigProvider, NNotificationProvider, darkTheme } from 'naive-ui';
+import { useChatStore } from './chat';
 import { storeToRefs } from 'pinia';
 import type { AuthMethod } from './chat/services/acpService';
 import { matchesShortcut } from './shortcuts';
-import Sidebar from './components/Sidebar.vue';
-import TerminalPanel from './components/TerminalPanel.vue';
-import TargetView from './components/TargetView.vue';
+import ConsoleChatPane from './components/ConsoleChatPane.vue';
+import ConsoleLeftPane from './components/ConsoleLeftPane.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NotificationBridge from './components/NotificationBridge.vue';
-import ChatHistoryModal from './chat/components/ChatHistoryModal.vue';
 import { loadSettings, saveSettings } from './settings';
 import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from './types';
 import { useAiRiskQueue } from './composables/useAiRiskQueue';
@@ -541,135 +539,56 @@ watch(
           data-tauri-drag-region
         ></div>
 
-        <Sidebar
+        <ConsoleLeftPane
           :targets="targets"
           :selected-target-name="selectedTargetName"
           :pending-total="pendingTotal"
           :connection-state="connectionState"
-          @select="selectedTargetName = $event"
+          :selected-target="selectedTarget"
+          :selected-snapshot="selectedSnapshot"
+          :settings="settings"
+          :pending-jump-token="pendingJumpToken"
+          :selected-terminal-open="selectedTerminalOpen"
+          :is-chat-open="isChatOpen"
+          :ai-risk-map="aiRiskMap"
+          :ai-enabled="settings.ai.enabled"
+          :selected-terminal-entry="selectedTerminalEntry"
+          :active-terminal-tab-id="activeTerminalTabId"
+          :terminal-entries="terminalEntries"
+          :resolved-theme="resolvedTheme"
+          @select-target="selectedTargetName = $event"
           @open-settings="isSettingsOpen = true"
+          @toggle-chat="isChatOpen = !isChatOpen"
+          @approve="approve"
+          @deny="deny"
+          @refresh-risk="refreshAiRisk"
+          @open-terminal="openSelectedTerminal"
+          @close-terminal="closeSelectedTerminal"
+          @terminal-add="handleAddTerminalTab"
+          @terminal-close="handleCloseTerminalTab"
+          @terminal-activate="handleActivateTerminalTab"
         />
 
-        <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden">
-          <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
-            <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
-              <span
-                v-if="connectionState === 'disconnected'"
-                class="text-xs px-2 py-1 rounded border bg-danger/20 text-danger border-danger/30"
-              >
-                console 异常，请重启
-              </span>
-
-              <!-- Chat toggle button -->
-              <button
-                v-if="!selectedTarget"
-                class="p-2 rounded border transition-colors bg-panel/60 text-foreground border-border hover:border-accent/40"
-                @click="isChatOpen = !isChatOpen"
-                :aria-label="isChatOpen ? '收起 AI 助手' : '展开 AI 助手'"
-                :title="isChatOpen ? '收起 AI 助手' : '展开 AI 助手'"
-              >
-                <svg
-                  class="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path v-if="!isChatOpen" d="M10 6l6 6-6 6" />
-                  <path v-else d="M14 6l-6 6 6 6" />
-                </svg>
-              </button>
-            </div>
-
-          <div class="flex-1 min-h-0">
-            <TargetView
-              v-if="selectedTarget"
-              :target="selectedTarget"
-              :snapshot="selectedSnapshot"
-              :settings="settings"
-              :pending-jump-token="pendingJumpToken"
-              :terminal-open="selectedTerminalOpen"
-              :chat-open="isChatOpen"
-              :ai-risk-map="aiRiskMap"
-              :ai-enabled="settings.ai.enabled"
-              @approve="approve"
-              @deny="deny"
-              @refresh-risk="refreshAiRisk"
-              @open-terminal="openSelectedTerminal"
-              @close-terminal="closeSelectedTerminal"
-              @toggle-chat="isChatOpen = !isChatOpen"
-            >
-              <template #terminal>
-                <div class="flex flex-col min-h-0 h-full">
-                <div v-if="selectedTerminalEntry" class="pt-1 pb-0 bg-surface">
-                    <n-tabs
-                      :value="activeTerminalTabId"
-                      type="card"
-                      size="small"
-                      addable
-                      closable
-                      class="min-w-0 terminal-tabs"
-                      @add="handleAddTerminalTab"
-                      @close="handleCloseTerminalTab"
-                      @update:value="handleActivateTerminalTab"
-                    >
-                      <n-tab-pane
-                        v-for="tab in selectedTerminalEntry.state.tabs"
-                        :key="tab.id"
-                        :name="tab.id"
-                        :tab="tab.label"
-                        closable
-                      />
-                    </n-tabs>
-                  </div>
-                  <div class="flex-1 min-h-0 relative">
-                    <template v-for="entry in terminalEntries" :key="entry.target.name">
-                      <TerminalPanel
-                        v-for="tab in entry.state.tabs"
-                        :key="tab.id"
-                        :target="entry.target"
-                        :theme="resolvedTheme"
-                        :visible="
-                          selectedTerminalOpen &&
-                          selectedTargetName === entry.target.name &&
-                          entry.state.activeId === tab.id
-                        "
-                        v-show="
-                          selectedTerminalOpen &&
-                          selectedTargetName === entry.target.name &&
-                          entry.state.activeId === tab.id
-                        "
-                      />
-                    </template>
-                  </div>
-                </div>
-              </template>
-            </TargetView>
-            <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
-              请选择目标开始操作。
-            </div>
-          </div>
-
-          </div>
-
-          <ChatPanel
-            :is-open="isChatOpen"
-            :messages="chatMessages"
-            :is-streaming="chatIsStreaming"
-            :is-connected="chatIsConnected"
-            :provider="settings.chat.provider"
-            title="AI 助手"
-            greeting="你好，我是 AI 助手"
-            @send="handleChatSend"
-            @cancel="handleChatCancel"
-            @show-history="handleChatShowHistory"
-            @new-session="handleChatNewSession"
-            @clear="handleChatClear"
-            @change-provider="handleChangeProvider"
-          />
-        </div>
+        <ConsoleChatPane
+          :is-chat-open="isChatOpen"
+          :messages="chatMessages"
+          :is-streaming="chatIsStreaming"
+          :is-connected="chatIsConnected"
+          :provider="settings.chat.provider"
+          :is-history-open="isChatHistoryOpen"
+          :openai-sessions="openaiSessions"
+          :active-session-id="chatStore.activeSessionId"
+          @send="handleChatSend"
+          @cancel="handleChatCancel"
+          @show-history="handleChatShowHistory"
+          @new-session="handleChatNewSession"
+          @clear="handleChatClear"
+          @change-provider="handleChangeProvider"
+          @close-history="isChatHistoryOpen = false"
+          @select-session="(id) => { chatStore.setActiveSession(id); isChatHistoryOpen = false; }"
+          @delete-session="(id) => chatStore.deleteSessionForProvider(id, 'openai')"
+          @clear-sessions="() => chatStore.clearSessionsForProvider('openai')"
+        />
 
         <SettingsModal
           :is-open="isSettingsOpen"
@@ -679,15 +598,6 @@ watch(
           @save="handleSettingsSave"
         />
 
-        <ChatHistoryModal
-          :show="isChatHistoryOpen"
-          :sessions="openaiSessions"
-          :active-session-id="chatStore.activeSessionId"
-          @close="isChatHistoryOpen = false"
-          @select="(id) => { chatStore.setActiveSession(id); isChatHistoryOpen = false; }"
-          @delete="(id) => chatStore.deleteSessionForProvider(id, 'openai')"
-          @clear-all="() => chatStore.clearSessionsForProvider('openai')"
-        />
       </div>
     </n-notification-provider>
   </n-config-provider>
