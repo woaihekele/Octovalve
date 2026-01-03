@@ -4,7 +4,7 @@ import { NButton, NSelect, NSpin } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import MonacoEditor from '../MonacoEditor.vue';
 import type { ConfigFilePayload } from '../../../shared/types';
-import type { ResolvedTheme } from '../../theme';
+import type { ResolvedTheme } from '../../../shared/theme';
 
 const props = defineProps<{
   configLoading: boolean;

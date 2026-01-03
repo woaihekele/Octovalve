@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NButton, NInput, NInputNumber, NSelect, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
-import { DEFAULT_SETTINGS } from '../../settings';
+import { DEFAULT_SETTINGS } from '../../../services/settings';
 import type { AppSettings } from '../../../shared/types';
 
 const props = defineProps<{

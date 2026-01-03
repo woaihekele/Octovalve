@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { NButton, NInput } from 'naive-ui';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../../../shared/shortcuts';
-import { DEFAULT_SETTINGS } from '../../settings';
+import { DEFAULT_SETTINGS } from '../../../services/settings';
 import type { AppSettings } from '../../../shared/types';
 
 const props = defineProps<{
