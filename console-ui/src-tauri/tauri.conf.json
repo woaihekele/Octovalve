@@ -61,7 +61,6 @@
         "minHeight": 640,
         "transparent": true,
         "titleBarStyle": "Overlay",
-        "theme": "Dark",
         "hiddenTitle": true,
         "devtools": true
       }
