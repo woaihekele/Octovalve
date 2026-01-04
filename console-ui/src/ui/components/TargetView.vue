@@ -435,6 +435,13 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <div class="text-sm text-foreground-muted">{{ props.target.desc }}</div>
+          <div
+            v-if="props.target.last_error"
+            class="text-xs text-danger mt-1 max-w-[520px] truncate"
+            :title="props.target.last_error"
+          >
+            {{ props.target.last_error }}
+          </div>
         </div>
       </div>
       <div class="flex items-center gap-2">
@@ -501,8 +508,12 @@ onBeforeUnmount(() => {
             stroke-linecap="round"
             stroke-linejoin="round"
           >
-            <path v-if="!props.chatOpen" d="M10 6l6 6-6 6" />
-            <path v-else d="M14 6l-6 6 6 6" />
+            <line x1="12" y1="3" x2="12" y2="6" />
+            <circle cx="12" cy="3" r="1" />
+            <rect x="4" y="6" width="16" height="12" rx="3" />
+            <circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <line x1="9" y1="15" x2="15" y2="15" />
           </svg>
         </button>
       </div>
