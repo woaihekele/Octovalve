@@ -44,6 +44,21 @@ function resetPrompt() {
         </div>
       </div>
 
+      <div class="ai-field">
+        <div>
+          <div class="text-sm font-medium">低风险自动批准</div>
+          <div class="text-xs text-foreground-muted">风险为 low 时自动调用批准</div>
+        </div>
+        <div class="ai-control ai-control--switch">
+          <NSwitch
+            :value="props.settings.autoApproveLowRisk"
+            size="small"
+            :disabled="!props.settings.enabled"
+            @update:value="(v) => updateField('autoApproveLowRisk', v)"
+          />
+        </div>
+      </div>
+
       <div class="space-y-3">
         <div class="ai-field">
           <div>

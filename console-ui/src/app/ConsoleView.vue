@@ -397,6 +397,67 @@ const { aiRiskMap, enqueueAiTask, processAiQueue, scheduleAiForSnapshot } = useA
   onError: reportUiError,
 });
 
+const autoApprovedLowRisk = new Set<string>();
+let autoApproveLowRiskScheduled = false;
+
+function isAutoApproveLowRiskEnabled() {
+  return settings.value.ai.enabled && settings.value.ai.autoApproveLowRisk;
+}
+
+function autoApproveKey(targetName: string, requestId: string) {
+  return `${targetName}:${requestId}`;
+}
+
+function resetAutoApproveLowRisk() {
+  autoApprovedLowRisk.clear();
+  autoApproveLowRiskScheduled = false;
+}
+
+function scheduleAutoApproveLowRisk() {
+  if (!isAutoApproveLowRiskEnabled()) {
+    return;
+  }
+  if (autoApproveLowRiskScheduled) {
+    return;
+  }
+  autoApproveLowRiskScheduled = true;
+  Promise.resolve().then(() => {
+    autoApproveLowRiskScheduled = false;
+    void processAutoApproveLowRisk();
+  });
+}
+
+async function processAutoApproveLowRisk() {
+  if (!isAutoApproveLowRiskEnabled()) {
+    return;
+  }
+  const pendingKeys = new Set<string>();
+  for (const [targetName, snapshot] of Object.entries(snapshots.value)) {
+    const queue = snapshot?.queue ?? [];
+    for (const request of queue) {
+      const key = autoApproveKey(targetName, request.id);
+      pendingKeys.add(key);
+      if (autoApprovedLowRisk.has(key)) {
+        continue;
+      }
+      const entry = aiRiskMap.value[key];
+      if (!entry || entry.status !== 'done' || entry.risk !== 'low') {
+        continue;
+      }
+      autoApprovedLowRisk.add(key);
+      void approveCommand(targetName, request.id).catch((err) => {
+        autoApprovedLowRisk.delete(key);
+        reportUiError('auto approve low risk failed', err);
+      });
+    }
+  }
+  for (const key of Array.from(autoApprovedLowRisk)) {
+    if (!pendingKeys.has(key)) {
+      autoApprovedLowRisk.delete(key);
+    }
+  }
+}
+
 function scheduleAiForAllTargets() {
   if (!settings.value.ai.enabled) {
     return;
@@ -806,10 +867,26 @@ watch(
     if (value.enabled && (!previous?.enabled || previous?.apiKey !== value.apiKey)) {
       scheduleAiForAllTargets();
     }
+    const autoApproveEnabled = value.enabled && value.autoApproveLowRisk;
+    const previousAutoApproveEnabled = Boolean(previous?.enabled && previous?.autoApproveLowRisk);
+    if (autoApproveEnabled && !previousAutoApproveEnabled) {
+      scheduleAutoApproveLowRisk();
+    }
+    if (!autoApproveEnabled) {
+      resetAutoApproveLowRisk();
+    }
     processAiQueue();
   },
   { deep: true }
 );
+
+watch(aiRiskMap, () => {
+  scheduleAutoApproveLowRisk();
+});
+
+watch(snapshots, () => {
+  scheduleAutoApproveLowRisk();
+});
 
 watch(
   () => settings.value.theme,

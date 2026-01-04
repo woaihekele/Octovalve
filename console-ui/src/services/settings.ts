@@ -22,6 +22,7 @@ const DEFAULT_AI_PROMPT = [
 
 const DEFAULT_AI_SETTINGS: AiSettings = {
   enabled: false,
+  autoApproveLowRisk: false,
   provider: 'openai',
   baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
   chatPath: '/chat/completions',
@@ -83,6 +84,7 @@ export function loadSettings(): AppSettings {
       }
       return normalizeShortcut(value) ?? fallback;
     };
+    const normalizeBool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
     const normalizeAiProvider = (value: unknown) => (value === 'openai' ? 'openai' : DEFAULT_AI_SETTINGS.provider);
     const normalizeText = (value: unknown, fallback: string) => (typeof value === 'string' ? value : fallback);
     const normalizeNumber = (value: unknown, fallback: number, min: number, max: number) => {
@@ -111,6 +113,7 @@ export function loadSettings(): AppSettings {
     };
     const normalizedAi: AiSettings = {
       enabled: Boolean(parsedAi.enabled),
+      autoApproveLowRisk: normalizeBool(parsedAi.autoApproveLowRisk, DEFAULT_AI_SETTINGS.autoApproveLowRisk),
       provider: normalizeAiProvider(parsedAi.provider),
       baseUrl: normalizeText(parsedAi.baseUrl, DEFAULT_AI_SETTINGS.baseUrl),
       chatPath: normalizeText(parsedAi.chatPath, DEFAULT_AI_SETTINGS.chatPath),
@@ -123,7 +126,6 @@ export function loadSettings(): AppSettings {
     const parsedChat = (parsed.chat ?? {}) as Partial<ChatProviderConfig>;
     const normalizeChatProvider = (value: unknown): 'openai' | 'acp' =>
       (value === 'openai' || value === 'acp') ? value : DEFAULT_CHAT_SETTINGS.provider;
-    const normalizeBool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
     const parsedOpenai = (parsedChat.openai ?? {}) as Partial<ChatProviderConfig['openai']>;
     const parsedAcp = (parsedChat.acp ?? {}) as Partial<ChatProviderConfig['acp']>;
     const normalizedChat: ChatProviderConfig = {
