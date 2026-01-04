@@ -93,6 +93,7 @@
                   <TerminalPanel
                     v-for="tab in entry.state.tabs"
                     :key="tab.id"
+                    :ref="setTerminalRef(entry.target.name, tab.id)"
                     :target="entry.target"
                     :theme="resolvedTheme"
                     :visible="
@@ -120,6 +121,7 @@
 </template>
 
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue';
 import { NTabPane, NTabs } from 'naive-ui';
 import type { ResolvedTheme } from '../../shared/theme';
 import type { AiRiskEntry, AppSettings, ServiceSnapshot, TargetInfo } from '../../shared/types';
@@ -141,7 +143,7 @@ type TerminalEntry = {
   };
 };
 
-defineProps<{
+const props = defineProps<{
   targets: TargetInfo[];
   selectedTargetName: string | null;
   pendingTotal: number;
@@ -160,6 +162,65 @@ defineProps<{
   terminalEntries: TerminalEntry[];
   resolvedTheme: ResolvedTheme;
 }>();
+
+type TerminalPanelExpose = {
+  focus: () => void;
+  blur: () => void;
+  hasFocus: () => boolean;
+};
+
+const terminalRefMap = new Map<string, TerminalPanelExpose>();
+
+function terminalKey(targetName: string, tabId: string) {
+  return `${targetName}::${tabId}`;
+}
+
+function isTerminalPanelExpose(value: unknown): value is TerminalPanelExpose {
+  return (
+    !!value &&
+    typeof (value as TerminalPanelExpose).focus === 'function' &&
+    typeof (value as TerminalPanelExpose).blur === 'function' &&
+    typeof (value as TerminalPanelExpose).hasFocus === 'function'
+  );
+}
+
+function setTerminalRef(targetName: string, tabId: string) {
+  return (el: Element | ComponentPublicInstance | null) => {
+    const key = terminalKey(targetName, tabId);
+    if (el && isTerminalPanelExpose(el)) {
+      terminalRefMap.set(key, el);
+      return;
+    }
+    terminalRefMap.delete(key);
+  };
+}
+
+function getActiveTerminalRef(): TerminalPanelExpose | null {
+  const entry = props.selectedTerminalEntry;
+  if (!entry || !entry.state.activeId) {
+    return null;
+  }
+  const key = terminalKey(entry.target.name, entry.state.activeId);
+  return terminalRefMap.get(key) ?? null;
+}
+
+function focusActiveTerminal() {
+  getActiveTerminalRef()?.focus();
+}
+
+function blurActiveTerminal() {
+  getActiveTerminalRef()?.blur();
+}
+
+function isActiveTerminalFocused() {
+  return getActiveTerminalRef()?.hasFocus() ?? false;
+}
+
+defineExpose({
+  focusActiveTerminal,
+  blurActiveTerminal,
+  isActiveTerminalFocused,
+});
 
 const emit = defineEmits<{
   (e: 'select-target', value: string): void;

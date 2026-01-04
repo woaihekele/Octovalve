@@ -55,6 +55,14 @@ const startupStatusMessage = ref('');
 const startupError = ref('');
 const booting = ref(false);
 const hasConnected = ref(false);
+const focusConfigToken = ref(0);
+type ConsoleLeftPaneExpose = {
+  focusActiveTerminal: () => void;
+  blurActiveTerminal: () => void;
+  isActiveTerminalFocused: () => boolean;
+};
+const leftPaneRef = ref<ConsoleLeftPaneExpose | null>(null);
+const lastNonTerminalFocus = ref<HTMLElement | null>(null);
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
@@ -273,6 +281,11 @@ function reportUiError(context: string, err?: unknown) {
   void logUiEvent(`${context}${detail}`);
 }
 
+function openSettingsForConfig() {
+  isSettingsOpen.value = true;
+  focusConfigToken.value += 1;
+}
+
 async function startConsoleSession() {
   await refreshTargets();
   void connectWebSocket();
@@ -338,6 +351,9 @@ async function applyStartupProfile() {
       reportUiError('startup config invalid', check.errors.join(' | '));
       connectionState.value = 'disconnected';
       booting.value = false;
+      if (check.needs_setup) {
+        openSettingsForConfig();
+      }
       return;
     }
     startupStatusMessage.value = '正在启动 console...';
@@ -541,7 +557,91 @@ function handleNotificationJump(targetName: string) {
   pendingJumpToken.value += 1;
 }
 
+function isCtrlBackquote(event: KeyboardEvent) {
+  return event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'Backquote';
+}
+
+function isCtrlArrow(event: KeyboardEvent, direction: 'prev' | 'next') {
+  const code = direction === 'prev' ? 'ArrowLeft' : 'ArrowRight';
+  return event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && event.code === code;
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!target) {
+    return false;
+  }
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    return true;
+  }
+  return target instanceof HTMLElement && target.isContentEditable;
+}
+
+function toggleTerminalFocus(): boolean {
+  if (!selectedTerminalOpen.value) {
+    return false;
+  }
+  const pane = leftPaneRef.value;
+  if (!pane) {
+    return false;
+  }
+  if (pane.isActiveTerminalFocused()) {
+    pane.blurActiveTerminal();
+    const last = lastNonTerminalFocus.value;
+    if (last && last.isConnected) {
+      last.focus();
+      return true;
+    }
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      active.blur();
+    }
+    return true;
+  }
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) {
+    lastNonTerminalFocus.value = active;
+  } else {
+    lastNonTerminalFocus.value = null;
+  }
+  pane.focusActiveTerminal();
+  return true;
+}
+
+function switchTerminalSession(direction: 'prev' | 'next'): boolean {
+  const entry = selectedTerminalEntry.value;
+  if (!entry) {
+    return false;
+  }
+  const tabs = entry.state.tabs;
+  if (tabs.length <= 1) {
+    return false;
+  }
+  const activeId = entry.state.activeId ?? tabs[0]?.id;
+  if (!activeId) {
+    return false;
+  }
+  const currentIndex = tabs.findIndex((tab) => tab.id === activeId);
+  if (currentIndex < 0) {
+    return false;
+  }
+  const nextIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+  if (nextIndex < 0 || nextIndex >= tabs.length) {
+    return false;
+  }
+  handleActivateTerminalTab(tabs[nextIndex].id);
+  return true;
+}
+
 function handleGlobalKey(event: KeyboardEvent) {
+  if (isCtrlBackquote(event)) {
+    if (isSettingsOpen.value) {
+      return;
+    }
+    if (toggleTerminalFocus()) {
+      event.preventDefault();
+    }
+    return;
+  }
   if (event.defaultPrevented) {
     return;
   }
@@ -550,10 +650,22 @@ function handleGlobalKey(event: KeyboardEvent) {
     isSettingsOpen.value = true;
     return;
   }
-  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+  if (isEditableTarget(event.target)) {
     return;
   }
   if (isSettingsOpen.value) {
+    return;
+  }
+  if (isCtrlArrow(event, 'prev')) {
+    if (switchTerminalSession('prev')) {
+      event.preventDefault();
+    }
+    return;
+  }
+  if (isCtrlArrow(event, 'next')) {
+    if (switchTerminalSession('next')) {
+      event.preventDefault();
+    }
     return;
   }
   if (matchesShortcut(event, settings.value.shortcuts.prevTarget)) {
@@ -706,6 +818,7 @@ watch(
     ></div>
 
     <ConsoleLeftPane
+      ref="leftPaneRef"
       :targets="targets"
       :selected-target-name="selectedTargetName"
       :pending-total="pendingTotal"
@@ -761,6 +874,7 @@ watch(
       :is-open="isSettingsOpen"
       :settings="settings"
       :resolved-theme="resolvedTheme"
+      :focus-config-token="focusConfigToken"
       @close="isSettingsOpen = false"
       @save="handleSettingsSave"
     />

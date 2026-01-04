@@ -27,6 +27,27 @@ let unlistenError: UnlistenFn | null = null;
 let inputBuffer = '';
 let inputFlushTimer: number | null = null;
 
+function focusTerminal() {
+  const focusable = containerRef.value?.querySelector('textarea');
+  focusable?.focus();
+}
+
+function blurTerminal() {
+  const focusable = containerRef.value?.querySelector('textarea');
+  focusable?.blur();
+}
+
+function hasTerminalFocus() {
+  const active = document.activeElement;
+  return Boolean(active && containerRef.value && active instanceof Node && containerRef.value.contains(active));
+}
+
+defineExpose({
+  focus: focusTerminal,
+  blur: blurTerminal,
+  hasFocus: hasTerminalFocus,
+});
+
 const termName = 'xterm-256color';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
