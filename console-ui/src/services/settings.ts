@@ -1,26 +1,49 @@
-import type { AiSettings, AppSettings, ChatProviderConfig } from '../shared/types';
+import type { AiSettings, AppLanguage, AppSettings, ChatProviderConfig } from '../shared/types';
 import { normalizeShortcut } from '../shared/shortcuts';
 import { normalizeThemeMode } from '../shared/theme';
 
 const SETTINGS_KEY = 'octovalve.console.settings';
-const DEFAULT_AI_PROMPT = [
-  '你是命令风险评估助手。根据给定命令上下文评估风险，仅返回严格 JSON。',
-  '要求：risk 为 low|medium|high；reason 一句话；key_points 为数组(可空)。',
-  '输入:',
-  'target={{target}}',
-  'client={{client}}',
-  'peer={{peer}}',
-  'intent={{intent}}',
-  'mode={{mode}}',
-  'raw_command={{raw_command}}',
-  'pipeline={{pipeline}}',
-  'cwd={{cwd}}',
-  'timeout_ms={{timeout_ms}}',
-  'max_output_bytes={{max_output_bytes}}',
-  '仅输出 JSON，不要输出解释。',
-].join('\n');
+const DEFAULT_LANGUAGE: AppLanguage = 'en-US';
+const DEFAULT_AI_PROMPTS: Record<AppLanguage, string> = {
+  'zh-CN': [
+    '你是命令风险评估助手。根据给定命令上下文评估风险，仅返回严格 JSON。',
+    '要求：risk 为 low|medium|high；reason 一句话；key_points 为数组(可空)。',
+    '输入:',
+    'target={{target}}',
+    'client={{client}}',
+    'peer={{peer}}',
+    'intent={{intent}}',
+    'mode={{mode}}',
+    'raw_command={{raw_command}}',
+    'pipeline={{pipeline}}',
+    'cwd={{cwd}}',
+    'timeout_ms={{timeout_ms}}',
+    'max_output_bytes={{max_output_bytes}}',
+    '仅输出 JSON，不要输出解释。',
+  ].join('\n'),
+  'en-US': [
+    'You are a command risk assessment assistant. Assess risk based on the given command context and return strict JSON only.',
+    'Requirements: risk is low|medium|high; reason is one sentence; key_points is an array (can be empty).',
+    'Input:',
+    'target={{target}}',
+    'client={{client}}',
+    'peer={{peer}}',
+    'intent={{intent}}',
+    'mode={{mode}}',
+    'raw_command={{raw_command}}',
+    'pipeline={{pipeline}}',
+    'cwd={{cwd}}',
+    'timeout_ms={{timeout_ms}}',
+    'max_output_bytes={{max_output_bytes}}',
+    'Output JSON only. No explanations.',
+  ].join('\n'),
+};
 
-const DEFAULT_AI_SETTINGS: AiSettings = {
+export function getDefaultAiPrompt(language: AppLanguage): string {
+  return DEFAULT_AI_PROMPTS[language] ?? DEFAULT_AI_PROMPTS[DEFAULT_LANGUAGE];
+}
+
+const BASE_AI_SETTINGS: Omit<AiSettings, 'prompt'> = {
   enabled: false,
   autoApproveLowRisk: false,
   provider: 'openai',
@@ -28,10 +51,40 @@ const DEFAULT_AI_SETTINGS: AiSettings = {
   chatPath: '/chat/completions',
   model: 'glm-4.7',
   apiKey: '',
-  prompt: DEFAULT_AI_PROMPT,
   timeoutMs: 10000,
   maxConcurrency: 2,
 };
+
+function buildDefaultAiSettings(language: AppLanguage): AiSettings {
+  return {
+    ...BASE_AI_SETTINGS,
+    prompt: getDefaultAiPrompt(language),
+  };
+}
+
+function detectSystemLanguage(): AppLanguage {
+  if (typeof navigator === 'undefined') {
+    return DEFAULT_LANGUAGE;
+  }
+  const language =
+    (Array.isArray(navigator.languages) && navigator.languages[0]) ||
+    navigator.language ||
+    '';
+  if (language.toLowerCase().startsWith('zh')) {
+    return 'zh-CN';
+  }
+  return 'en-US';
+}
+
+function buildDefaultSettings(language: AppLanguage): AppSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    language,
+    ai: buildDefaultAiSettings(language),
+  };
+}
+
+const DEFAULT_AI_SETTINGS: AiSettings = buildDefaultAiSettings(DEFAULT_LANGUAGE);
 
 const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
   provider: 'openai',
@@ -50,6 +103,7 @@ const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
 export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   theme: 'system',
+  language: DEFAULT_LANGUAGE,
   ai: DEFAULT_AI_SETTINGS,
   chat: DEFAULT_CHAT_SETTINGS,
   shortcuts: {
@@ -65,12 +119,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export function loadSettings(): AppSettings {
   if (typeof localStorage === 'undefined') {
-    return DEFAULT_SETTINGS;
+    return buildDefaultSettings(detectSystemLanguage());
   }
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) {
-      return DEFAULT_SETTINGS;
+      return buildDefaultSettings(detectSystemLanguage());
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const parsedShortcuts: Partial<AppSettings['shortcuts']> = parsed.shortcuts ?? {};
@@ -111,17 +165,21 @@ export function loadSettings(): AppSettings {
       fullScreen: normalizeWithFallback(parsedShortcuts.fullScreen, DEFAULT_SETTINGS.shortcuts.fullScreen),
       openSettings: normalizeWithFallback(parsedShortcuts.openSettings, DEFAULT_SETTINGS.shortcuts.openSettings),
     };
+    const normalizeLanguage = (value: unknown, fallback: AppLanguage): AppLanguage =>
+      value === 'en-US' || value === 'zh-CN' ? value : fallback;
+    const normalizedLanguage = normalizeLanguage(parsed.language, detectSystemLanguage());
+    const defaultAiSettings = buildDefaultAiSettings(normalizedLanguage);
     const normalizedAi: AiSettings = {
       enabled: Boolean(parsedAi.enabled),
-      autoApproveLowRisk: normalizeBool(parsedAi.autoApproveLowRisk, DEFAULT_AI_SETTINGS.autoApproveLowRisk),
+      autoApproveLowRisk: normalizeBool(parsedAi.autoApproveLowRisk, defaultAiSettings.autoApproveLowRisk),
       provider: normalizeAiProvider(parsedAi.provider),
-      baseUrl: normalizeText(parsedAi.baseUrl, DEFAULT_AI_SETTINGS.baseUrl),
-      chatPath: normalizeText(parsedAi.chatPath, DEFAULT_AI_SETTINGS.chatPath),
-      model: normalizeText(parsedAi.model, DEFAULT_AI_SETTINGS.model),
-      apiKey: normalizeText(parsedAi.apiKey, DEFAULT_AI_SETTINGS.apiKey),
-      prompt: normalizeText(parsedAi.prompt, DEFAULT_AI_SETTINGS.prompt),
-      timeoutMs: normalizeNumber(parsedAi.timeoutMs, DEFAULT_AI_SETTINGS.timeoutMs, 1000, 60000),
-      maxConcurrency: normalizeNumber(parsedAi.maxConcurrency, DEFAULT_AI_SETTINGS.maxConcurrency, 1, 10),
+      baseUrl: normalizeText(parsedAi.baseUrl, defaultAiSettings.baseUrl),
+      chatPath: normalizeText(parsedAi.chatPath, defaultAiSettings.chatPath),
+      model: normalizeText(parsedAi.model, defaultAiSettings.model),
+      apiKey: normalizeText(parsedAi.apiKey, defaultAiSettings.apiKey),
+      prompt: normalizeText(parsedAi.prompt, defaultAiSettings.prompt),
+      timeoutMs: normalizeNumber(parsedAi.timeoutMs, defaultAiSettings.timeoutMs, 1000, 60000),
+      maxConcurrency: normalizeNumber(parsedAi.maxConcurrency, defaultAiSettings.maxConcurrency, 1, 10),
     };
     const parsedChat = (parsed.chat ?? {}) as Partial<ChatProviderConfig>;
     const normalizeChatProvider = (value: unknown): 'openai' | 'acp' =>
@@ -145,12 +203,13 @@ export function loadSettings(): AppSettings {
       ...DEFAULT_SETTINGS,
       ...parsed,
       theme: normalizeThemeMode(parsed.theme, DEFAULT_SETTINGS.theme),
+      language: normalizedLanguage,
       ai: normalizedAi,
       chat: normalizedChat,
       shortcuts: normalizedShortcuts,
     };
   } catch {
-    return DEFAULT_SETTINGS;
+    return buildDefaultSettings(detectSystemLanguage());
   }
 }
 

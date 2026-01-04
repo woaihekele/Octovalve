@@ -15,11 +15,15 @@
           <div class="chat-panel__header-info">
             <div class="chat-panel__title-row">
               <span class="chat-panel__title-text">{{ title }}</span>
-              <span class="chat-panel__provider-badge">{{ provider === 'acp' ? 'ACP' : 'API' }}</span>
+              <span class="chat-panel__provider-badge">
+                {{ provider === 'acp' ? $t('chat.provider.acpLabel') : $t('chat.provider.openaiLabel') }}
+              </span>
             </div>
             <div class="chat-panel__status">
               <span class="chat-panel__status-dot" :class="{ 'chat-panel__status-dot--connected': isConnected }"></span>
-              <span class="chat-panel__status-text">{{ isConnected ? '已连接' : '未连接' }}</span>
+              <span class="chat-panel__status-text">
+                {{ isConnected ? $t('chat.status.connected') : $t('chat.status.disconnected') }}
+              </span>
             </div>
           </div>
         </div>
@@ -27,7 +31,7 @@
           <button
             v-if="provider === 'openai'"
             class="chat-panel__btn"
-            title="历史会话"
+            :title="$t('chat.history.title')"
             @click="$emit('show-history')"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -35,10 +39,10 @@
               <polyline points="3 4 3 10 9 10" />
             </svg>
           </button>
-          <button class="chat-panel__btn" title="新会话" @click="$emit('new-session')">
+          <button class="chat-panel__btn" :title="$t('chat.session.new')" @click="$emit('new-session')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <button class="chat-panel__btn" title="清空消息" @click="$emit('clear')">
+          <button class="chat-panel__btn" :title="$t('chat.clear')" @click="$emit('clear')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
@@ -47,7 +51,7 @@
       <div class="chat-panel__messages" ref="messagesRef" @scroll="handleScroll">
         <div ref="contentRef" class="chat-panel__messages-content">
           <div v-if="messages.length === 0" class="chat-panel__welcome">
-            <p>开始对话来与 AI 助手交互</p>
+            <p>{{ $t('chat.welcome') }}</p>
           </div>
           <template v-else>
             <ChatMessageRow
@@ -79,6 +83,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch, nextTick, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
 import type { ChatMessage } from '../types';
@@ -98,8 +103,6 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  title: 'AI 助手',
-  greeting: '你好，我是 AI 助手',
   width: 380,
   isStreaming: false,
   isConnected: true,
@@ -119,11 +122,27 @@ const emit = defineEmits<{
 const widthStorageKey = 'console-ui.chat-panel.width';
 const minPanelWidth = 320;
 const maxPanelWidth = 720;
+const { t } = useI18n();
+function resolvePlatformShortcut() {
+  if (typeof navigator === 'undefined') {
+    return 'Cmd+Enter';
+  }
+  const platform =
+    (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+    navigator.platform ||
+    navigator.userAgent;
+  return /mac|iphone|ipad|ipod/i.test(platform) ? 'Cmd+Enter' : 'Ctrl+Enter';
+}
+
+const sendShortcutLabel = computed(() => resolvePlatformShortcut());
+
 const resolvedPlaceholder = computed(() => {
   if (props.placeholder) {
     return props.placeholder;
   }
-  return props.sendOnEnter ? '输入消息，按 Enter 发送...' : '输入消息，按 Cmd+Enter 发送...';
+  return props.sendOnEnter
+    ? t('chat.input.placeholder.sendOnEnter')
+    : t('chat.input.placeholder.sendOnShortcut', { shortcut: sendShortcutLabel.value });
 });
 
 function clampWidth(value: number) {
