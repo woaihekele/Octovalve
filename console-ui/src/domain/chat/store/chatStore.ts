@@ -876,15 +876,26 @@ export const useChatStore = defineStore('chat', () => {
       console.log('[chatStore] initializeOpenai: openaiService.init() done');
       openaiToolsSignature.value = '';
 
+      // Always register base tools so tools are available even before targets load.
+      try {
+        await openaiService.setTools(buildOpenaiTools([], undefined));
+        openaiToolsSignature.value = buildOpenaiToolsSignature([], undefined);
+      } catch (e) {
+        console.warn('[chatStore] initializeOpenai: setTools base failed (continuing without tools):', e);
+      }
+
       // Provide tools for OpenAI tool calling (targets are sourced from console/proxy)
       try {
         const targets = await fetchTargets();
         const targetNames = buildTargetNameList(targets);
         const defaultTarget = resolveDefaultTarget(targets, targetNames);
-        await openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
-        openaiToolsSignature.value = buildOpenaiToolsSignature(targetNames, defaultTarget);
+        const signature = buildOpenaiToolsSignature(targetNames, defaultTarget);
+        if (signature !== openaiToolsSignature.value) {
+          await openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
+          openaiToolsSignature.value = signature;
+        }
       } catch (e) {
-        console.warn('[chatStore] initializeOpenai: setTools failed (continuing without tools):', e);
+        console.warn('[chatStore] initializeOpenai: refresh tools from targets failed:', e);
       }
 
       openaiInitialized.value = true;
