@@ -445,6 +445,7 @@ function updateTargets(list: TargetInfo[]) {
     }
     lastPendingCounts.value[target.name] = target.pending_count;
   });
+  void chatStore.refreshOpenaiTools(list);
 }
 
 function applyTargetUpdate(target: TargetInfo) {
@@ -463,6 +464,7 @@ function applyTargetUpdate(target: TargetInfo) {
     void refreshSnapshot(target.name);
   }
   lastPendingCounts.value[target.name] = target.pending_count;
+  void chatStore.refreshOpenaiTools(targets.value);
 }
 
 function handleEvent(event: ConsoleEvent) {

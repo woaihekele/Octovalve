@@ -5,6 +5,7 @@ import type { AuthMethod, AcpEvent, AgentCapabilities } from '../services/acpSer
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
 import { fetchTargets } from '../../../services/api';
+import type { TargetInfo } from '../../../shared/types';
 
 export type ChatProvider = 'acp' | 'openai';
 
@@ -89,6 +90,7 @@ export const useChatStore = defineStore('chat', () => {
   const openaiContextSessionId = ref<string | null>(null);
   let openaiContextQueue: Promise<void> = Promise.resolve();
   let openaiToolAbortController: AbortController | null = null;
+  const openaiToolsSignature = ref('');
 
   function enqueueOpenaiContextOp(op: () => Promise<void>) {
     openaiContextQueue = openaiContextQueue
@@ -872,13 +874,15 @@ export const useChatStore = defineStore('chat', () => {
       console.log('[chatStore] initializeOpenai: calling openaiService.init()');
       await openaiService.init(config);
       console.log('[chatStore] initializeOpenai: openaiService.init() done');
+      openaiToolsSignature.value = '';
 
       // Provide tools for OpenAI tool calling (targets are sourced from console/proxy)
       try {
         const targets = await fetchTargets();
-        const targetNames = targets.map((t) => t.name);
-        const defaultTarget = targets.find((t) => t.is_default)?.name ?? targetNames[0];
+        const targetNames = buildTargetNameList(targets);
+        const defaultTarget = resolveDefaultTarget(targets, targetNames);
         await openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
+        openaiToolsSignature.value = buildOpenaiToolsSignature(targetNames, defaultTarget);
       } catch (e) {
         console.warn('[chatStore] initializeOpenai: setTools failed (continuing without tools):', e);
       }
@@ -895,6 +899,18 @@ export const useChatStore = defineStore('chat', () => {
       setError(`Failed to initialize OpenAI: ${e}`);
       throw e;
     }
+  }
+
+  function buildTargetNameList(targets: TargetInfo[]) {
+    return Array.from(new Set(targets.map((t) => t.name))).sort((a, b) => a.localeCompare(b));
+  }
+
+  function resolveDefaultTarget(targets: TargetInfo[], targetNames: string[]) {
+    return targets.find((t) => t.is_default)?.name ?? targetNames[0];
+  }
+
+  function buildOpenaiToolsSignature(targetNames: string[], defaultTarget?: string) {
+    return `${targetNames.join(',')}|${defaultTarget ?? ''}`;
   }
 
   function buildOpenaiTools(targets: string[], defaultTarget?: string) {
@@ -972,6 +988,26 @@ export const useChatStore = defineStore('chat', () => {
         },
       },
     ];
+  }
+
+  async function refreshOpenaiTools(targets: TargetInfo[]) {
+    if (!openaiInitialized.value) {
+      return false;
+    }
+    const targetNames = buildTargetNameList(targets);
+    const defaultTarget = resolveDefaultTarget(targets, targetNames);
+    const signature = buildOpenaiToolsSignature(targetNames, defaultTarget);
+    if (signature === openaiToolsSignature.value) {
+      return false;
+    }
+    try {
+      await openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
+      openaiToolsSignature.value = signature;
+      return true;
+    } catch (e) {
+      console.warn('[chatStore] refreshOpenaiTools failed:', e);
+      return false;
+    }
   }
 
   async function sendOpenaiMessage(content: string) {
@@ -1256,6 +1292,7 @@ export const useChatStore = defineStore('chat', () => {
     providerInitialized.value = false;
     setConnected(false);
     openaiContextSessionId.value = null;
+    openaiToolsSignature.value = '';
     console.log('[chatStore] stopOpenai done');
   }
 
@@ -1334,6 +1371,7 @@ export const useChatStore = defineStore('chat', () => {
     // OpenAI
     openaiInitialized,
     initializeOpenai,
+    refreshOpenaiTools,
     sendOpenaiMessage,
     cancelOpenai,
     stopOpenai,
