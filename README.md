@@ -75,11 +75,8 @@ remote_addr = "127.0.0.1:19307"
 [[targets]]
 name = "example-target"
 desc = "主开发机"
-hostname = "***REMOVED***"
-ip = "192.168.2.162"
 ssh = "devops@192.168.2.162"
 # ssh_password = "你的密码"
-# terminal_locale = "zh_CN.UTF-8"
 local_port = 19311
 
 [[targets]]
