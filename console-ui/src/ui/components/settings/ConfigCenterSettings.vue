@@ -13,6 +13,7 @@ const props = defineProps<{
   selectedProfile: string | null;
   profileOptions: SelectOption[];
   canDeleteProfile: boolean;
+  highlight?: boolean;
   proxyConfig: ConfigFilePayload | null;
   brokerConfig: ConfigFilePayload | null;
   proxyConfigText: string;
@@ -51,7 +52,10 @@ const statusText = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 min-h-0 flex-1">
+  <div
+    class="flex flex-col gap-4 min-h-0 flex-1 transition"
+    :class="props.highlight ? 'ring-1 ring-accent/60 rounded-lg' : ''"
+  >
     <div v-if="props.configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
       <NSpin size="small" />
       <span>正在加载配置...</span>

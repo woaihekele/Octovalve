@@ -40,6 +40,7 @@ const props = defineProps<{
   isOpen: boolean;
   settings: AppSettings;
   resolvedTheme: ResolvedTheme;
+  focusConfigToken?: number;
 }>();
 
 const emit = defineEmits<{
@@ -102,7 +103,9 @@ const cardShellRef = ref<HTMLDivElement | null>(null);
 const cardInnerRef = ref<HTMLDivElement | null>(null);
 const cardHeight = ref<number | null>(null);
 const cardShellReady = ref(false);
+const highlightConfig = ref(false);
 let cardResizeObserver: ResizeObserver | null = null;
+let highlightTimer: number | null = null;
 
 watch(
   () => props.settings,
@@ -210,6 +213,25 @@ function stopCardObserver() {
   }
   cardResizeObserver.disconnect();
   cardResizeObserver = null;
+}
+
+function clearConfigHighlight() {
+  if (highlightTimer !== null) {
+    window.clearTimeout(highlightTimer);
+    highlightTimer = null;
+  }
+  highlightConfig.value = false;
+}
+
+function triggerConfigHighlight() {
+  highlightConfig.value = true;
+  if (highlightTimer !== null) {
+    window.clearTimeout(highlightTimer);
+  }
+  highlightTimer = window.setTimeout(() => {
+    highlightConfig.value = false;
+    highlightTimer = null;
+  }, 4000);
 }
 
 function save() {
@@ -708,10 +730,22 @@ function closeLogModal() {
 }
 
 onBeforeUnmount(() => {
+  clearConfigHighlight();
   stopLogPolling();
   disposeLogTerminal();
   stopCardObserver();
 });
+
+watch(
+  () => props.focusConfigToken,
+  (token, prev) => {
+    if (token === undefined || token === null || token === prev) {
+      return;
+    }
+    activeTab.value = 'config';
+    triggerConfigHighlight();
+  }
+);
 
 watch(
   () => activeTab.value,
@@ -734,6 +768,7 @@ watch(
       return;
     }
     if (!open) {
+      clearConfigHighlight();
       configLoaded.value = false;
       confirmApplyOpen.value = false;
       logModalOpen.value = false;
@@ -861,6 +896,7 @@ watch(
                 :selected-profile="selectedProfile"
                 :profile-options="profileOptions"
                 :can-delete-profile="canDeleteProfile"
+                :highlight="highlightConfig"
                 :proxy-config="proxyConfig"
                 :broker-config="brokerConfig"
                 v-model:proxy-config-text="proxyConfigText"

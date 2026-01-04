@@ -28,6 +28,7 @@ pub struct ResolvedBrokerConfig {
 #[derive(Clone, Serialize)]
 pub struct StartupCheckResult {
     pub ok: bool,
+    pub needs_setup: bool,
     pub errors: Vec<String>,
     pub proxy_path: String,
     pub broker_path: String,

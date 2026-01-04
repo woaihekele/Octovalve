@@ -60,20 +60,26 @@ pub fn validate_startup_config(
 ) -> Result<StartupCheckResult, String> {
     let proxy_path = PathBuf::from(proxy_status.path.clone());
     let mut errors = Vec::new();
+    let mut needs_setup = false;
     let broker_path = resolve_broker_path(app, profiles, &proxy_path)
         .unwrap_or_else(|_| default_broker_path(app));
 
     if !proxy_status.present {
+        needs_setup = true;
         errors.push(format!(
             "未找到本地配置：{}，请参考 {} 创建并修改。",
             proxy_status.path, proxy_status.example_path
         ));
-        return Ok(build_result(errors, proxy_path, broker_path));
+        return Ok(build_result(errors, needs_setup, proxy_path, broker_path));
     }
 
     match fs::read_to_string(&proxy_path) {
         Ok(raw) => match toml::from_str::<ProxyConfig>(&raw) {
             Ok(config) => {
+                if is_example_config(&config) {
+                    needs_setup = true;
+                    errors.push("检测到示例配置，请先修改默认环境配置。".to_string());
+                }
                 errors.extend(validate_proxy_config(&config));
             }
             Err(err) => errors.push(format_toml_error("本地配置", &proxy_path, &raw, err)),
@@ -85,12 +91,18 @@ pub fn validate_startup_config(
         errors.push(err);
     }
 
-    Ok(build_result(errors, proxy_path, broker_path))
+    Ok(build_result(errors, needs_setup, proxy_path, broker_path))
 }
 
-fn build_result(errors: Vec<String>, proxy_path: PathBuf, broker_path: PathBuf) -> StartupCheckResult {
+fn build_result(
+    errors: Vec<String>,
+    needs_setup: bool,
+    proxy_path: PathBuf,
+    broker_path: PathBuf,
+) -> StartupCheckResult {
     StartupCheckResult {
         ok: errors.is_empty(),
+        needs_setup,
         errors,
         proxy_path: proxy_path.to_string_lossy().to_string(),
         broker_path: broker_path.to_string_lossy().to_string(),
@@ -184,6 +196,33 @@ fn validate_proxy_config(config: &ProxyConfig) -> Vec<String> {
     }
 
     errors
+}
+
+fn is_example_config(config: &ProxyConfig) -> bool {
+    if config
+        .default_target
+        .as_deref()
+        .map(|value| value.eq_ignore_ascii_case("example"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    for target in &config.targets {
+        let name = target.name.trim();
+        if name.eq_ignore_ascii_case("example") {
+            return true;
+        }
+        if let Some(ssh) = target.ssh.as_deref() {
+            if ssh.trim() == "user@host" {
+                return true;
+            }
+        }
+        let desc = target.desc.to_lowercase();
+        if desc.contains("example target") || desc.contains("replace with your machine") {
+            return true;
+        }
+    }
+    false
 }
 
 fn control_local_port(

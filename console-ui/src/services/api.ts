@@ -28,6 +28,7 @@ export type ProxyConfigStatus = {
 
 export type StartupCheckResult = {
   ok: boolean;
+  needs_setup: boolean;
   errors: string[];
   proxy_path: string;
   broker_path: string;
@@ -312,7 +313,7 @@ export async function restartConsole() {
 
 export async function validateStartupConfig(): Promise<StartupCheckResult> {
   if (!TAURI_AVAILABLE) {
-    return { ok: true, errors: [], proxy_path: '', broker_path: '' };
+    return { ok: true, needs_setup: false, errors: [], proxy_path: '', broker_path: '' };
   }
   return invoke<StartupCheckResult>('validate_startup_config');
 }
