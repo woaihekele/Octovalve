@@ -650,22 +650,28 @@ function handleGlobalKey(event: KeyboardEvent) {
     isSettingsOpen.value = true;
     return;
   }
-  if (isEditableTarget(event.target)) {
-    return;
-  }
-  if (isSettingsOpen.value) {
-    return;
-  }
+  const editableTarget = isEditableTarget(event.target);
+  const terminalFocused = leftPaneRef.value?.isActiveTerminalFocused() ?? false;
   if (isCtrlArrow(event, 'prev')) {
-    if (switchTerminalSession('prev')) {
-      event.preventDefault();
+    if (!isSettingsOpen.value && (terminalFocused || !editableTarget)) {
+      if (switchTerminalSession('prev')) {
+        event.preventDefault();
+      }
     }
     return;
   }
   if (isCtrlArrow(event, 'next')) {
-    if (switchTerminalSession('next')) {
-      event.preventDefault();
+    if (!isSettingsOpen.value && (terminalFocused || !editableTarget)) {
+      if (switchTerminalSession('next')) {
+        event.preventDefault();
+      }
     }
+    return;
+  }
+  if (editableTarget) {
+    return;
+  }
+  if (isSettingsOpen.value) {
     return;
   }
   if (matchesShortcut(event, settings.value.shortcuts.prevTarget)) {
