@@ -12,10 +12,13 @@
     <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
       <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
         <span
-          v-if="connectionState === 'disconnected'"
-          class="text-xs px-2 py-1 rounded border bg-danger/20 text-danger border-danger/30"
+          v-if="consoleBanner"
+          class="text-xs px-2 py-1 rounded border"
+          :class="consoleBanner.kind === 'error'
+            ? 'bg-danger/20 text-danger border-danger/30'
+            : 'bg-warning/20 text-warning border-warning/30'"
         >
-          console 异常，请重启
+          {{ consoleBanner.message }}
         </span>
 
         <button
@@ -34,8 +37,12 @@
             stroke-linecap="round"
             stroke-linejoin="round"
           >
-            <path v-if="!isChatOpen" d="M10 6l6 6-6 6" />
-            <path v-else d="M14 6l-6 6 6 6" />
+            <line x1="12" y1="3" x2="12" y2="6" />
+            <circle cx="12" cy="3" r="1" />
+            <rect x="4" y="6" width="16" height="12" rx="3" />
+            <circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <line x1="9" y1="15" x2="15" y2="15" />
           </svg>
         </button>
       </div>
@@ -147,6 +154,7 @@ defineProps<{
   isChatOpen: boolean;
   aiRiskMap: Record<string, AiRiskEntry>;
   aiEnabled: boolean;
+  consoleBanner?: { kind: 'error' | 'info'; message: string } | null;
   selectedTerminalEntry: TerminalEntry | null;
   activeTerminalTabId: string | number | undefined;
   terminalEntries: TerminalEntry[];

@@ -53,6 +53,8 @@ const startupSelectedProfile = ref<string | null>(null);
 const startupBusy = ref(false);
 const startupStatusMessage = ref('');
 const startupError = ref('');
+const booting = ref(false);
+const hasConnected = ref(false);
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
@@ -68,6 +70,18 @@ const selectedSnapshot = computed(() => {
 const startupProfileOptions = computed(() =>
   startupProfiles.value.map((profile) => ({ label: profile.name, value: profile.name }))
 );
+const consoleBanner = computed<{ kind: 'error' | 'info'; message: string } | null>(() => {
+  if (booting.value) {
+    return { kind: 'info', message: 'console 启动中...' };
+  }
+  if (!hasConnected.value && connectionState.value === 'connecting') {
+    return { kind: 'info', message: 'console 连接中...' };
+  }
+  if (hasConnected.value && connectionState.value === 'disconnected') {
+    return { kind: 'error', message: 'console 异常，请重启' };
+  }
+  return null;
+});
 
 const {
   activeTerminalTabId,
@@ -300,6 +314,9 @@ async function applyStartupProfile() {
   }
   startupBusy.value = true;
   startupError.value = '';
+  booting.value = true;
+  hasConnected.value = false;
+  connectionState.value = 'connecting';
   startupStatusMessage.value = `正在应用环境 ${startupSelectedProfile.value}...`;
   try {
     await selectProfile(startupSelectedProfile.value);
@@ -309,6 +326,7 @@ async function applyStartupProfile() {
       startupError.value = message;
       showNotification(message);
       connectionState.value = 'disconnected';
+      booting.value = false;
       return;
     }
     startupStatusMessage.value = '正在校验配置...';
@@ -319,6 +337,7 @@ async function applyStartupProfile() {
       showNotification('配置检查失败，请查看详情');
       reportUiError('startup config invalid', check.errors.join(' | '));
       connectionState.value = 'disconnected';
+      booting.value = false;
       return;
     }
     startupStatusMessage.value = '正在启动 console...';
@@ -332,6 +351,7 @@ async function applyStartupProfile() {
     showNotification(message);
     reportUiError('startup profile failed', err);
     connectionState.value = 'disconnected';
+    booting.value = false;
   } finally {
     startupBusy.value = false;
   }
@@ -430,6 +450,8 @@ async function connectWebSocket() {
     streamHandle = await openConsoleStream(handleEvent, (status: ConsoleConnectionStatus) => {
       connectionState.value = status;
       if (status === 'connected') {
+        hasConnected.value = true;
+        booting.value = false;
         void logUiEvent('ws connected');
       } else if (status === 'disconnected') {
         void logUiEvent('ws closed');
@@ -437,6 +459,7 @@ async function connectWebSocket() {
     });
   } catch (err) {
     connectionState.value = 'disconnected';
+    booting.value = false;
     void logUiEvent(`ws start failed: ${String(err)}`);
   }
 }
@@ -695,6 +718,7 @@ watch(
       :is-chat-open="isChatOpen"
       :ai-risk-map="aiRiskMap"
       :ai-enabled="settings.ai.enabled"
+      :console-banner="consoleBanner"
       :selected-terminal-entry="selectedTerminalEntry"
       :active-terminal-tab-id="activeTerminalTabId"
       :terminal-entries="terminalEntries"
