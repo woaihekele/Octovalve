@@ -382,6 +382,10 @@ async function applyStartupProfile(): Promise<boolean> {
 
 async function resumeConsoleSession() {
   const ok = await startConsoleSession();
+  if (ok && connectionState.value === 'connecting') {
+    connectionState.value = 'connected';
+    hasConnected.value = true;
+  }
   if (!ok) {
     await loadStartupProfiles();
   }
