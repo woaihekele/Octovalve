@@ -85,6 +85,7 @@ export const useChatStore = defineStore('chat', () => {
   // OpenAI state
   const openaiInitialized = ref(false);
   let openaiEventUnlisten: (() => void) | null = null;
+  let openaiListenerToken = 0;
   const openaiContextSessionId = ref<string | null>(null);
   let openaiContextQueue: Promise<void> = Promise.resolve();
   let openaiToolAbortController: AbortController | null = null;
@@ -1031,7 +1032,17 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setupOpenaiEventListener() {
+    openaiListenerToken += 1;
+    const token = openaiListenerToken;
+    if (openaiEventUnlisten) {
+      openaiEventUnlisten();
+      openaiEventUnlisten = null;
+    }
     openaiService.onStream(handleOpenaiStreamEvent).then((unlisten) => {
+      if (openaiListenerToken !== token) {
+        unlisten();
+        return;
+      }
       openaiEventUnlisten = unlisten;
     });
   }
@@ -1236,6 +1247,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function stopOpenai() {
     console.log('[chatStore] stopOpenai called');
+    openaiListenerToken += 1;
     if (openaiEventUnlisten) {
       openaiEventUnlisten();
       openaiEventUnlisten = null;
