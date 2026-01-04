@@ -287,10 +287,11 @@ function openSettingsForConfig() {
   focusConfigToken.value += 1;
 }
 
-async function startConsoleSession() {
-  await refreshTargets();
+async function startConsoleSession(): Promise<boolean> {
+  const ok = await refreshTargets();
   void connectWebSocket();
   void logUiEvent(`origin=${window.location.origin} secure=${window.isSecureContext}`);
+  return ok;
 }
 
 async function loadStartupProfiles() {
@@ -379,25 +380,10 @@ async function applyStartupProfile(): Promise<boolean> {
   }
 }
 
-async function autoStartFromSession() {
-  try {
-    const data = await listProfiles();
-    startupProfiles.value = data.profiles;
-    startupSelectedProfile.value = data.current || data.profiles[0]?.name || null;
-    if (!startupSelectedProfile.value) {
-      startupProfileOpen.value = true;
-      return;
-    }
-    const ok = await applyStartupProfile();
-    if (!ok) {
-      startupProfileOpen.value = true;
-    }
-  } catch (err) {
-    const message = `加载环境失败：${String(err)}`;
-    startupError.value = message;
-    showNotification(message);
-    reportUiError('load profiles failed', err);
-    startupProfileOpen.value = true;
+async function resumeConsoleSession() {
+  const ok = await startConsoleSession();
+  if (!ok) {
+    await loadStartupProfiles();
   }
 }
 
@@ -508,13 +494,15 @@ async function connectWebSocket() {
   }
 }
 
-async function refreshTargets() {
+async function refreshTargets(): Promise<boolean> {
   try {
     const list = await fetchTargets();
     updateTargets(list);
+    return true;
   } catch (err) {
     connectionState.value = 'disconnected';
     reportUiError('fetch targets failed', err);
+    return false;
   }
 }
 
@@ -702,7 +690,7 @@ onMounted(async () => {
   window.addEventListener('keydown', handleGlobalKey);
   if (isTauri()) {
     if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(STARTUP_SESSION_KEY) === '1') {
-      await autoStartFromSession();
+      await resumeConsoleSession();
     } else {
       await loadStartupProfiles();
     }
