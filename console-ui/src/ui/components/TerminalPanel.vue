@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { useI18n } from 'vue-i18n';
 import { terminalClose, terminalInput, terminalOpen, terminalResize } from '../../services/api';
 import type { TargetInfo } from '../../shared/types';
 import type { ResolvedTheme } from '../../shared/theme';
@@ -16,6 +17,7 @@ const props = defineProps<{
 
 const containerRef = ref<HTMLDivElement | null>(null);
 const statusMessage = ref<string | null>(null);
+const { t } = useI18n();
 
 let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
@@ -223,11 +225,11 @@ async function openSession() {
     return;
   }
   if (!props.target.terminal_available) {
-    statusMessage.value = '该目标未配置 ssh，无法打开终端。';
+    statusMessage.value = t('terminal.noSsh');
     return;
   }
   if (!containerRef.value) {
-    statusMessage.value = '终端容器尚未就绪。';
+    statusMessage.value = t('terminal.containerNotReady');
     return;
   }
 
@@ -246,11 +248,11 @@ async function openSession() {
 
   const cols = terminal.cols;
   const rows = terminal.rows;
-  statusMessage.value = '正在连接远端终端...';
+  statusMessage.value = t('terminal.connecting');
   try {
     sessionId = await terminalOpen(props.target.name, cols, rows, termName);
   } catch (err) {
-    statusMessage.value = `终端连接失败：${String(err)}`;
+    statusMessage.value = t('terminal.connectFailed', { error: String(err) });
     cleanupTerminal(false);
     return;
   }
@@ -277,7 +279,7 @@ async function openSession() {
     if (payload.session_id !== sessionId) {
       return;
     }
-    statusMessage.value = '终端已退出。';
+    statusMessage.value = t('terminal.exited');
     cleanupTerminal(false);
   });
 
@@ -286,7 +288,7 @@ async function openSession() {
     if (payload.session_id !== sessionId) {
       return;
     }
-    statusMessage.value = payload.message || '终端连接异常。';
+    statusMessage.value = payload.message || t('terminal.error');
     cleanupTerminal(false);
   });
 

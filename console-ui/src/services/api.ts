@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { i18n } from '../i18n';
 import type {
   AiRiskApiResponse,
   ConfigFilePayload,
@@ -13,6 +14,7 @@ const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
 
 const TAURI_AVAILABLE = isTauri();
+const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
 const RAW_HTTP = (import.meta.env.VITE_CONSOLE_HTTP as string | undefined) || DEFAULT_HTTP;
 const RAW_WS = (import.meta.env.VITE_CONSOLE_WS as string | undefined) || DEFAULT_WS;
 const HTTP_BASE = TAURI_AVAILABLE && RAW_HTTP.startsWith('/') ? DEFAULT_HTTP : RAW_HTTP;
@@ -153,56 +155,56 @@ export async function getProxyConfigStatus(): Promise<ProxyConfigStatus> {
 
 export async function listProfiles(): Promise<ProfilesStatus> {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   return invoke<ProfilesStatus>('list_profiles');
 }
 
 export async function createProfile(name: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   await invoke('create_profile', { name });
 }
 
 export async function deleteProfile(name: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   await invoke('delete_profile', { name });
 }
 
 export async function selectProfile(name: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   await invoke('select_profile', { name });
 }
 
 export async function readProfileProxyConfig(name: string): Promise<ConfigFilePayload> {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   return invoke<ConfigFilePayload>('read_profile_proxy_config', { name });
 }
 
 export async function writeProfileProxyConfig(name: string, content: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   await invoke('write_profile_proxy_config', { name, content });
 }
 
 export async function readProfileBrokerConfig(name: string): Promise<ConfigFilePayload> {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   return invoke<ConfigFilePayload>('read_profile_broker_config', { name });
 }
 
 export async function writeProfileBrokerConfig(name: string, content: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('profiles only available in Tauri');
+    throw new Error(t('api.tauriOnly.profiles'));
   }
   await invoke('write_profile_broker_config', { name, content });
 }
@@ -293,35 +295,35 @@ export async function logUiEvent(message: string) {
 
 export async function readProxyConfig(): Promise<ConfigFilePayload> {
   if (!TAURI_AVAILABLE) {
-    throw new Error('config editor only available in Tauri');
+    throw new Error(t('api.tauriOnly.configEditor'));
   }
   return invoke<ConfigFilePayload>('read_proxy_config');
 }
 
 export async function writeProxyConfig(content: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('config editor only available in Tauri');
+    throw new Error(t('api.tauriOnly.configEditor'));
   }
   await invoke('write_proxy_config', { content });
 }
 
 export async function readBrokerConfig(): Promise<ConfigFilePayload> {
   if (!TAURI_AVAILABLE) {
-    throw new Error('config editor only available in Tauri');
+    throw new Error(t('api.tauriOnly.configEditor'));
   }
   return invoke<ConfigFilePayload>('read_broker_config');
 }
 
 export async function writeBrokerConfig(content: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('config editor only available in Tauri');
+    throw new Error(t('api.tauriOnly.configEditor'));
   }
   await invoke('write_broker_config', { content });
 }
 
 export async function restartConsole() {
   if (!TAURI_AVAILABLE) {
-    throw new Error('config editor only available in Tauri');
+    throw new Error(t('api.tauriOnly.configEditor'));
   }
   await invoke('restart_console');
 }
@@ -335,7 +337,7 @@ export async function validateStartupConfig(): Promise<StartupCheckResult> {
 
 export async function reloadRemoteBrokers() {
   if (!TAURI_AVAILABLE) {
-    throw new Error('config editor only available in Tauri');
+    throw new Error(t('api.tauriOnly.configEditor'));
   }
   await invoke('proxy_reload_remote_brokers');
 }
@@ -349,21 +351,21 @@ export async function readConsoleLog(offset: number, maxBytes: number): Promise<
 
 export async function terminalOpen(name: string, cols: number, rows: number, term?: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('terminal only available in Tauri');
+    throw new Error(t('api.tauriOnly.terminal'));
   }
   return invoke<string>('terminal_open', { name, cols, rows, term });
 }
 
 export async function terminalInput(sessionId: string, dataBase64: string) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('terminal only available in Tauri');
+    throw new Error(t('api.tauriOnly.terminal'));
   }
   await invoke('terminal_input', { sessionId, dataBase64 });
 }
 
 export async function terminalResize(sessionId: string, cols: number, rows: number) {
   if (!TAURI_AVAILABLE) {
-    throw new Error('terminal only available in Tauri');
+    throw new Error(t('api.tauriOnly.terminal'));
   }
   await invoke('terminal_resize', { sessionId, cols, rows });
 }
@@ -386,7 +388,7 @@ export type AiRiskRequestPayload = {
 
 export async function aiRiskAssess(request: AiRiskRequestPayload): Promise<AiRiskApiResponse> {
   if (!TAURI_AVAILABLE) {
-    throw new Error('AI 检查仅支持 Tauri');
+    throw new Error(t('api.tauriOnly.aiRisk'));
   }
   return invoke<AiRiskApiResponse>('ai_risk_assess', { request });
 }

@@ -1,5 +1,6 @@
 export type TargetStatus = 'ready' | 'down';
 export type ThemeMode = 'system' | 'dark' | 'light' | 'darcula';
+export type AppLanguage = 'zh-CN' | 'en-US';
 
 export interface ConfigFilePayload {
   path: string;
@@ -150,6 +151,7 @@ export interface ChatProviderConfig {
 export interface AppSettings {
   notificationsEnabled: boolean;
   theme: ThemeMode;
+  language: AppLanguage;
   ai: AiSettings;
   chat: ChatProviderConfig;
   shortcuts: {

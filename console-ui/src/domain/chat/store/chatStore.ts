@@ -6,6 +6,9 @@ import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
 import { fetchTargets } from '../../../services/api';
 import type { TargetInfo } from '../../../shared/types';
+import { i18n } from '../../../i18n';
+
+const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
 
 export type ChatProvider = 'acp' | 'openai';
 
@@ -21,7 +24,7 @@ export const useChatStore = defineStore('chat', () => {
   const isStreaming = ref(false);
   const error = ref<string | null>(null);
   const config = ref<ChatConfig>({
-    greeting: '你好，我是 AI 助手。请描述你想要完成的任务。',
+    greeting: t('chat.greeting'),
   });
 
   // Provider state
@@ -304,7 +307,7 @@ export const useChatStore = defineStore('chat', () => {
     const session: ChatSession = {
       id: generateId(),
       provider: provider.value,
-      title: title ?? `会话 ${sessions.value.length + 1}`,
+      title: title ?? t('chat.session.title', { index: sessions.value.length + 1 }),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: [],
@@ -501,13 +504,13 @@ export const useChatStore = defineStore('chat', () => {
           if (isFinalToolCallStatus(tc.status)) {
             const result = (tc.result || '').trim();
             if (!result) {
-              tc.result = `工具调用已结束（${tc.status}），但没有返回结果。`;
+              tc.result = t('chat.tool.result.missing', { status: tc.status });
               changed = true;
             }
           }
           continue;
         }
-        const note = `工具调用已取消：${reason}`;
+        const note = t('chat.tool.cancelled', { reason });
         if (tc.result && tc.result.trim()) {
           tc.result = `${tc.result}\n${note}`;
         } else {
@@ -709,7 +712,7 @@ export const useChatStore = defineStore('chat', () => {
       if (currentAssistantMessageId.value) {
         const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
         if (msg && (!msg.content || !msg.content.trim())) {
-          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: '回答已停止', partial: false });
+          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: t('chat.response.stopped'), partial: false });
         } else {
           updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
         }
@@ -1030,7 +1033,7 @@ export const useChatStore = defineStore('chat', () => {
       return;
     }
 
-    const closed = closePendingOpenaiToolCalls('发送前自动收敛');
+    const closed = closePendingOpenaiToolCalls(t('chat.tool.closeReason.beforeSend'));
     if (closed) {
       await syncOpenaiContextForSession(activeSession.value);
     } else {
@@ -1139,7 +1142,7 @@ export const useChatStore = defineStore('chat', () => {
       if (currentAssistantMessageId.value) {
         const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
         if (msg && (!msg.content || !msg.content.trim())) {
-          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: '回答已停止', partial: false });
+          updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: t('chat.response.stopped'), partial: false });
         } else {
           updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
         }
@@ -1281,13 +1284,13 @@ export const useChatStore = defineStore('chat', () => {
     if (currentAssistantMessageId.value) {
       const msg = activeSession.value?.messages.find(m => m.id === currentAssistantMessageId.value);
       if (msg && (!msg.content || !msg.content.trim())) {
-        updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: '回答已停止', partial: false });
+        updateMessage(currentAssistantMessageId.value, { status: 'cancelled', content: t('chat.response.stopped'), partial: false });
       } else {
         updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
       }
       currentAssistantMessageId.value = null;
     }
-    if (closePendingOpenaiToolCalls('用户停止')) {
+    if (closePendingOpenaiToolCalls(t('chat.tool.closeReason.userStop'))) {
       await syncOpenaiContextForSession(activeSession.value);
     }
   }
@@ -1325,7 +1328,7 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId.value = sessions.value[0].id;
   }
   if (sessions.value.length === 0) {
-    createSession('会话 1');
+    createSession(t('chat.session.title', { index: 1 }));
   }
 
   // Unified send message

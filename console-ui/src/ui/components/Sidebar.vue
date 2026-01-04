@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { TargetInfo } from '../../shared/types';
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected';
@@ -15,6 +16,8 @@ const emit = defineEmits<{
   (e: 'open-settings'): void;
 }>();
 
+const { t } = useI18n();
+
 function resolveStatus(target: TargetInfo) {
   if (target.status === 'ready') {
     return 'ready';
@@ -30,9 +33,9 @@ function resolveStatus(target: TargetInfo) {
 
 function statusLabel(target: TargetInfo) {
   const status = resolveStatus(target);
-  if (status === 'ready') return 'ready';
-  if (status === 'connecting') return '连接中';
-  return 'down';
+  if (status === 'ready') return t('status.ready');
+  if (status === 'connecting') return t('status.connecting');
+  return t('status.down');
 }
 
 function statusClass(target: TargetInfo) {
@@ -65,7 +68,9 @@ function statusClass(target: TargetInfo) {
         <div class="flex flex-col min-w-0">
           <div class="flex items-center gap-2">
             <span class="font-medium text-sm truncate text-foreground">{{ target.name }}</span>
-            <span v-if="target.is_default" class="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">默认</span>
+            <span v-if="target.is_default" class="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+              {{ $t('console.default') }}
+            </span>
           </div>
           <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">
             <span class="truncate">
@@ -93,8 +98,8 @@ function statusClass(target: TargetInfo) {
       <button
         class="p-2 rounded-full border border-border text-foreground-muted hover:text-foreground hover:border-accent/40 transition-colors"
         @click="emit('open-settings')"
-        aria-label="设置"
-        title="设置"
+        :aria-label="$t('settings.title')"
+        :title="$t('settings.title')"
       >
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>

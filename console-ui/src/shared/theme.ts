@@ -3,10 +3,10 @@ import type { ThemeMode } from './types';
 export type ResolvedTheme = 'dark' | 'light' | 'darcula';
 
 export const THEME_OPTIONS = [
-  { value: 'system', label: '系统' },
-  { value: 'dark', label: '深色' },
-  { value: 'light', label: '浅色' },
-  { value: 'darcula', label: 'Darcula' },
+  { value: 'system', labelKey: 'theme.system' },
+  { value: 'dark', labelKey: 'theme.dark' },
+  { value: 'light', labelKey: 'theme.light' },
+  { value: 'darcula', labelKey: 'theme.darcula' },
 ] as const;
 
 export function isThemeMode(value: unknown): value is ThemeMode {

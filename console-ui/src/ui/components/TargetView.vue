@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NButton, NPopover, NTag } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import { formatShortcut, matchesShortcut } from '../../shared/shortcuts';
 import type {
   AiRiskEntry,
@@ -31,6 +32,8 @@ const emit = defineEmits<{
   (e: 'toggle-chat'): void;
   (e: 'refresh-risk', payload: { target: string; id: string }): void;
 }>();
+
+const { t, locale } = useI18n();
 
 const selectedId = ref<string | null>(null);
 const isFullScreen = ref(false);
@@ -137,7 +140,7 @@ watch(
 );
 
 function formatTime(value: number) {
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString(locale.value);
 }
 
 function itemTimestamp(item: SnapshotItem) {
@@ -164,18 +167,34 @@ function isPendingItem(item: SnapshotItem): item is RequestSnapshot {
 
 function formatSummary(result: ResultSnapshot) {
   if (result.status === 'completed') {
-    return `completed (exit=${result.exit_code ?? 'n/a'})`;
+    return t('target.summary.completed', { exit: result.exit_code ?? 'n/a' });
   }
   if (result.status === 'denied') {
-    return 'denied';
+    return t('target.status.denied');
   }
   if (result.status === 'error') {
-    return 'error';
+    return t('target.status.error');
   }
   if (result.status === 'cancelled') {
-    return 'cancelled';
+    return t('target.status.cancelled');
   }
   return result.status;
+}
+
+function resultStatusLabel(status: ResultSnapshot['status']) {
+  if (status === 'completed') {
+    return t('target.status.completed');
+  }
+  if (status === 'denied') {
+    return t('target.status.denied');
+  }
+  if (status === 'error') {
+    return t('target.status.error');
+  }
+  if (status === 'cancelled') {
+    return t('target.status.cancelled');
+  }
+  return status;
 }
 
 function aiKey(id: string) {
@@ -192,27 +211,27 @@ function aiEntryForItem(item: SnapshotItem) {
 
 function aiLabel(entry?: AiRiskEntry) {
   if (!entry) {
-    return '未检测';
+    return t('target.ai.status.unknown');
   }
   if (entry.status === 'pending') {
-    return '检测中';
+    return t('target.ai.status.pending');
   }
   if (entry.status === 'error') {
     if (entry.error?.includes('API Key')) {
-      return '未配置';
+      return t('target.ai.status.unconfigured');
     }
-    return '检测失败';
+    return t('target.ai.status.failed');
   }
   if (entry.risk === 'low') {
-    return '低风险';
+    return t('target.ai.risk.low');
   }
   if (entry.risk === 'medium') {
-    return '中风险';
+    return t('target.ai.risk.medium');
   }
   if (entry.risk === 'high') {
-    return '高风险';
+    return t('target.ai.risk.high');
   }
-  return '未知';
+  return t('common.unknown');
 }
 
 function aiTagType(entry?: AiRiskEntry) {
@@ -249,7 +268,7 @@ function aiAutoApproved(entry?: AiRiskEntry) {
 }
 
 function aiAutoApprovedLabel(entry?: AiRiskEntry) {
-  return aiAutoApproved(entry) ? '是' : '否';
+  return aiAutoApproved(entry) ? t('common.yes') : t('common.no');
 }
 
 function aiAutoApprovedTime(entry?: AiRiskEntry) {
@@ -502,8 +521,8 @@ onBeforeUnmount(() => {
           "
           :disabled="!props.target.terminal_available"
           @click="handleTerminalToggle"
-          :aria-label="props.terminalOpen ? '关闭终端' : '终端'"
-          :title="props.terminalOpen ? '关闭终端' : '终端'"
+        :aria-label="props.terminalOpen ? $t('target.terminal.close') : $t('target.terminal.open')"
+        :title="props.terminalOpen ? $t('target.terminal.close') : $t('target.terminal.open')"
         >
           <svg
             v-if="!props.terminalOpen"
@@ -542,8 +561,8 @@ onBeforeUnmount(() => {
               : 'bg-panel/60 text-foreground border-border hover:border-accent/40'
           "
           @click="emit('toggle-chat')"
-          :aria-label="props.chatOpen ? '收起 AI 助手' : '展开 AI 助手'"
-          :title="props.chatOpen ? '收起 AI 助手' : '展开 AI 助手'"
+        :aria-label="props.chatOpen ? $t('chat.toggle.close') : $t('chat.toggle.open')"
+        :title="props.chatOpen ? $t('chat.toggle.close') : $t('chat.toggle.open')"
         >
           <svg
             class="h-4 w-4"
@@ -569,23 +588,23 @@ onBeforeUnmount(() => {
       <div class="flex-1 min-h-0 flex overflow-hidden">
         <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
           <div class="flex items-center justify-between border-b border-border px-4 py-3">
-            <div class="text-sm font-medium text-foreground">命令列表</div>
+            <div class="text-sm font-medium text-foreground">{{ $t('target.list.title') }}</div>
             <div class="flex items-center gap-2 text-xs text-foreground-muted">
               <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
-                Pending {{ pendingList.length }}
+                {{ $t('target.list.pending') }} {{ pendingList.length }}
               </span>
               <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
-                Running {{ runningList.length }}
+                {{ $t('target.list.running') }} {{ runningList.length }}
               </span>
               <span class="bg-panel-muted px-1.5 py-0.5 rounded-full text-foreground">
-                History {{ historyList.length }}
+                {{ $t('target.list.history') }} {{ historyList.length }}
               </span>
             </div>
           </div>
 
           <div class="flex-1 overflow-y-auto min-h-0">
             <div v-if="combinedList.length === 0" class="p-8 text-center text-foreground-muted text-sm">
-              暂无记录。
+              {{ $t('target.list.empty') }}
             </div>
             <div
               v-for="(item, index) in combinedList"
@@ -603,13 +622,13 @@ onBeforeUnmount(() => {
                     v-if="isPendingItem(item)"
                     class="text-xs px-2 py-0.5 rounded bg-accent/20 text-accent"
                   >
-                    pending
+                    {{ $t('target.status.pending') }}
                   </span>
                   <span
                     v-else-if="isRunningItem(item)"
                     class="text-xs px-2 py-0.5 rounded bg-panel-muted text-foreground"
                   >
-                    running
+                    {{ $t('target.status.running') }}
                   </span>
                   <span
                     v-else
@@ -622,7 +641,7 @@ onBeforeUnmount(() => {
                           ? 'bg-panel-muted text-foreground-muted'
                           : 'bg-warning/20 text-warning'"
                   >
-                    {{ (item as ResultSnapshot).status }}
+                    {{ resultStatusLabel((item as ResultSnapshot).status) }}
                   </span>
                   <n-popover v-if="shouldShowAiTag(item)" trigger="hover" placement="left" :delay="120">
                     <template #trigger>
@@ -631,27 +650,27 @@ onBeforeUnmount(() => {
                           {{ aiLabel(aiEntryForItem(item)) }}
                         </n-tag>
                         <n-tag v-if="aiAutoApproved(aiEntryForItem(item))" size="small" type="warning" :bordered="false">
-                          自动
+                          {{ $t('target.ai.autoTag') }}
                         </n-tag>
                       </div>
                     </template>
                     <div class="space-y-2 text-xs max-w-[260px]">
-                      <div class="font-medium text-foreground">AI 风险评估</div>
-                      <div v-if="aiEntryForItem(item)?.status === 'pending'" class="text-foreground-muted">检测中...</div>
+                      <div class="font-medium text-foreground">{{ $t('target.ai.title') }}</div>
+                      <div v-if="aiEntryForItem(item)?.status === 'pending'" class="text-foreground-muted">{{ $t('target.ai.checking') }}</div>
                       <div v-else-if="aiEntryForItem(item)?.status === 'error'" class="text-danger">
-                        {{ aiEntryForItem(item)?.error || '检测失败' }}
+                        {{ aiEntryForItem(item)?.error || $t('target.ai.failed') }}
                       </div>
                       <template v-else>
                         <div>
-                          <span class="text-foreground-muted">等级：</span>
+                          <span class="text-foreground-muted">{{ $t('target.ai.level') }}</span>
                           <span class="text-foreground">{{ aiLabel(aiEntryForItem(item)) }}</span>
                         </div>
                         <div v-if="aiEntryForItem(item)?.reason">
-                          <span class="text-foreground-muted">原因：</span>
+                          <span class="text-foreground-muted">{{ $t('target.ai.reason') }}</span>
                           <span class="text-foreground">{{ aiEntryForItem(item)?.reason }}</span>
                         </div>
                         <div v-if="aiEntryForItem(item)?.keyPoints?.length">
-                          <div class="text-foreground-muted mb-1">要点：</div>
+                          <div class="text-foreground-muted mb-1">{{ $t('target.ai.keyPoints') }}</div>
                           <div class="space-y-1">
                             <div v-for="(point, pIndex) in aiEntryForItem(item)?.keyPoints" :key="pIndex">
                               - {{ point }}
@@ -659,18 +678,18 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                         <div v-if="aiEntryForItem(item)?.status === 'done'">
-                          <span class="text-foreground-muted">自动批准：</span>
+                          <span class="text-foreground-muted">{{ $t('target.ai.autoApproved') }}</span>
                           <span class="text-foreground">{{ aiAutoApprovedLabel(aiEntryForItem(item)) }}</span>
                         </div>
                         <div v-if="aiEntryForItem(item)?.autoApprovedAt" class="text-foreground-muted">
-                          自动批准时间：{{ aiAutoApprovedTime(aiEntryForItem(item)) }}
+                          {{ $t('target.ai.autoApprovedAt', { time: aiAutoApprovedTime(aiEntryForItem(item)) }) }}
                         </div>
                       </template>
                       <div class="text-foreground-muted">
-                        更新时间：{{ aiEntryForItem(item)?.updatedAt ? formatTime(aiEntryForItem(item)!.updatedAt) : '-' }}
+                        {{ $t('target.ai.updatedAt', { time: aiEntryForItem(item)?.updatedAt ? formatTime(aiEntryForItem(item)!.updatedAt) : '-' }) }}
                       </div>
                       <div v-if="props.aiEnabled && isPendingItem(item)" class="flex justify-end">
-                        <n-button size="tiny" @click.stop="refreshRisk(item.id)">刷新</n-button>
+                        <n-button size="tiny" @click.stop="refreshRisk(item.id)">{{ $t('common.refresh') }}</n-button>
                       </div>
                     </div>
                   </n-popover>
@@ -690,7 +709,7 @@ onBeforeUnmount(() => {
           <template v-if="selectedItem">
             <div class="border-b border-border bg-panel/30 p-6 flex justify-between gap-6">
               <div class="flex-1">
-                <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Command</h3>
+                <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">{{ $t('target.detail.command') }}</h3>
                 <code
                   class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border max-h-40 overflow-y-auto whitespace-pre-wrap break-words"
                 >
@@ -705,27 +724,27 @@ onBeforeUnmount(() => {
                           {{ aiLabel(selectedAiEntry) }}
                         </n-tag>
                         <n-tag v-if="aiAutoApproved(selectedAiEntry)" size="small" type="warning" :bordered="false">
-                          自动
+                          {{ $t('target.ai.autoTag') }}
                         </n-tag>
                       </div>
                     </template>
                     <div class="space-y-2 text-xs max-w-[260px]">
-                      <div class="font-medium text-foreground">AI 风险评估</div>
-                      <div v-if="selectedAiEntry?.status === 'pending'" class="text-foreground-muted">检测中...</div>
+                      <div class="font-medium text-foreground">{{ $t('target.ai.title') }}</div>
+                      <div v-if="selectedAiEntry?.status === 'pending'" class="text-foreground-muted">{{ $t('target.ai.checking') }}</div>
                       <div v-else-if="selectedAiEntry?.status === 'error'" class="text-danger">
-                        {{ selectedAiEntry?.error || '检测失败' }}
+                        {{ selectedAiEntry?.error || $t('target.ai.failed') }}
                       </div>
                       <template v-else>
                         <div>
-                          <span class="text-foreground-muted">等级：</span>
+                          <span class="text-foreground-muted">{{ $t('target.ai.level') }}</span>
                           <span class="text-foreground">{{ aiLabel(selectedAiEntry) }}</span>
                         </div>
                         <div v-if="selectedAiEntry?.reason">
-                          <span class="text-foreground-muted">原因：</span>
+                          <span class="text-foreground-muted">{{ $t('target.ai.reason') }}</span>
                           <span class="text-foreground">{{ selectedAiEntry?.reason }}</span>
                         </div>
                         <div v-if="selectedAiEntry?.keyPoints?.length">
-                          <div class="text-foreground-muted mb-1">要点：</div>
+                          <div class="text-foreground-muted mb-1">{{ $t('target.ai.keyPoints') }}</div>
                           <div class="space-y-1">
                             <div v-for="(point, pIndex) in selectedAiEntry?.keyPoints" :key="pIndex">
                               - {{ point }}
@@ -733,18 +752,18 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                         <div v-if="selectedAiEntry?.status === 'done'">
-                          <span class="text-foreground-muted">自动批准：</span>
+                          <span class="text-foreground-muted">{{ $t('target.ai.autoApproved') }}</span>
                           <span class="text-foreground">{{ aiAutoApprovedLabel(selectedAiEntry) }}</span>
                         </div>
                         <div v-if="selectedAiEntry?.autoApprovedAt" class="text-foreground-muted">
-                          自动批准时间：{{ aiAutoApprovedTime(selectedAiEntry) }}
+                          {{ $t('target.ai.autoApprovedAt', { time: aiAutoApprovedTime(selectedAiEntry) }) }}
                         </div>
                       </template>
                       <div class="text-foreground-muted">
-                        更新时间：{{ selectedAiEntry?.updatedAt ? formatTime(selectedAiEntry!.updatedAt) : '-' }}
+                        {{ $t('target.ai.updatedAt', { time: selectedAiEntry?.updatedAt ? formatTime(selectedAiEntry!.updatedAt) : '-' }) }}
                       </div>
                       <div v-if="props.aiEnabled && isPendingSelected" class="flex justify-end">
-                        <n-button size="tiny" @click.stop="refreshRisk(selectedItem.id)">刷新</n-button>
+                        <n-button size="tiny" @click.stop="refreshRisk(selectedItem.id)">{{ $t('common.refresh') }}</n-button>
                       </div>
                     </div>
                   </n-popover>
@@ -752,44 +771,46 @@ onBeforeUnmount(() => {
 
                 <div class="mt-4 grid grid-cols-2 gap-4 text-xs text-foreground-muted">
                   <div>
-                    <div class="text-foreground-muted">Intent</div>
+                    <div class="text-foreground-muted">{{ $t('target.detail.intent') }}</div>
                     <div class="text-foreground">{{ selectedItem.intent }}</div>
                   </div>
                   <div>
-                    <div class="text-foreground-muted">Mode</div>
+                    <div class="text-foreground-muted">{{ $t('target.detail.mode') }}</div>
                     <div class="text-foreground">{{ selectedItem.mode }}</div>
                   </div>
                   <div>
-                    <div class="text-foreground-muted">CWD</div>
+                    <div class="text-foreground-muted">{{ $t('target.detail.cwd') }}</div>
                     <div class="text-foreground">{{ selectedItem.cwd || '-' }}</div>
                   </div>
                   <div>
-                    <div class="text-foreground-muted">Peer</div>
+                    <div class="text-foreground-muted">{{ $t('target.detail.peer') }}</div>
                     <div class="text-foreground">{{ selectedItem.peer }}</div>
                   </div>
                   <template v-if="isPendingSelected">
                     <div>
-                      <div class="text-foreground-muted">Timeout</div>
-                      <div class="text-foreground">{{ (selectedItem as RequestSnapshot).timeout_ms ?? '-' }} ms</div>
+                      <div class="text-foreground-muted">{{ $t('target.detail.timeout') }}</div>
+                      <div class="text-foreground">
+                        {{ (selectedItem as RequestSnapshot).timeout_ms ?? '-' }} ms
+                      </div>
                     </div>
                   </template>
                   <template v-else-if="isRunningSelected">
                     <div>
-                      <div class="text-foreground-muted">Status</div>
-                      <div class="text-foreground">running</div>
+                      <div class="text-foreground-muted">{{ $t('target.detail.status') }}</div>
+                      <div class="text-foreground">{{ $t('target.status.running') }}</div>
                     </div>
                     <div>
-                      <div class="text-foreground-muted">Queued For</div>
+                      <div class="text-foreground-muted">{{ $t('target.detail.queuedFor') }}</div>
                       <div class="text-foreground">{{ (selectedItem as RunningSnapshot).queued_for_secs }}s</div>
                     </div>
                   </template>
                   <template v-else>
                     <div>
-                      <div class="text-foreground-muted">Summary</div>
+                      <div class="text-foreground-muted">{{ $t('target.detail.summary') }}</div>
                       <div class="text-foreground">{{ formatSummary(selectedItem as ResultSnapshot) }}</div>
                     </div>
                     <div>
-                      <div class="text-foreground-muted">Queued For</div>
+                      <div class="text-foreground-muted">{{ $t('target.detail.queuedFor') }}</div>
                       <div class="text-foreground">{{ (selectedItem as ResultSnapshot).queued_for_secs }}s</div>
                     </div>
                   </template>
@@ -801,13 +822,15 @@ onBeforeUnmount(() => {
                   class="flex items-center gap-2 bg-success hover:bg-success/90 text-white px-4 py-2 rounded shadow"
                   @click="emit('approve', selectedItem.id)"
                 >
-                  Approve <span class="bg-success/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.approve) }}</span>
+                  {{ $t('target.action.approve') }}
+                  <span class="bg-success/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.approve) }}</span>
                 </button>
                 <button
                   class="flex items-center gap-2 bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded shadow"
                   @click="emit('deny', selectedItem.id)"
                 >
-                  Deny <span class="bg-danger/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.deny) }}</span>
+                  {{ $t('target.action.deny') }}
+                  <span class="bg-danger/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.deny) }}</span>
                 </button>
               </div>
               <div v-else-if="isRunningSelected" class="flex flex-col gap-2">
@@ -815,7 +838,7 @@ onBeforeUnmount(() => {
                   class="flex items-center gap-2 bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded shadow"
                   @click="emit('cancel', selectedItem.id)"
                 >
-                  Cancel
+                  {{ $t('target.action.cancel') }}
                 </button>
               </div>
             </div>
@@ -823,13 +846,13 @@ onBeforeUnmount(() => {
             <div class="flex-1 flex flex-col overflow-hidden">
               <div class="flex items-center justify-between px-6 py-2 bg-panel/80 border-b border-border">
                 <span class="text-xs font-semibold text-foreground-muted uppercase">
-                  {{ isPendingSelected ? 'Pending Preview' : 'Execution Output' }}
+                  {{ isPendingSelected ? $t('target.preview.pending') : $t('target.preview.output') }}
                 </span>
                 <button
                   class="text-foreground-muted hover:text-foreground p-1 rounded hover:bg-panel-muted transition-colors"
                   @click="isFullScreen = !isFullScreen"
-                  :aria-label="isFullScreen ? '退出全屏' : '全屏'"
-                  :title="isFullScreen ? '退出全屏' : '全屏'"
+                  :aria-label="isFullScreen ? $t('target.fullscreen.exit') : $t('target.fullscreen.enter')"
+                  :title="isFullScreen ? $t('target.fullscreen.exit') : $t('target.fullscreen.enter')"
                 >
                   <svg
                     v-if="!isFullScreen"
@@ -869,16 +892,16 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
                 <span v-if="!isPendingSelected && !isRunningSelected">
-                  {{ buildOutput(selectedItem as ResultSnapshot) || '无输出' }}
+                  {{ buildOutput(selectedItem as ResultSnapshot) || $t('target.output.empty') }}
                 </span>
-                <span v-else-if="isRunningSelected" class="text-foreground-muted">正在执行中，输出稍后出现。</span>
-                <span v-else class="text-foreground-muted">等待审批后输出将出现在此处。</span>
+                <span v-else-if="isRunningSelected" class="text-foreground-muted">{{ $t('target.output.running') }}</span>
+                <span v-else class="text-foreground-muted">{{ $t('target.output.pending') }}</span>
               </div>
             </div>
           </template>
 
           <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
-            请选择一条记录查看详情
+            {{ $t('target.emptySelection') }}
           </div>
         </div>
       </div>

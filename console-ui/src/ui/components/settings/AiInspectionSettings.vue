@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { NButton, NInput, NInputNumber, NSelect, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
-import { DEFAULT_SETTINGS } from '../../../services/settings';
-import type { AppSettings } from '../../../shared/types';
+import { useI18n } from 'vue-i18n';
+import { DEFAULT_SETTINGS, getDefaultAiPrompt } from '../../../services/settings';
+import type { AppLanguage, AppSettings } from '../../../shared/types';
 
 const props = defineProps<{
   settings: AppSettings['ai'];
@@ -12,7 +14,11 @@ const emit = defineEmits<{
   (e: 'update', settings: AppSettings['ai']): void;
 }>();
 
-const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
+const { t, locale } = useI18n();
+
+const aiProviderOptions = computed<SelectOption[]>(() => [
+  { value: 'openai', label: t('settings.ai.provider.openai') },
+]);
 
 function updateField<K extends keyof AppSettings['ai']>(field: K, value: AppSettings['ai'][K]) {
   emit('update', { ...props.settings, [field]: value });
@@ -27,7 +33,7 @@ function updateMaxConcurrency(value: number | null) {
 }
 
 function resetPrompt() {
-  updateField('prompt', DEFAULT_SETTINGS.ai.prompt);
+  updateField('prompt', getDefaultAiPrompt(locale.value as AppLanguage));
 }
 </script>
 
@@ -36,8 +42,8 @@ function resetPrompt() {
     <div class="space-y-4">
       <div class="ai-field">
         <div>
-          <div class="text-sm font-medium">启用 AI 检查</div>
-          <div class="text-xs text-foreground-muted">对所有 Pending 命令进行风险评估</div>
+          <div class="text-sm font-medium">{{ $t('settings.ai.enable') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.ai.enableHelp') }}</div>
         </div>
         <div class="ai-control ai-control--switch">
           <NSwitch :value="props.settings.enabled" size="small" @update:value="(v) => updateField('enabled', v)" />
@@ -46,8 +52,8 @@ function resetPrompt() {
 
       <div class="ai-field">
         <div>
-          <div class="text-sm font-medium">低风险自动批准</div>
-          <div class="text-xs text-foreground-muted">风险为 low 时自动调用批准</div>
+          <div class="text-sm font-medium">{{ $t('settings.ai.autoApproveLowRisk') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.ai.autoApproveLowRiskHelp') }}</div>
         </div>
         <div class="ai-control ai-control--switch">
           <NSwitch
@@ -62,8 +68,8 @@ function resetPrompt() {
       <div class="space-y-3">
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">Provider</div>
-            <div class="text-xs text-foreground-muted">兼容 OpenAI 的接口</div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.provider.label') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.provider.help') }}</div>
           </div>
           <div class="ai-control">
             <NSelect
@@ -78,8 +84,8 @@ function resetPrompt() {
 
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">Base URL</div>
-            <div class="text-xs text-foreground-muted">模型服务地址</div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.baseUrl') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.baseUrlHelp') }}</div>
           </div>
           <div class="ai-control">
             <NInput :value="props.settings.baseUrl" size="small" class="w-full" @update:value="(v) => updateField('baseUrl', v)" />
@@ -88,8 +94,8 @@ function resetPrompt() {
 
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">Chat Path</div>
-            <div class="text-xs text-foreground-muted">请求路径</div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.chatPath') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.chatPathHelp') }}</div>
           </div>
           <div class="ai-control">
             <NInput :value="props.settings.chatPath" size="small" class="w-full" @update:value="(v) => updateField('chatPath', v)" />
@@ -98,8 +104,8 @@ function resetPrompt() {
 
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">Model</div>
-            <div class="text-xs text-foreground-muted">模型名称</div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.model') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.modelHelp') }}</div>
           </div>
           <div class="ai-control">
             <NInput :value="props.settings.model" size="small" class="w-full" @update:value="(v) => updateField('model', v)" />
@@ -108,8 +114,8 @@ function resetPrompt() {
 
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">API Key</div>
-            <div class="text-xs text-foreground-muted">仅保存在本地设置</div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.apiKey') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.apiKeyHelp') }}</div>
           </div>
           <div class="ai-control">
             <NInput
@@ -124,8 +130,8 @@ function resetPrompt() {
 
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">Timeout (ms)</div>
-            <div class="text-xs text-foreground-muted">超时后视为失败</div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.timeout') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.timeoutHelp') }}</div>
           </div>
           <div class="ai-control">
             <NInputNumber
@@ -141,8 +147,8 @@ function resetPrompt() {
 
         <div class="ai-field">
           <div>
-            <div class="text-sm font-medium">最大并发</div>
-            <div class="text-xs text-foreground-muted">同时评估的请求数</div>
+          <div class="text-sm font-medium">{{ $t('settings.ai.maxConcurrency') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.ai.maxConcurrencyHelp') }}</div>
           </div>
           <div class="ai-control">
             <NInputNumber
@@ -161,10 +167,10 @@ function resetPrompt() {
     <div class="flex flex-col gap-2">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <div class="text-sm font-medium">Prompt</div>
-          <div class="text-xs text-foreground-muted" v-pre>支持 {{field}} 占位</div>
+          <div class="text-sm font-medium">{{ $t('settings.ai.prompt') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.ai.promptHelp') }}</div>
         </div>
-        <NButton size="small" quaternary @click="resetPrompt">恢复默认</NButton>
+        <NButton size="small" quaternary @click="resetPrompt">{{ $t('settings.ai.promptReset') }}</NButton>
       </div>
       <div class="ai-control ai-control--prompt">
         <NInput

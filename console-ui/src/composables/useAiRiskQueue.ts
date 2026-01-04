@@ -1,5 +1,6 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue';
 import { aiRiskAssess } from '../services/api';
+import { i18n } from '../i18n';
 import type { AiRiskApiResponse, AiRiskEntry, AppSettings, RequestSnapshot, ServiceSnapshot } from '../shared/types';
 
 const AI_RISK_CACHE_KEY = 'octovalve.console.ai_risk_cache';
@@ -23,6 +24,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
   const aiRunning = ref(0);
   let aiPumpScheduled = false;
   let aiPersistTimer: number | null = null;
+  const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
 
   function reportError(context: string, err?: unknown) {
     onError?.(context, err);
@@ -144,7 +146,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
     }
     if (!settings.value.ai.apiKey.trim()) {
       if (!existing || existing.status !== 'done') {
-        setAiRisk(key, { status: 'error', error: '未配置 API Key', updatedAt: Date.now() });
+        setAiRisk(key, { status: 'error', error: t('aiRisk.error.noApiKey'), updatedAt: Date.now() });
       }
       return;
     }
@@ -188,7 +190,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
       void runAiTask(task)
         .catch((err) => {
           reportError('ai task failed', err);
-          setAiRisk(key, { status: 'error', error: `AI 执行异常：${String(err)}`, updatedAt: Date.now() });
+          setAiRisk(key, { status: 'error', error: t('aiRisk.error.failed', { error: String(err) }), updatedAt: Date.now() });
         })
         .finally(() => {
           aiRunning.value -= 1;
@@ -202,7 +204,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
     const key = buildAiKey(task.target, task.request.id);
     const now = Date.now();
     if (!settings.value.ai.apiKey.trim()) {
-      setAiRisk(key, { status: 'error', error: '未配置 API Key', updatedAt: now });
+      setAiRisk(key, { status: 'error', error: t('aiRisk.error.noApiKey'), updatedAt: now });
       return;
     }
     try {
@@ -217,7 +219,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
       });
       applyAiResult(key, response);
     } catch (err) {
-      setAiRisk(key, { status: 'error', error: String(err), updatedAt: now });
+      setAiRisk(key, { status: 'error', error: t('aiRisk.error.failed', { error: String(err) }), updatedAt: now });
       reportError('ai risk assess failed', err);
     }
   }

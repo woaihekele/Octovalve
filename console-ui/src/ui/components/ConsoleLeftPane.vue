@@ -25,8 +25,8 @@
           v-if="!selectedTarget"
           class="p-2 rounded border transition-colors bg-panel/60 text-foreground border-border hover:border-accent/40"
           @click="emit('toggle-chat')"
-          :aria-label="isChatOpen ? '收起 AI 助手' : '展开 AI 助手'"
-          :title="isChatOpen ? '收起 AI 助手' : '展开 AI 助手'"
+          :aria-label="isChatOpen ? $t('chat.toggle.close') : $t('chat.toggle.open')"
+          :title="isChatOpen ? $t('chat.toggle.close') : $t('chat.toggle.open')"
         >
           <svg
             class="h-4 w-4"
@@ -114,7 +114,7 @@
           </template>
         </TargetView>
         <div v-else class="flex-1 flex items-center justify-center text-foreground-muted">
-          请选择目标开始操作。
+          {{ $t('console.emptyTarget') }}
         </div>
       </div>
     </div>

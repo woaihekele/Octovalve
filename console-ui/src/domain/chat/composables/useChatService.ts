@@ -2,6 +2,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useChatStore } from '../store/chatStore';
 import type { SendMessageOptions, ChatMessage } from '../types';
+import { i18n } from '../../../i18n';
 
 export interface AcpConnection {
   send: (message: string) => void;
@@ -12,6 +13,7 @@ export function useChatService() {
   const store = useChatStore();
   const { messages, isStreaming, isConnected, error, canSend, activeSession } = storeToRefs(store);
   const abortController = ref<AbortController | null>(null);
+  const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
 
   async function connect(): Promise<void> {
     store.setConnected(true);
@@ -74,12 +76,13 @@ export function useChatService() {
           partial: false,
         });
       } else {
+        const errorMessage = error instanceof Error ? error.message : t('chat.unknownError');
         store.updateMessage(assistantMessage.id, {
           status: 'error',
-          content: `错误: ${error instanceof Error ? error.message : '未知错误'}`,
+          content: t('chat.errorMessage', { error: errorMessage }),
           partial: false,
         });
-        store.setError(error instanceof Error ? error.message : '发送消息失败');
+        store.setError(error instanceof Error ? error.message : t('chat.sendFailed'));
       }
     } finally {
       store.setStreaming(false);
@@ -89,7 +92,7 @@ export function useChatService() {
 
   async function simulateStreamingResponse(messageId: string, userInput: string): Promise<void> {
     // Placeholder: simulate streaming response
-    const response = `收到你的消息: "${userInput}"\n\n这是一个模拟的 AI 响应。实际实现将连接到 ACP 后端。`;
+    const response = t('chat.fallbackResponse', { content: userInput });
     
     for (let i = 0; i < response.length; i++) {
       if (abortController.value?.signal.aborted) {

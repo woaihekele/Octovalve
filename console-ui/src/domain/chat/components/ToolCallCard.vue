@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ToolCall } from '../types';
 
 const props = defineProps<{
@@ -7,6 +8,7 @@ const props = defineProps<{
 }>();
 
 const isExpanded = ref(false);
+const { t } = useI18n();
 
 const canExpand = computed(() => {
   const args = props.toolCall.arguments;
@@ -74,9 +76,26 @@ const outputText = computed(() => {
     return props.toolCall.result;
   }
   if (props.toolCall.status === 'running' || props.toolCall.status === 'pending') {
-    return '执行中...';
+    return t('chat.tool.running');
   }
-  return '暂无输出';
+  return t('chat.tool.noOutput');
+});
+
+const statusLabel = computed(() => {
+  switch (props.toolCall.status) {
+    case 'pending':
+      return t('chat.tool.status.pending');
+    case 'running':
+      return t('chat.tool.status.running');
+    case 'completed':
+      return t('chat.tool.status.completed');
+    case 'failed':
+      return t('chat.tool.status.failed');
+    case 'cancelled':
+      return t('chat.tool.status.cancelled');
+    default:
+      return props.toolCall.status;
+  }
 });
 
 const statusPillClass = computed(() => {
@@ -114,12 +133,12 @@ const statusClass = computed(() => {
       <svg class="tool-badge__icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
       </svg>
-      <span class="tool-badge__label">工具调用</span>
+      <span class="tool-badge__label">{{ $t('chat.tool.label') }}</span>
       <span class="tool-badge__meta">
         <span class="tool-badge__name">{{ toolCall.name }}</span>
         <span v-if="argsSummary" class="tool-badge__args">{{ argsSummary }}</span>
       </span>
-      <span class="tool-status-pill" :class="statusPillClass">{{ toolCall.status }}</span>
+      <span class="tool-status-pill" :class="statusPillClass">{{ statusLabel }}</span>
     </div>
     <button 
       v-if="canExpand" 
@@ -133,16 +152,16 @@ const statusClass = computed(() => {
       >
         <polyline points="6 9 12 15 18 9"/>
       </svg>
-      {{ isExpanded ? '收起详情' : '查看详情' }}
+      {{ isExpanded ? $t('chat.tool.collapse') : $t('chat.tool.expand') }}
     </button>
     <div v-if="isExpanded && canExpand" class="tool-details">
       <div class="tool-detail">
-        <div class="tool-detail__title">输入</div>
+        <div class="tool-detail__title">{{ $t('chat.tool.input') }}</div>
         <pre v-if="formattedArgs">{{ formattedArgs }}</pre>
-        <div v-else class="tool-detail__empty">无输入参数</div>
+        <div v-else class="tool-detail__empty">{{ $t('chat.tool.noInput') }}</div>
       </div>
       <div class="tool-detail">
-        <div class="tool-detail__title">输出</div>
+        <div class="tool-detail__title">{{ $t('chat.tool.output') }}</div>
         <pre>{{ outputText }}</pre>
       </div>
     </div>

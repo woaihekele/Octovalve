@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { NButton, NInput } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import { eventToShortcut, formatShortcut, normalizeShortcut } from '../../../shared/shortcuts';
 import { DEFAULT_SETTINGS } from '../../../services/settings';
 import type { AppSettings } from '../../../shared/types';
@@ -13,14 +14,16 @@ const emit = defineEmits<{
   (e: 'update-shortcut', key: string, value: string): void;
 }>();
 
+const { t } = useI18n();
+
 const shortcutFields = [
-  { key: 'prevTarget', label: '上一个目标' },
-  { key: 'nextTarget', label: '下一个目标' },
-  { key: 'jumpNextPending', label: '跳转到下一个 Pending' },
-  { key: 'approve', label: '批准' },
-  { key: 'deny', label: '拒绝' },
-  { key: 'fullScreen', label: '全屏输出' },
-  { key: 'openSettings', label: '打开设置' },
+  { key: 'prevTarget', labelKey: 'settings.shortcuts.prevTarget' },
+  { key: 'nextTarget', labelKey: 'settings.shortcuts.nextTarget' },
+  { key: 'jumpNextPending', labelKey: 'settings.shortcuts.jumpNextPending' },
+  { key: 'approve', labelKey: 'settings.shortcuts.approve' },
+  { key: 'deny', labelKey: 'settings.shortcuts.deny' },
+  { key: 'fullScreen', labelKey: 'settings.shortcuts.fullScreen' },
+  { key: 'openSettings', labelKey: 'settings.shortcuts.openSettings' },
 ] as const;
 
 type ShortcutField = (typeof shortcutFields)[number]['key'];
@@ -41,9 +44,9 @@ function captureShortcut(field: ShortcutField, event: KeyboardEvent) {
 function shortcutDisplay(field: ShortcutField) {
   const formatted = formatShortcut(props.settings.shortcuts[field]);
   if (activeShortcut.value === field) {
-    return formatted || '按键盘设置快捷键';
+    return formatted || t('settings.shortcuts.capture');
   }
-  return formatted || '点击设置快捷键';
+  return formatted || t('settings.shortcuts.clickToSet');
 }
 
 function shortcutHasValue(field: ShortcutField) {
@@ -92,7 +95,7 @@ function deactivateShortcut(field: ShortcutField) {
       :key="item.key"
       class="flex items-center justify-between gap-4 text-sm"
     >
-      <span class="text-foreground-muted">{{ item.label }}</span>
+      <span class="text-foreground-muted">{{ $t(item.labelKey) }}</span>
       <div class="flex items-center gap-2">
         <div class="w-[120px] flex-none">
           <NInput
@@ -110,8 +113,8 @@ function deactivateShortcut(field: ShortcutField) {
           size="small"
           quaternary
           :disabled="!shortcutHasValue(item.key)"
-          title="清空"
-          aria-label="清空快捷键"
+          :title="$t('settings.shortcuts.clear')"
+          :aria-label="$t('settings.shortcuts.clearAria')"
           @click="clearShortcut(item.key)"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -123,8 +126,8 @@ function deactivateShortcut(field: ShortcutField) {
           size="small"
           quaternary
           :disabled="shortcutIsDefault(item.key)"
-          title="恢复默认"
-          aria-label="恢复默认快捷键"
+          :title="$t('settings.shortcuts.reset')"
+          :aria-label="$t('settings.shortcuts.resetAria')"
           @click="resetShortcut(item.key)"
         >
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

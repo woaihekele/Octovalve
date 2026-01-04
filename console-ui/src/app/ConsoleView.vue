@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { NButton, NCard, NModal, NSelect } from 'naive-ui';
 import { isTauri } from '@tauri-apps/api/core';
 import {
@@ -37,6 +38,8 @@ const targets = ref<TargetInfo[]>([]);
 const snapshots = ref<Record<string, ServiceSnapshot>>({});
 const selectedTargetName = ref<string | null>(null);
 const settings = ref(loadSettings());
+const { locale, t } = useI18n({ useScope: 'global' });
+locale.value = settings.value.language;
 const isSettingsOpen = ref(false);
 const isChatOpen = ref(false);
 const notification = ref<{ message: string; count?: number; target?: string } | null>(null);
@@ -82,13 +85,13 @@ const startupProfileOptions = computed(() =>
 );
 const consoleBanner = computed<{ kind: 'error' | 'info'; message: string } | null>(() => {
   if (booting.value) {
-    return { kind: 'info', message: 'console 启动中...' };
+    return { kind: 'info', message: t('console.banner.booting') };
   }
   if (!hasConnected.value && connectionState.value === 'connecting') {
-    return { kind: 'info', message: 'console 连接中...' };
+    return { kind: 'info', message: t('console.banner.connecting') };
   }
   if (hasConnected.value && connectionState.value === 'disconnected') {
-    return { kind: 'error', message: 'console 异常，请重启' };
+    return { kind: 'error', message: t('console.banner.disconnected') };
   }
   return null;
 });
@@ -119,12 +122,12 @@ const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
 const pendingProviderLabel = computed(() => {
   if (pendingProvider.value === 'acp') {
-    return 'ACP';
+    return t('chat.provider.acpLabel');
   }
   if (pendingProvider.value === 'openai') {
-    return 'API';
+    return t('chat.provider.openaiLabel');
   }
-  return '未知';
+  return t('common.unknown');
 });
 
 // Initialize chat provider based on settings
@@ -166,7 +169,7 @@ async function handleChatSend(content: string) {
     try {
       await chatStore.sendMessage(content);
     } catch (e) {
-      showNotification(`Chat error: ${e}`);
+      showNotification(t('chat.error', { error: String(e) }));
     }
   } else {
     // Fallback to simulated response
@@ -189,7 +192,7 @@ async function handleChatSend(content: string) {
 
     chatStore.setStreaming(true);
 
-    const response = `收到你的消息: "${content}"\n\nACP 未初始化，这是模拟响应。请确保 codex-acp 已安装并配置。`;
+    const response = t('chat.fallbackResponse', { content });
     for (let i = 0; i < response.length; i++) {
       chatStore.appendToMessage(assistantMsg.id, response[i]);
       await new Promise((r) => setTimeout(r, 15));
@@ -265,7 +268,7 @@ async function confirmProviderSwitch() {
     chatStore.createSession();
   } catch (e) {
     console.error('[Chat] Provider switch failed:', e);
-    showNotification(`切换失败：${String(e)}`);
+    showNotification(t('chat.providerSwitch.failed', { error: String(e) }));
   } finally {
     providerSwitching.value = false;
     providerSwitchConfirmOpen.value = false;
@@ -301,7 +304,7 @@ async function loadStartupProfiles() {
   }
   startupBusy.value = true;
   startupError.value = '';
-  startupStatusMessage.value = '正在加载环境配置...';
+  startupStatusMessage.value = t('console.startup.loading');
   try {
     const data = await listProfiles();
     startupProfiles.value = data.profiles;
@@ -310,7 +313,7 @@ async function loadStartupProfiles() {
     connectionState.value = 'disconnected';
     startupStatusMessage.value = '';
   } catch (err) {
-    const message = `加载环境失败：${String(err)}`;
+    const message = t('console.startup.loadFailed', { error: String(err) });
     startupError.value = message;
     showNotification(message);
     reportUiError('load profiles failed', err);
@@ -325,7 +328,7 @@ async function applyStartupProfile(): Promise<boolean> {
     return false;
   }
   if (!startupSelectedProfile.value) {
-    startupError.value = '请选择要启动的环境。';
+  startupError.value = t('console.startup.selectProfile');
     return false;
   }
   startupBusy.value = true;
@@ -333,24 +336,27 @@ async function applyStartupProfile(): Promise<boolean> {
   booting.value = true;
   hasConnected.value = false;
   connectionState.value = 'connecting';
-  startupStatusMessage.value = `正在应用环境 ${startupSelectedProfile.value}...`;
+  startupStatusMessage.value = t('console.startup.applyingProfile', { name: startupSelectedProfile.value });
   try {
     await selectProfile(startupSelectedProfile.value);
     const status = await getProxyConfigStatus();
     if (!status.present) {
-      const message = `未找到 ${status.path}，请参考 ${status.example_path} 创建并修改后重试`;
+      const message = t('console.startup.configMissing', {
+        path: status.path,
+        example: status.example_path,
+      });
       startupError.value = message;
       showNotification(message);
       connectionState.value = 'disconnected';
       booting.value = false;
       return false;
     }
-    startupStatusMessage.value = '正在校验配置...';
+    startupStatusMessage.value = t('console.startup.validating');
     const check = await validateStartupConfig();
     if (!check.ok) {
-      const message = `配置检查失败：\n- ${check.errors.join('\n- ')}`;
+      const message = t('console.startup.validationFailed', { errors: check.errors.join('\n- ') });
       startupError.value = message;
-      showNotification('配置检查失败，请查看详情');
+      showNotification(t('console.startup.validationFailedToast'));
       reportUiError('startup config invalid', check.errors.join(' | '));
       connectionState.value = 'disconnected';
       booting.value = false;
@@ -359,7 +365,7 @@ async function applyStartupProfile(): Promise<boolean> {
       }
       return false;
     }
-    startupStatusMessage.value = '正在启动 console...';
+    startupStatusMessage.value = t('console.startup.starting');
     await restartConsole();
     startupProfileOpen.value = false;
     startupStatusMessage.value = '';
@@ -369,7 +375,7 @@ async function applyStartupProfile(): Promise<boolean> {
     }
     return true;
   } catch (err) {
-    const message = `环境启动失败：${String(err)}`;
+    const message = t('console.startup.startFailed', { error: String(err) });
     startupError.value = message;
     showNotification(message);
     reportUiError('startup profile failed', err);
@@ -527,7 +533,7 @@ function applyTargetUpdate(target: TargetInfo) {
 
   const previous = lastPendingCounts.value[target.name] ?? 0;
   if (settings.value.notificationsEnabled && target.pending_count > previous) {
-    showNotification(`收到 ${target.name} 的新请求`, target.pending_count, target.name);
+    showNotification(t('console.notifications.newRequest', { target: target.name }), target.pending_count, target.name);
   }
   if (shouldRefreshSnapshotFromTargetUpdate(target, previous)) {
     void refreshSnapshot(target.name);
@@ -610,7 +616,7 @@ async function approve(id: string) {
   try {
     await approveCommand(selectedTargetName.value, id);
   } catch (err) {
-    showNotification('审批失败，请检查 console 服务');
+    showNotification(t('console.notifications.approveFailed'));
     reportUiError('approve command failed', err);
   }
 }
@@ -620,7 +626,7 @@ async function deny(id: string) {
   try {
     await denyCommand(selectedTargetName.value, id);
   } catch (err) {
-    showNotification('拒绝失败，请检查 console 服务');
+    showNotification(t('console.notifications.denyFailed'));
     reportUiError('deny command failed', err);
   }
 }
@@ -630,7 +636,7 @@ async function cancel(id: string) {
   try {
     await cancelCommand(selectedTargetName.value, id);
   } catch (err) {
-    showNotification('取消失败，请检查 console 服务');
+    showNotification(t('console.notifications.cancelFailed'));
     reportUiError('cancel command failed', err);
   }
 }
@@ -698,7 +704,7 @@ async function refreshChatProviderFromSettings(previous: AppSettings, next: AppS
     }
   } catch (err) {
     console.error('[Chat] settings refresh failed:', err);
-    showNotification(`聊天配置已保存，但初始化失败：${String(err)}`);
+    showNotification(t('chat.settingsRefreshFailed', { error: String(err) }));
   }
 }
 
@@ -819,7 +825,7 @@ function handleGlobalKey(event: KeyboardEvent) {
       selectedTargetName.value = target.name;
       pendingJumpToken.value += 1;
     } else {
-      showNotification('没有待审批任务');
+      showNotification(t('console.notifications.noPending'));
     }
   }
 }
@@ -838,7 +844,10 @@ onMounted(async () => {
     const status = await getProxyConfigStatus();
     if (!status.present) {
       connectionState.value = 'disconnected';
-      showNotification(`未找到 ${status.path}，请参考 ${status.example_path} 创建并修改后重启应用`);
+      showNotification(t('console.startup.configMissingRestart', {
+        path: status.path,
+        example: status.example_path,
+      }));
       void logUiEvent(`proxy config missing: ${status.path}`);
       return;
     }
@@ -867,6 +876,13 @@ watch(
     saveSettings(value);
   },
   { deep: true }
+);
+
+watch(
+  () => settings.value.language,
+  (value) => {
+    locale.value = value;
+  }
 );
 
 watch(
@@ -909,17 +925,17 @@ watch(
   <NotificationBridge :payload="notification" :token="notificationToken" @jump-pending="handleNotificationJump" />
   <n-modal v-model:show="startupProfileOpen" :mask-closable="false" :close-on-esc="false">
     <n-card size="small" class="w-[26rem]" :bordered="true">
-      <template #header>选择启动环境</template>
+      <template #header>{{ $t('console.startup.title') }}</template>
       <div class="space-y-3">
         <div class="text-xs text-foreground-muted">
-          每次启动需要选择要使用的环境配置。
+          {{ $t('console.startup.subtitle') }}
         </div>
         <NSelect
           :value="startupSelectedProfile"
           :options="startupProfileOptions"
           size="small"
           :disabled="startupBusy || startupProfileOptions.length === 0"
-          placeholder="请选择环境"
+          :placeholder="$t('console.startup.placeholder')"
           to="body"
           @update:value="(value) => { startupSelectedProfile = value as string; startupError = ''; }"
         />
@@ -930,14 +946,14 @@ watch(
           {{ startupStatusMessage }}
         </div>
         <div class="flex items-center justify-end gap-2 pt-1">
-          <n-button size="small" :disabled="startupBusy" @click="isSettingsOpen = true">打开设置</n-button>
+          <n-button size="small" :disabled="startupBusy" @click="isSettingsOpen = true">{{ $t('settings.title') }}</n-button>
           <n-button
             size="small"
             type="primary"
             :disabled="startupBusy || !startupSelectedProfile"
             @click="applyStartupProfile"
           >
-            {{ startupBusy ? '启动中…' : '开始' }}
+            {{ startupBusy ? $t('console.startup.startingButton') : $t('console.startup.startButton') }}
           </n-button>
         </div>
       </div>
@@ -1013,21 +1029,23 @@ watch(
       @save="handleSettingsSave"
     />
 
-    <n-modal v-model:show="providerSwitchConfirmOpen" :mask-closable="false" :close-on-esc="true">
-      <n-card size="small" class="w-[24rem]" :bordered="true">
-        <template #header>切换对话 Provider</template>
-        <div class="space-y-2 text-sm text-foreground-muted">
-          <div>切换到 {{ pendingProviderLabel }} 会创建一个全新的会话，历史会话保留。</div>
-          <div>当前正在生成的回复会被强制停止。</div>
+  <n-modal v-model:show="providerSwitchConfirmOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[24rem]" :bordered="true">
+      <template #header>{{ $t('chat.providerSwitch.title') }}</template>
+      <div class="space-y-2 text-sm text-foreground-muted">
+        <div>{{ $t('chat.providerSwitch.hint', { provider: pendingProviderLabel }) }}</div>
+        <div>{{ $t('chat.providerSwitch.subHint') }}</div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button :disabled="providerSwitching" @click="cancelProviderSwitch">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :disabled="providerSwitching" @click="confirmProviderSwitch">
+            {{ $t('chat.providerSwitch.confirm') }}
+          </n-button>
         </div>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <n-button :disabled="providerSwitching" @click="cancelProviderSwitch">取消</n-button>
-            <n-button type="primary" :disabled="providerSwitching" @click="confirmProviderSwitch">确认切换</n-button>
-          </div>
-        </template>
-      </n-card>
-    </n-modal>
+      </template>
+    </n-card>
+  </n-modal>
 
   </div>
 </template>

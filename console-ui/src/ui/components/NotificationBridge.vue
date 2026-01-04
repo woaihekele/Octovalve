@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { h, watch } from 'vue';
 import { useNotification } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
   payload: { message: string; count?: number; target?: string } | null;
@@ -12,6 +13,7 @@ const emit = defineEmits<{
 }>();
 
 const notification = useNotification();
+const { t } = useI18n();
 
 watch(
   () => props.token,
@@ -20,7 +22,7 @@ watch(
       return;
     }
     const target = props.payload.target;
-    const contentText = props.payload.count ? `${props.payload.count} 个待审批` : undefined;
+    const contentText = props.payload.count ? t('console.notifications.pendingCount', { count: props.payload.count }) : undefined;
     const content = target && contentText
       ? () =>
           h(

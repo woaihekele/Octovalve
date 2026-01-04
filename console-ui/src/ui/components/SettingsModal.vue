@@ -17,6 +17,7 @@ import {
   useNotification,
   type SelectOption,
 } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import {
   createProfile,
   deleteProfile,
@@ -55,6 +56,7 @@ function cloneSettings(source: AppSettings): AppSettings {
   return {
     notificationsEnabled: source.notificationsEnabled,
     theme: source.theme,
+    language: source.language,
     ai: { ...source.ai },
     chat: {
       provider: source.chat.provider,
@@ -69,7 +71,7 @@ function cloneSettings(source: AppSettings): AppSettings {
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('general');
 const initialTheme = ref<ThemeMode>(props.settings.theme);
-const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
+const { t } = useI18n();
 const configLoading = ref(false);
 const configBusy = ref(false);
 const profiles = ref<ProfileSummary[]>([]);
@@ -149,12 +151,16 @@ const deletableProfileOptions = computed<SelectOption[]>(() =>
 );
 const canDeleteProfile = computed(() => deletableProfileOptions.value.length > 0);
 const createProfileValid = computed(() => /^[A-Za-z0-9_-]{1,48}$/.test(createProfileName.value.trim()));
-const logTitle = computed(() => (logContext.value === 'console' ? 'Console 重启日志' : '远端重启日志'));
+const logTitle = computed(() =>
+  logContext.value === 'console'
+    ? t('settings.log.title.console')
+    : t('settings.log.title.remote')
+);
 const logFooterText = computed(() => {
   if (logContext.value === 'console') {
-    return logInProgress.value ? '正在重启 console…' : 'console 重启流程已结束';
+    return logInProgress.value ? t('settings.log.footer.console.pending') : t('settings.log.footer.console.done');
   }
-  return logInProgress.value ? '正在重启远端 broker…' : '远端重启流程已结束';
+  return logInProgress.value ? t('settings.log.footer.remote.pending') : t('settings.log.footer.remote.done');
 });
 const isAiTab = computed(() => activeTab.value === 'ai');
 const cardMaxWidth = computed(() => (isConfigTab.value ? '80rem' : isAiTab.value ? '64rem' : '32rem'));
@@ -400,18 +406,18 @@ function disposeLogTerminal() {
 
 async function reloadRemoteBrokersWithLog(message?: string) {
   logContext.value = 'remote-broker';
-  logStatusMessage.value = '正在重启远端 broker，请稍候…';
+  logStatusMessage.value = t('settings.log.status.remote.pending');
   await startLogPolling();
   try {
     await reloadRemoteBrokers();
-    logStatusMessage.value = '远端 broker 重启完成。';
+    logStatusMessage.value = t('settings.log.status.remote.done');
     if (message) {
       showConfigMessage(message);
     }
   } catch (err) {
-    const errorMessage = `远端 broker 重启失败：${String(err)}`;
+    const errorMessage = t('settings.log.status.remote.failed', { error: String(err) });
     logStatusMessage.value = errorMessage;
-    showConfigMessage(`应用失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.apply.failed', { error: String(err) }), 'error');
   } finally {
     stopLogPolling();
   }
@@ -419,16 +425,16 @@ async function reloadRemoteBrokersWithLog(message?: string) {
 
 async function restartConsoleWithLog(message?: string) {
   logContext.value = 'console';
-  logStatusMessage.value = '正在重启 console，请稍候…';
+  logStatusMessage.value = t('settings.log.status.console.pending');
   await startLogPolling();
   try {
     await restartConsole();
-    logStatusMessage.value = 'console 重启完成。';
+    logStatusMessage.value = t('settings.log.status.console.done');
     if (message) {
       showConfigMessage(message);
     }
   } catch (err) {
-    const msg = `console 重启失败：${String(err)}`;
+    const msg = t('settings.log.status.console.failed', { error: String(err) });
     logStatusMessage.value = msg;
     showConfigMessage(msg, 'error');
   } finally {
@@ -484,7 +490,7 @@ async function loadConfigCenter() {
     }
     configLoaded.value = true;
   } catch (err) {
-    showConfigMessage(`加载配置失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.config.loadFailed', { error: String(err) }), 'error');
   } finally {
     configLoading.value = false;
   }
@@ -513,7 +519,7 @@ async function applyProfileSelection(value: string) {
     await loadConfigFiles(value);
   } catch (err) {
     selectedProfile.value = previous;
-    showConfigMessage(`读取环境配置失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.profile.loadFailed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
   }
@@ -535,7 +541,7 @@ function confirmProfileSwitch() {
 
 function openCreateProfile() {
   if (proxyDirty.value || brokerDirty.value) {
-    showConfigMessage('当前配置有未保存改动，请先保存再新建环境。', 'warning');
+    showConfigMessage(t('settings.profile.createBlocked'), 'warning');
     return;
   }
   createProfileName.value = '';
@@ -553,9 +559,9 @@ async function confirmCreateProfile() {
     await loadProfiles(false);
     selectedProfile.value = name;
     await loadConfigFiles(name);
-    showConfigMessage(`已创建环境 ${name}，需要点击应用完成切换。`, 'info');
+    showConfigMessage(t('settings.profile.created', { name }), 'info');
   } catch (err) {
-    showConfigMessage(`新建环境失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.profile.createFailed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
     createProfileOpen.value = false;
@@ -582,9 +588,9 @@ async function confirmDeleteProfile() {
     if (selectedProfile.value) {
       await loadConfigFiles(selectedProfile.value);
     }
-    showConfigMessage(`已删除环境 ${deleteProfileName.value}。`);
+    showConfigMessage(t('settings.profile.deleted', { name: deleteProfileName.value }));
   } catch (err) {
-    showConfigMessage(`删除环境失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.profile.deleteFailed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
     deleteProfileOpen.value = false;
@@ -612,9 +618,9 @@ async function refreshConfigNow() {
     if (profileName) {
       await loadConfigFiles(profileName);
     }
-    showConfigMessage('已刷新配置。');
+    showConfigMessage(t('settings.config.refreshed'));
   } catch (err) {
-    showConfigMessage(`刷新配置失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.config.refreshFailed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
     refreshConfirmOpen.value = false;
@@ -635,11 +641,11 @@ async function saveConfigFiles() {
   }
   const profileName = selectedProfile.value;
   if (!profileName) {
-    showConfigMessage('请先选择环境。', 'warning');
+    showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
   if (!proxyDirty.value && !brokerDirty.value) {
-    showConfigMessage('配置未改动。', 'info');
+    showConfigMessage(t('settings.config.noChanges'), 'info');
     return;
   }
   configBusy.value = true;
@@ -654,9 +660,9 @@ async function saveConfigFiles() {
     await Promise.all(tasks);
     proxyOriginal.value = proxyConfigText.value;
     brokerOriginal.value = brokerConfigText.value;
-    showConfigMessage('配置已保存。');
+    showConfigMessage(t('settings.config.saved'));
   } catch (err) {
-    showConfigMessage(`保存配置失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.config.saveFailed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
   }
@@ -667,11 +673,11 @@ function requestApplyConfig() {
     return;
   }
   if (!selectedProfile.value) {
-    showConfigMessage('请先选择环境。', 'warning');
+    showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
   if (proxyDirty.value || brokerDirty.value) {
-    showConfigMessage('配置有未保存改动，请先保存再应用。', 'warning');
+    showConfigMessage(t('settings.config.applyBlocked'), 'warning');
     return;
   }
   const switching = selectedProfile.value !== activeProfile.value;
@@ -699,11 +705,11 @@ async function applyConfig() {
   }
   const profileName = selectedProfile.value;
   if (!profileName) {
-    showConfigMessage('请先选择环境。', 'warning');
+    showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
   if (proxyDirty.value || brokerDirty.value) {
-    showConfigMessage('配置有未保存改动，请先保存再应用。', 'warning');
+    showConfigMessage(t('settings.config.applyBlocked'), 'warning');
     return;
   }
   const switching = profileName !== activeProfile.value;
@@ -721,25 +727,25 @@ async function applyConfig() {
       const message = shouldReloadRemoteBrokers
         ? undefined
         : switching
-          ? `已切换到环境 ${profileName}。`
-          : '本地配置已应用，console 已重启。';
+          ? t('settings.apply.switchProfile', { name: profileName })
+          : t('settings.apply.localApplied');
       await restartConsoleWithLog(message);
       proxyApplied.value = proxyConfigText.value;
     }
     if (shouldReloadRemoteBrokers) {
       const message = switching
-        ? `已切换到环境 ${profileName}，远端 broker 已重启。`
-        : '远端配置已应用，远端 broker 已重启。';
+        ? t('settings.apply.remoteSwitched', { name: profileName })
+        : t('settings.apply.remoteApplied');
       await reloadRemoteBrokersWithLog(message);
       brokerApplied.value = brokerConfigText.value;
     } else if (switching) {
       brokerApplied.value = brokerConfigText.value;
     }
     if (!shouldRestartConsole && !shouldReloadRemoteBrokers) {
-      showConfigMessage('配置未改动。', 'info');
+      showConfigMessage(t('settings.config.noChanges'), 'info');
     }
   } catch (err) {
-    showConfigMessage(`应用失败：${String(err)}`, 'error');
+    showConfigMessage(t('settings.apply.failed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
   }
@@ -869,15 +875,15 @@ watch(
         <div ref="cardInnerRef" class="w-full">
           <n-card :bordered="true" :style="cardStyle" :content-style="cardContentStyle" size="large">
             <template #header>
-              <div>设置</div>
+              <div>{{ $t('settings.title') }}</div>
             </template>
             <template #header-extra>
               <n-button
                 text
                 :disabled="logModalOpen"
                 @click="emit('close')"
-                aria-label="关闭"
-                title="关闭"
+                :aria-label="$t('common.close')"
+                :title="$t('common.close')"
               >
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -892,26 +898,26 @@ watch(
             size="small"
             :class="isConfigTab ? 'settings-tabs settings-tabs--full' : 'settings-tabs'"
           >
-            <n-tab-pane name="general" tab="通用设置">
+            <n-tab-pane name="general" :tab="$t('settings.tabs.general')">
               <GeneralSettings :settings="localSettings" @update="updateSetting" />
             </n-tab-pane>
 
-            <n-tab-pane name="shortcuts" tab="快捷键设置">
+            <n-tab-pane name="shortcuts" :tab="$t('settings.tabs.shortcuts')">
               <ShortcutsSettings :settings="localSettings" @update-shortcut="updateShortcut" />
             </n-tab-pane>
 
-            <n-tab-pane name="chat" tab="聊天设置">
+            <n-tab-pane name="chat" :tab="$t('settings.tabs.chat')">
               <ChatProviderSettings
                 :config="localSettings.chat"
                 @update="(config) => localSettings.chat = config"
               />
             </n-tab-pane>
 
-            <n-tab-pane name="ai" tab="AI 检查">
+            <n-tab-pane name="ai" :tab="$t('settings.tabs.ai')">
               <AiInspectionSettings :settings="localSettings.ai" @update="(ai) => localSettings.ai = ai" />
             </n-tab-pane>
 
-            <n-tab-pane name="config" tab="配置中心">
+            <n-tab-pane name="config" :tab="$t('settings.tabs.config')">
               <ConfigCenterSettings
                 :config-loading="configLoading"
                 :config-busy="configBusy"
@@ -940,8 +946,8 @@ watch(
           </n-tabs>
 
           <div v-if="activeTab !== 'config'" class="mt-6 flex justify-end gap-3">
-            <n-button @click="emit('close')">取消</n-button>
-            <n-button type="primary" @click="save">保存</n-button>
+            <n-button @click="emit('close')">{{ $t('common.cancel') }}</n-button>
+            <n-button type="primary" @click="save">{{ $t('common.save') }}</n-button>
           </div>
           </n-card>
         </div>
@@ -951,12 +957,14 @@ watch(
 
   <n-modal v-model:show="confirmApplyOpen" :mask-closable="false" :close-on-esc="true">
     <n-card size="small" class="w-[22rem]" :bordered="true">
-      <template #header>确认应用</template>
-      <div class="text-sm text-foreground-muted">远端配置应用会导致重新连接，请确认。</div>
+      <template #header>{{ $t('settings.apply.confirmTitle') }}</template>
+      <div class="text-sm text-foreground-muted">{{ $t('settings.apply.confirmHint') }}</div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <n-button @click="cancelApplyConfirm">取消</n-button>
-          <n-button type="primary" :disabled="configBusy" @click="confirmApply">继续应用</n-button>
+          <n-button @click="cancelApplyConfirm">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmApply">
+            {{ $t('settings.apply.confirmAction') }}
+          </n-button>
         </div>
       </template>
     </n-card>
@@ -964,13 +972,13 @@ watch(
 
   <n-modal v-model:show="switchProfileOpen" :mask-closable="false" :close-on-esc="true">
     <n-card size="small" class="w-[22rem]" :bordered="true">
-      <template #header>切换配置</template>
-      <div class="text-sm text-foreground-muted">当前配置有未保存改动，切换会丢失，是否继续？</div>
+      <template #header>{{ $t('settings.profile.switchTitle') }}</template>
+      <div class="text-sm text-foreground-muted">{{ $t('settings.profile.switchHint') }}</div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <n-button @click="cancelProfileSwitch">取消</n-button>
+          <n-button @click="cancelProfileSwitch">{{ $t('common.cancel') }}</n-button>
           <n-button type="primary" :disabled="configBusy" @click="confirmProfileSwitch">
-            放弃改动并切换
+            {{ $t('settings.profile.switchConfirm') }}
           </n-button>
         </div>
       </template>
@@ -979,16 +987,16 @@ watch(
 
   <n-modal v-model:show="createProfileOpen" :mask-closable="false" :close-on-esc="true">
     <n-card size="small" class="w-[22rem]" :bordered="true">
-      <template #header>新建环境</template>
+      <template #header>{{ $t('settings.profile.createTitle') }}</template>
       <div class="space-y-2">
-        <n-input v-model:value="createProfileName" size="small" placeholder="例如 dev" />
-        <div class="text-xs text-foreground-muted">名称仅支持字母、数字、- 或 _</div>
+        <n-input v-model:value="createProfileName" size="small" :placeholder="$t('settings.profile.createPlaceholder')" />
+        <div class="text-xs text-foreground-muted">{{ $t('settings.profile.createHint') }}</div>
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <n-button @click="createProfileOpen = false">取消</n-button>
+          <n-button @click="createProfileOpen = false">{{ $t('common.cancel') }}</n-button>
           <n-button type="primary" :disabled="!createProfileValid || configBusy" @click="confirmCreateProfile">
-            创建
+            {{ $t('common.create') }}
           </n-button>
         </div>
       </template>
@@ -997,21 +1005,21 @@ watch(
 
   <n-modal v-model:show="deleteProfileOpen" :mask-closable="false" :close-on-esc="true">
     <n-card size="small" class="w-[22rem]" :bordered="true">
-      <template #header>删除环境</template>
+      <template #header>{{ $t('settings.profile.deleteTitle') }}</template>
       <div class="space-y-2">
         <n-select
           v-model:value="deleteProfileName"
           :options="deletableProfileOptions"
           size="small"
-          placeholder="选择要删除的环境"
+          :placeholder="$t('settings.profile.deletePlaceholder')"
         />
-        <div class="text-xs text-warning">删除后无法恢复，请谨慎操作。</div>
+        <div class="text-xs text-warning">{{ $t('settings.profile.deleteHint') }}</div>
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <n-button @click="deleteProfileOpen = false">取消</n-button>
+          <n-button @click="deleteProfileOpen = false">{{ $t('common.cancel') }}</n-button>
           <n-button type="error" :disabled="!deleteProfileName || configBusy" @click="confirmDeleteProfile">
-            确认删除
+            {{ $t('settings.profile.deleteConfirm') }}
           </n-button>
         </div>
       </template>
@@ -1020,12 +1028,14 @@ watch(
 
   <n-modal v-model:show="refreshConfirmOpen" :mask-closable="false" :close-on-esc="true">
     <n-card size="small" class="w-[22rem]" :bordered="true">
-      <template #header>刷新配置</template>
-      <div class="text-sm text-foreground-muted">当前配置有未保存改动，刷新会丢失，是否继续？</div>
+      <template #header>{{ $t('settings.config.refreshTitle') }}</template>
+      <div class="text-sm text-foreground-muted">{{ $t('settings.config.refreshHint') }}</div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <n-button @click="cancelRefreshConfirm">取消</n-button>
-          <n-button type="primary" :disabled="configBusy" @click="confirmRefresh">继续刷新</n-button>
+          <n-button @click="cancelRefreshConfirm">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmRefresh">
+            {{ $t('settings.config.refreshConfirm') }}
+          </n-button>
         </div>
       </template>
     </n-card>
@@ -1035,7 +1045,7 @@ watch(
     <n-card size="small" class="w-[36rem]" :bordered="true">
       <template #header>{{ logTitle }}</template>
       <div class="text-sm text-foreground-muted">
-        {{ logStatusMessage || '正在准备日志...' }}
+        {{ logStatusMessage || $t('settings.log.preparing') }}
       </div>
       <div class="relative mt-3 h-64 overflow-hidden rounded border border-border bg-panel-muted">
         <div ref="logTerminalRef" class="h-full w-full" />
@@ -1043,7 +1053,7 @@ watch(
           v-if="!logHasOutput"
           class="absolute inset-0 flex items-center justify-center text-xs text-foreground-muted pointer-events-none"
         >
-          暂无日志输出
+          {{ $t('settings.log.empty') }}
         </div>
       </div>
       <template #footer>
@@ -1052,7 +1062,9 @@ watch(
             <n-spin v-if="logInProgress" size="small" />
             <span>{{ logFooterText }}</span>
           </div>
-          <n-button type="primary" :disabled="logInProgress" @click="closeLogModal">完成</n-button>
+          <n-button type="primary" :disabled="logInProgress" @click="closeLogModal">
+            {{ $t('common.done') }}
+          </n-button>
         </div>
       </template>
     </n-card>

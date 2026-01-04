@@ -5,7 +5,7 @@
       <textarea
         ref="textareaRef"
         v-model="inputValue"
-        :placeholder="placeholder"
+        :placeholder="resolvedPlaceholder"
         :disabled="disabled"
         class="chat-input__textarea"
         rows="2"
@@ -77,6 +77,7 @@
 import { ref, computed, nextTick, onMounted } from 'vue';
 import { NButton, NIcon, NSelect } from 'naive-ui';
 import { StopOutline } from '@vicons/ionicons5';
+import { useI18n } from 'vue-i18n';
 
 interface Props {
   modelValue: string;
@@ -88,7 +89,6 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  placeholder: '输入消息...',
   disabled: false,
   isStreaming: false,
   provider: 'acp',
@@ -106,6 +106,9 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isFocused = ref(false);
 const isComposing = ref(false);
 const ignoreNextEnter = ref(false);
+const { t } = useI18n();
+
+const resolvedPlaceholder = computed(() => props.placeholder ?? t('chat.input.placeholder.default'));
 
 function handleCompositionStart() {
   isComposing.value = true;
@@ -119,10 +122,10 @@ function handleCompositionEnd() {
   }
 }
 
-const providerOptions = [
-  { label: 'Codex CLI (ACP)', value: 'acp' },
-  { label: 'OpenAI API', value: 'openai' },
-];
+const providerOptions = computed(() => [
+  { label: t('chat.input.provider.acp'), value: 'acp' },
+  { label: t('chat.input.provider.openai'), value: 'openai' },
+]);
 
 const inputValue = computed({
   get: () => props.modelValue,

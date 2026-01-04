@@ -15,7 +15,9 @@ const props = defineProps<{
     </div>
     <div>
       <p class="font-medium text-sm">{{ props.message }}</p>
-      <p v-if="(props.count ?? 0) > 0" class="text-xs text-foreground-muted">{{ props.count }} 个待审批</p>
+      <p v-if="(props.count ?? 0) > 0" class="text-xs text-foreground-muted">
+        {{ $t('console.notifications.pendingCount', { count: props.count }) }}
+      </p>
     </div>
   </div>
 </template>

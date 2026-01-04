@@ -12,16 +12,16 @@
           <template #icon>
             <n-spin size="small" />
           </template>
-          生成中
+          {{ $t('chat.status.streaming') }}
         </n-tag>
         <n-tag v-else-if="message.status === 'error'" type="error" size="small" round>
-          错误
+          {{ $t('chat.status.error') }}
         </n-tag>
       </div>
       <div class="chat-message__body">
         <div v-if="message.reasoning" class="chat-message__reasoning">
           <n-collapse>
-            <n-collapse-item title="思考过程" name="reasoning">
+            <n-collapse-item :title="$t('chat.reasoning')" name="reasoning">
               <div class="chat-message__reasoning-content">{{ message.reasoning }}</div>
             </n-collapse-item>
           </n-collapse>
@@ -47,10 +47,10 @@
       </div>
       <div v-if="showActions" class="chat-message__actions">
         <n-button size="small" type="primary" @click="$emit('approve')">
-          {{ primaryButtonText }}
+          {{ primaryLabel }}
         </n-button>
         <n-button size="small" @click="$emit('reject')">
-          {{ secondaryButtonText }}
+          {{ secondaryLabel }}
         </n-button>
       </div>
     </div>
@@ -61,6 +61,7 @@
 import { computed } from 'vue';
 import { NIcon, NTag, NSpin, NButton, NCollapse, NCollapseItem } from 'naive-ui';
 import { PersonOutline, SparklesOutline } from '@vicons/ionicons5';
+import { useI18n } from 'vue-i18n';
 import type { ChatMessage, ToolCall } from '../types';
 
 interface Props {
@@ -72,8 +73,6 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   showActions: false,
-  primaryButtonText: '批准',
-  secondaryButtonText: '拒绝',
 });
 
 defineEmits<{
@@ -82,14 +81,16 @@ defineEmits<{
   'image-click': [url: string];
 }>();
 
+const { t, locale } = useI18n();
+
 const roleLabel = computed(() => {
   switch (props.message.role) {
     case 'user':
-      return '你';
+      return t('chat.role.user');
     case 'assistant':
-      return 'AI';
+      return t('chat.role.assistant');
     case 'system':
-      return '系统';
+      return t('chat.role.system');
     default:
       return props.message.role;
   }
@@ -97,8 +98,11 @@ const roleLabel = computed(() => {
 
 const formattedTime = computed(() => {
   const date = new Date(props.message.ts);
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' });
 });
+
+const primaryLabel = computed(() => props.primaryButtonText ?? t('chat.action.approve'));
+const secondaryLabel = computed(() => props.secondaryButtonText ?? t('chat.action.reject'));
 
 const renderedContent = computed(() => {
   // Simple markdown-like rendering

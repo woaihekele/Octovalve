@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { NSelect, NInput, NInputNumber, NAlert, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import type { ChatProviderConfig } from '../../../shared/types';
 
 const props = defineProps<{
@@ -11,10 +13,12 @@ const emit = defineEmits<{
   (e: 'update', config: ChatProviderConfig): void;
 }>();
 
-const providerOptions: SelectOption[] = [
-  { value: 'openai', label: 'OpenAI 兼容 API' },
-  { value: 'acp', label: 'ACP (codex-acp)' },
-];
+const { t } = useI18n();
+
+const providerOptions = computed<SelectOption[]>(() => [
+  { value: 'openai', label: t('settings.chat.provider.openai') },
+  { value: 'acp', label: t('settings.chat.provider.acp') },
+]);
 
 function updateProvider(value: 'openai' | 'acp') {
   emit('update', { ...props.config, provider: value });
@@ -43,8 +47,8 @@ function updateAcpPath(value: string) {
   <div class="space-y-6">
     <!-- Provider Selection -->
     <div class="space-y-2">
-      <div class="text-sm font-medium">聊天 Provider</div>
-      <div class="text-xs text-foreground-muted mb-2">选择 AI 聊天服务提供方</div>
+      <div class="text-sm font-medium">{{ $t('settings.chat.provider.label') }}</div>
+      <div class="text-xs text-foreground-muted mb-2">{{ $t('settings.chat.provider.help') }}</div>
       <NSelect
         :value="props.config.provider"
         :options="providerOptions"
@@ -56,11 +60,11 @@ function updateAcpPath(value: string) {
 
     <div class="flex items-center justify-between gap-4">
       <div>
-        <div class="text-sm font-medium">发送快捷键</div>
-        <div class="text-xs text-foreground-muted">默认 Cmd+Enter 发送</div>
+        <div class="text-sm font-medium">{{ $t('settings.chat.sendShortcut') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.sendShortcutHelp') }}</div>
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-xs text-foreground-muted">Enter 发送</span>
+        <span class="text-xs text-foreground-muted">{{ $t('settings.chat.sendOnEnter') }}</span>
         <NSwitch
           :value="props.config.sendOnEnter"
           size="small"
@@ -71,12 +75,12 @@ function updateAcpPath(value: string) {
 
     <!-- OpenAI API Settings -->
     <div v-if="props.config.provider === 'openai'" class="space-y-4 p-4 rounded-lg bg-panel-muted/50">
-      <div class="text-sm font-medium text-accent">OpenAI API 配置</div>
+      <div class="text-sm font-medium text-accent">{{ $t('settings.chat.openai.title') }}</div>
       
       <div class="grid gap-4">
         <div class="space-y-1">
-          <div class="text-sm">Base URL</div>
-          <div class="text-xs text-foreground-muted">API 服务器地址</div>
+          <div class="text-sm">{{ $t('settings.chat.openai.baseUrl') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.chat.openai.baseUrlHelp') }}</div>
           <NInput
             :value="props.config.openai.baseUrl"
             size="small"
@@ -86,8 +90,8 @@ function updateAcpPath(value: string) {
         </div>
 
         <div class="space-y-1">
-          <div class="text-sm">Chat Path</div>
-          <div class="text-xs text-foreground-muted">聊天接口路径</div>
+          <div class="text-sm">{{ $t('settings.chat.openai.chatPath') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.chat.openai.chatPathHelp') }}</div>
           <NInput
             :value="props.config.openai.chatPath"
             size="small"
@@ -97,8 +101,8 @@ function updateAcpPath(value: string) {
         </div>
 
         <div class="space-y-1">
-          <div class="text-sm">Model</div>
-          <div class="text-xs text-foreground-muted">模型名称</div>
+          <div class="text-sm">{{ $t('settings.chat.openai.model') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.chat.openai.modelHelp') }}</div>
           <NInput
             :value="props.config.openai.model"
             size="small"
@@ -108,8 +112,8 @@ function updateAcpPath(value: string) {
         </div>
 
         <div class="space-y-1">
-          <div class="text-sm">API Key</div>
-          <div class="text-xs text-foreground-muted">API 密钥</div>
+          <div class="text-sm">{{ $t('settings.chat.openai.apiKey') }}</div>
+          <div class="text-xs text-foreground-muted">{{ $t('settings.chat.openai.apiKeyHelp') }}</div>
           <NInput
             :value="props.config.openai.apiKey"
             type="password"
@@ -124,15 +128,15 @@ function updateAcpPath(value: string) {
 
     <!-- ACP Settings -->
     <div v-if="props.config.provider === 'acp'" class="space-y-4 p-4 rounded-lg bg-panel-muted/50">
-      <div class="text-sm font-medium text-accent">ACP 配置</div>
+      <div class="text-sm font-medium text-accent">{{ $t('settings.chat.acp.title') }}</div>
       
       <NAlert type="info" :bordered="false" class="mb-4">
-        ACP (Agent Client Protocol) 需要安装 codex-acp 命令行工具
+        {{ $t('settings.chat.acp.hint') }}
       </NAlert>
 
       <div class="space-y-1">
-        <div class="text-sm">codex-acp 路径</div>
-        <div class="text-xs text-foreground-muted">留空使用系统 PATH 中的 codex-acp</div>
+        <div class="text-sm">{{ $t('settings.chat.acp.path') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.acp.pathHelp') }}</div>
         <NInput
           :value="props.config.acp.path"
           size="small"

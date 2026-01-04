@@ -32,7 +32,7 @@
         v-if="responseContent || message.role === 'user' || (!thinkingContent && !responseContent)"
       >
         <div v-if="message.role === 'assistant' && isStreaming && !responseContent && !thinkingContent" class="chat-row__thinking-inline">
-          <span class="chat-row__thinking-inline-label">思考中</span>
+          <span class="chat-row__thinking-inline-label">{{ $t('chat.thinking') }}</span>
           <span class="chat-row__thinking-dots" aria-hidden="true">
             <span></span><span></span><span></span>
           </span>

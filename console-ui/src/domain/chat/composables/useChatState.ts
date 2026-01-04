@@ -1,4 +1,5 @@
 import { ref, computed, watch } from 'vue';
+import { i18n } from '../../../i18n';
 import type { ChatMessage } from '../types';
 
 export interface ChatInputState {
@@ -18,8 +19,8 @@ export function useChatState(messages: () => ChatMessage[]) {
   // UI state
   const expandedRows = ref<Record<string, boolean>>({});
   const enableButtons = ref(false);
-  const primaryButtonText = ref('批准');
-  const secondaryButtonText = ref('拒绝');
+  const primaryButtonText = ref(i18n.global.t('chat.action.approve'));
+  const secondaryButtonText = ref(i18n.global.t('chat.action.reject'));
 
   // Derived state
   const lastMessage = computed(() => messages().at(-1) ?? null);
@@ -84,6 +85,13 @@ export function useChatState(messages: () => ChatMessage[]) {
       if (newLen === 0 && oldLen > 0) {
         expandedRows.value = {};
       }
+    }
+  );
+  watch(
+    () => i18n.global.locale.value,
+    () => {
+      primaryButtonText.value = i18n.global.t('chat.action.approve');
+      secondaryButtonText.value = i18n.global.t('chat.action.reject');
     }
   );
 
