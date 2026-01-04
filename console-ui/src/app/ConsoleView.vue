@@ -392,7 +392,7 @@ async function resumeConsoleSession() {
   }
 }
 
-const { aiRiskMap, enqueueAiTask, processAiQueue, scheduleAiForSnapshot } = useAiRiskQueue({
+const { aiRiskMap, enqueueAiTask, processAiQueue, scheduleAiForSnapshot, updateAiRiskEntry } = useAiRiskQueue({
   settings,
   onError: reportUiError,
 });
@@ -444,11 +444,19 @@ async function processAutoApproveLowRisk() {
       if (!entry || entry.status !== 'done' || entry.risk !== 'low') {
         continue;
       }
+      if (entry.autoApproved) {
+        autoApprovedLowRisk.add(key);
+        continue;
+      }
       autoApprovedLowRisk.add(key);
-      void approveCommand(targetName, request.id).catch((err) => {
-        autoApprovedLowRisk.delete(key);
-        reportUiError('auto approve low risk failed', err);
-      });
+      void approveCommand(targetName, request.id)
+        .then(() => {
+          updateAiRiskEntry(key, { autoApproved: true, autoApprovedAt: Date.now() });
+        })
+        .catch((err) => {
+          autoApprovedLowRisk.delete(key);
+          reportUiError('auto approve low risk failed', err);
+        });
     }
   }
   for (const key of Array.from(autoApprovedLowRisk)) {

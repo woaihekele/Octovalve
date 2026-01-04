@@ -96,6 +96,14 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
     scheduleAiRiskPersist();
   }
 
+  function updateAiRiskEntry(key: string, updates: Partial<AiRiskEntry>) {
+    const existing = aiRiskMap.value[key];
+    if (!existing) {
+      return;
+    }
+    setAiRisk(key, { ...existing, ...updates });
+  }
+
   function buildAiKey(targetName: string, requestId: string) {
     return `${targetName}:${requestId}`;
   }
@@ -215,12 +223,17 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
   }
 
   function applyAiResult(key: string, response: AiRiskApiResponse) {
+    const existing = aiRiskMap.value[key];
+    const autoApproved = existing?.autoApproved === true;
+    const autoApprovedAt = autoApproved ? existing?.autoApprovedAt : undefined;
     setAiRisk(key, {
       status: 'done',
       risk: response.risk,
       reason: response.reason ?? undefined,
       keyPoints: response.key_points ?? [],
       updatedAt: Date.now(),
+      autoApproved,
+      autoApprovedAt,
     });
   }
 
@@ -255,5 +268,6 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
     enqueueAiTask,
     processAiQueue,
     scheduleAiForSnapshot,
+    updateAiRiskEntry,
   };
 }

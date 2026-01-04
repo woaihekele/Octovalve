@@ -110,6 +110,8 @@ export interface AiRiskEntry {
   keyPoints?: string[];
   updatedAt: number;
   error?: string;
+  autoApproved?: boolean;
+  autoApprovedAt?: number;
 }
 
 export interface AiRiskApiResponse {

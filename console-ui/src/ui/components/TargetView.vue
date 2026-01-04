@@ -186,6 +186,10 @@ function getAiEntry(id: string) {
   return props.aiRiskMap[aiKey(id)];
 }
 
+function aiEntryForItem(item: SnapshotItem) {
+  return getAiEntry(item.id);
+}
+
 function aiLabel(entry?: AiRiskEntry) {
   if (!entry) {
     return '未检测';
@@ -232,6 +236,28 @@ function aiTagType(entry?: AiRiskEntry) {
   }
   return 'default';
 }
+
+function shouldShowAiTag(item: SnapshotItem) {
+  if (isPendingItem(item)) {
+    return props.aiEnabled;
+  }
+  return Boolean(getAiEntry(item.id));
+}
+
+function aiAutoApproved(entry?: AiRiskEntry) {
+  return entry?.autoApproved === true;
+}
+
+function aiAutoApprovedLabel(entry?: AiRiskEntry) {
+  return aiAutoApproved(entry) ? '是' : '否';
+}
+
+function aiAutoApprovedTime(entry?: AiRiskEntry) {
+  return entry?.autoApprovedAt ? formatTime(entry.autoApprovedAt) : '-';
+}
+
+const selectedAiEntry = computed(() => (selectedItem.value ? getAiEntry(selectedItem.value.id) : undefined));
+const showSelectedAiTag = computed(() => (selectedItem.value ? shouldShowAiTag(selectedItem.value) : false));
 
 function refreshRisk(id: string) {
   emit('refresh-risk', { target: props.target.name, id });
@@ -598,40 +624,52 @@ onBeforeUnmount(() => {
                   >
                     {{ (item as ResultSnapshot).status }}
                   </span>
-                  <n-popover v-if="props.aiEnabled && isPendingItem(item)" trigger="hover" placement="left" :delay="120">
+                  <n-popover v-if="shouldShowAiTag(item)" trigger="hover" placement="left" :delay="120">
                     <template #trigger>
-                      <n-tag size="small" :type="aiTagType(getAiEntry(item.id))" :bordered="false">
-                        {{ aiLabel(getAiEntry(item.id)) }}
-                      </n-tag>
+                      <div class="flex items-center gap-1">
+                        <n-tag size="small" :type="aiTagType(aiEntryForItem(item))" :bordered="false">
+                          {{ aiLabel(aiEntryForItem(item)) }}
+                        </n-tag>
+                        <n-tag v-if="aiAutoApproved(aiEntryForItem(item))" size="small" type="warning" :bordered="false">
+                          自动
+                        </n-tag>
+                      </div>
                     </template>
                     <div class="space-y-2 text-xs max-w-[260px]">
                       <div class="font-medium text-foreground">AI 风险评估</div>
-                      <div v-if="getAiEntry(item.id)?.status === 'pending'" class="text-foreground-muted">检测中...</div>
-                      <div v-else-if="getAiEntry(item.id)?.status === 'error'" class="text-danger">
-                        {{ getAiEntry(item.id)?.error || '检测失败' }}
+                      <div v-if="aiEntryForItem(item)?.status === 'pending'" class="text-foreground-muted">检测中...</div>
+                      <div v-else-if="aiEntryForItem(item)?.status === 'error'" class="text-danger">
+                        {{ aiEntryForItem(item)?.error || '检测失败' }}
                       </div>
                       <template v-else>
                         <div>
                           <span class="text-foreground-muted">等级：</span>
-                          <span class="text-foreground">{{ aiLabel(getAiEntry(item.id)) }}</span>
+                          <span class="text-foreground">{{ aiLabel(aiEntryForItem(item)) }}</span>
                         </div>
-                        <div v-if="getAiEntry(item.id)?.reason">
+                        <div v-if="aiEntryForItem(item)?.reason">
                           <span class="text-foreground-muted">原因：</span>
-                          <span class="text-foreground">{{ getAiEntry(item.id)?.reason }}</span>
+                          <span class="text-foreground">{{ aiEntryForItem(item)?.reason }}</span>
                         </div>
-                        <div v-if="getAiEntry(item.id)?.keyPoints?.length">
+                        <div v-if="aiEntryForItem(item)?.keyPoints?.length">
                           <div class="text-foreground-muted mb-1">要点：</div>
                           <div class="space-y-1">
-                            <div v-for="(point, pIndex) in getAiEntry(item.id)?.keyPoints" :key="pIndex">
+                            <div v-for="(point, pIndex) in aiEntryForItem(item)?.keyPoints" :key="pIndex">
                               - {{ point }}
                             </div>
                           </div>
                         </div>
+                        <div v-if="aiEntryForItem(item)?.status === 'done'">
+                          <span class="text-foreground-muted">自动批准：</span>
+                          <span class="text-foreground">{{ aiAutoApprovedLabel(aiEntryForItem(item)) }}</span>
+                        </div>
+                        <div v-if="aiEntryForItem(item)?.autoApprovedAt" class="text-foreground-muted">
+                          自动批准时间：{{ aiAutoApprovedTime(aiEntryForItem(item)) }}
+                        </div>
                       </template>
                       <div class="text-foreground-muted">
-                        更新时间：{{ getAiEntry(item.id)?.updatedAt ? formatTime(getAiEntry(item.id)!.updatedAt) : '-' }}
+                        更新时间：{{ aiEntryForItem(item)?.updatedAt ? formatTime(aiEntryForItem(item)!.updatedAt) : '-' }}
                       </div>
-                      <div class="flex justify-end">
+                      <div v-if="props.aiEnabled && isPendingItem(item)" class="flex justify-end">
                         <n-button size="tiny" @click.stop="refreshRisk(item.id)">刷新</n-button>
                       </div>
                     </div>
@@ -658,6 +696,59 @@ onBeforeUnmount(() => {
                 >
                   {{ selectedItem.raw_command }}
                 </code>
+
+                <div v-if="showSelectedAiTag" class="mt-3 flex items-center gap-2">
+                  <n-popover trigger="hover" placement="left" :delay="120">
+                    <template #trigger>
+                      <div class="flex items-center gap-1">
+                        <n-tag size="small" :type="aiTagType(selectedAiEntry)" :bordered="false">
+                          {{ aiLabel(selectedAiEntry) }}
+                        </n-tag>
+                        <n-tag v-if="aiAutoApproved(selectedAiEntry)" size="small" type="warning" :bordered="false">
+                          自动
+                        </n-tag>
+                      </div>
+                    </template>
+                    <div class="space-y-2 text-xs max-w-[260px]">
+                      <div class="font-medium text-foreground">AI 风险评估</div>
+                      <div v-if="selectedAiEntry?.status === 'pending'" class="text-foreground-muted">检测中...</div>
+                      <div v-else-if="selectedAiEntry?.status === 'error'" class="text-danger">
+                        {{ selectedAiEntry?.error || '检测失败' }}
+                      </div>
+                      <template v-else>
+                        <div>
+                          <span class="text-foreground-muted">等级：</span>
+                          <span class="text-foreground">{{ aiLabel(selectedAiEntry) }}</span>
+                        </div>
+                        <div v-if="selectedAiEntry?.reason">
+                          <span class="text-foreground-muted">原因：</span>
+                          <span class="text-foreground">{{ selectedAiEntry?.reason }}</span>
+                        </div>
+                        <div v-if="selectedAiEntry?.keyPoints?.length">
+                          <div class="text-foreground-muted mb-1">要点：</div>
+                          <div class="space-y-1">
+                            <div v-for="(point, pIndex) in selectedAiEntry?.keyPoints" :key="pIndex">
+                              - {{ point }}
+                            </div>
+                          </div>
+                        </div>
+                        <div v-if="selectedAiEntry?.status === 'done'">
+                          <span class="text-foreground-muted">自动批准：</span>
+                          <span class="text-foreground">{{ aiAutoApprovedLabel(selectedAiEntry) }}</span>
+                        </div>
+                        <div v-if="selectedAiEntry?.autoApprovedAt" class="text-foreground-muted">
+                          自动批准时间：{{ aiAutoApprovedTime(selectedAiEntry) }}
+                        </div>
+                      </template>
+                      <div class="text-foreground-muted">
+                        更新时间：{{ selectedAiEntry?.updatedAt ? formatTime(selectedAiEntry!.updatedAt) : '-' }}
+                      </div>
+                      <div v-if="props.aiEnabled && isPendingSelected" class="flex justify-end">
+                        <n-button size="tiny" @click.stop="refreshRisk(selectedItem.id)">刷新</n-button>
+                      </div>
+                    </div>
+                  </n-popover>
+                </div>
 
                 <div class="mt-4 grid grid-cols-2 gap-4 text-xs text-foreground-muted">
                   <div>
