@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -31,8 +31,9 @@ import {
   writeProfileProxyConfig,
 } from '../../services/api';
 import { loadSettings } from '../../services/settings';
-import type { AppSettings, ConfigFilePayload, ProfileSummary } from '../../shared/types';
+import type { AppSettings, ConfigFilePayload, ProfileSummary, ThemeMode } from '../../shared/types';
 import { type ResolvedTheme } from '../../shared/theme';
+import { APPLY_THEME_MODE } from '../../app/appContext';
 import { AiInspectionSettings, ChatProviderSettings, ConfigCenterSettings, GeneralSettings, ShortcutsSettings } from './settings';
 import type { ChatProviderConfig } from '../../shared/types';
 
@@ -47,6 +48,8 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'save', settings: AppSettings): void;
 }>();
+
+const applyThemeMode = inject(APPLY_THEME_MODE, () => {});
 
 function cloneSettings(source: AppSettings): AppSettings {
   return {
@@ -65,6 +68,7 @@ function cloneSettings(source: AppSettings): AppSettings {
 
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('general');
+const initialTheme = ref<ThemeMode>(props.settings.theme);
 const aiProviderOptions: SelectOption[] = [{ value: 'openai', label: 'OpenAI 兼容' }];
 const configLoading = ref(false);
 const configBusy = ref(false);
@@ -114,6 +118,21 @@ watch(
     localSettings.value = cloneSettings(value);
   },
   { deep: true }
+);
+
+watch(
+  () => props.isOpen,
+  (open) => {
+    if (open) {
+      initialTheme.value = props.settings.theme;
+      return;
+    }
+    if (initialTheme.value !== props.settings.theme) {
+      initialTheme.value = props.settings.theme;
+    }
+    applyThemeMode(props.settings.theme);
+    localSettings.value = cloneSettings(props.settings);
+  }
 );
 
 const hasOpen = computed(() => props.isOpen);
@@ -241,6 +260,9 @@ function save() {
 
 function updateSetting(key: keyof AppSettings, value: unknown) {
   (localSettings.value as Record<string, unknown>)[key] = value;
+  if (key === 'theme') {
+    applyThemeMode(value as ThemeMode);
+  }
 }
 
 function updateShortcut(key: string, value: string) {
