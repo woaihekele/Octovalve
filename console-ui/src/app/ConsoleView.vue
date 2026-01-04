@@ -56,6 +56,7 @@ const startupError = ref('');
 const booting = ref(false);
 const hasConnected = ref(false);
 const focusConfigToken = ref(0);
+const STARTUP_SESSION_KEY = 'octovalve.startup.completed';
 type ConsoleLeftPaneExpose = {
   focusActiveTerminal: () => void;
   blurActiveTerminal: () => void;
@@ -317,13 +318,13 @@ async function loadStartupProfiles() {
   }
 }
 
-async function applyStartupProfile() {
+async function applyStartupProfile(): Promise<boolean> {
   if (startupBusy.value) {
-    return;
+    return false;
   }
   if (!startupSelectedProfile.value) {
     startupError.value = '请选择要启动的环境。';
-    return;
+    return false;
   }
   startupBusy.value = true;
   startupError.value = '';
@@ -340,7 +341,7 @@ async function applyStartupProfile() {
       showNotification(message);
       connectionState.value = 'disconnected';
       booting.value = false;
-      return;
+      return false;
     }
     startupStatusMessage.value = '正在校验配置...';
     const check = await validateStartupConfig();
@@ -354,13 +355,17 @@ async function applyStartupProfile() {
       if (check.needs_setup) {
         openSettingsForConfig();
       }
-      return;
+      return false;
     }
     startupStatusMessage.value = '正在启动 console...';
     await restartConsole();
     startupProfileOpen.value = false;
     startupStatusMessage.value = '';
     await startConsoleSession();
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(STARTUP_SESSION_KEY, '1');
+    }
+    return true;
   } catch (err) {
     const message = `环境启动失败：${String(err)}`;
     startupError.value = message;
@@ -368,8 +373,31 @@ async function applyStartupProfile() {
     reportUiError('startup profile failed', err);
     connectionState.value = 'disconnected';
     booting.value = false;
+    return false;
   } finally {
     startupBusy.value = false;
+  }
+}
+
+async function autoStartFromSession() {
+  try {
+    const data = await listProfiles();
+    startupProfiles.value = data.profiles;
+    startupSelectedProfile.value = data.current || data.profiles[0]?.name || null;
+    if (!startupSelectedProfile.value) {
+      startupProfileOpen.value = true;
+      return;
+    }
+    const ok = await applyStartupProfile();
+    if (!ok) {
+      startupProfileOpen.value = true;
+    }
+  } catch (err) {
+    const message = `加载环境失败：${String(err)}`;
+    startupError.value = message;
+    showNotification(message);
+    reportUiError('load profiles failed', err);
+    startupProfileOpen.value = true;
   }
 }
 
@@ -673,7 +701,11 @@ function handleGlobalKey(event: KeyboardEvent) {
 onMounted(async () => {
   window.addEventListener('keydown', handleGlobalKey);
   if (isTauri()) {
-    await loadStartupProfiles();
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(STARTUP_SESSION_KEY) === '1') {
+      await autoStartFromSession();
+    } else {
+      await loadStartupProfiles();
+    }
     return;
   }
   try {
