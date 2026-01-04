@@ -564,8 +564,60 @@ function refreshAiRisk(payload: { target: string; id: string }) {
 }
 
 function handleSettingsSave(value: AppSettings) {
+  const previousSettings = settings.value;
   settings.value = value;
   isSettingsOpen.value = false;
+  void refreshChatProviderFromSettings(previousSettings, value);
+}
+
+function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
+  const prevOpenai = previous.chat.openai;
+  const nextOpenai = next.chat.openai;
+  return (
+    prevOpenai.baseUrl !== nextOpenai.baseUrl ||
+    prevOpenai.apiKey !== nextOpenai.apiKey ||
+    prevOpenai.model !== nextOpenai.model ||
+    prevOpenai.chatPath !== nextOpenai.chatPath
+  );
+}
+
+function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
+  return previous.chat.acp.path !== next.chat.acp.path;
+}
+
+async function refreshChatProviderFromSettings(previous: AppSettings, next: AppSettings) {
+  const providerChanged = previous.chat.provider !== next.chat.provider;
+  const openaiChanged = hasOpenaiConfigChanged(previous, next);
+  const acpChanged = hasAcpConfigChanged(previous, next);
+  const nextProvider = next.chat.provider;
+  const needsOpenaiRefresh = nextProvider === 'openai' && (providerChanged || openaiChanged);
+  const needsAcpRefresh = nextProvider === 'acp' && (providerChanged || acpChanged);
+
+  if (!needsOpenaiRefresh && !needsAcpRefresh) {
+    return;
+  }
+
+  if (chatIsStreaming.value) {
+    await cancelActiveChat();
+  }
+
+  if (providerChanged) {
+    await stopActiveProvider();
+  } else if (nextProvider === 'openai' && openaiChanged && chatStore.provider === 'openai') {
+    await chatStore.stopOpenai();
+  } else if (nextProvider === 'acp' && acpChanged && chatStore.provider === 'acp') {
+    await chatStore.stopAcp();
+  }
+
+  try {
+    await initChatProvider();
+    if (providerChanged) {
+      chatStore.createSession();
+    }
+  } catch (err) {
+    console.error('[Chat] settings refresh failed:', err);
+    showNotification(`聊天配置已保存，但初始化失败：${String(err)}`);
+  }
 }
 
 function handleNotificationJump(targetName: string) {
