@@ -7,15 +7,16 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use humantime::format_rfc3339;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::oneshot;
 
 use crate::clients::acp_types::*;
+use crate::services::console_sidecar::build_console_path;
 
 /// Error type for ACP operations
 #[derive(Debug)]
@@ -51,7 +52,7 @@ impl From<serde_json::Error> for AcpError {
     }
 }
 
-type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, AcpError>>>>>;
+type PendingRequests = Arc<Mutex<HashMap<u64, mpsc::Sender<Result<Value, AcpError>>>>>;
 
 /// ACP client managing the codex-acp subprocess
 pub struct AcpClient {
@@ -68,10 +69,18 @@ pub struct AcpClient {
 impl AcpClient {
     /// Start a new codex-acp process
     pub fn start(codex_acp_path: &PathBuf, app_handle: AppHandle) -> Result<Self, AcpError> {
-        let mut process = Command::new(codex_acp_path)
+        let mut command = Command::new(codex_acp_path);
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
+            .env("PATH", build_console_path());
+        if std::env::var_os("HOME").is_none() {
+            if let Ok(home) = app_handle.path().home_dir() {
+                command.env("HOME", home);
+            }
+        }
+        let mut process = command
             .spawn()
             .map_err(|e| AcpError(format!("Failed to start codex-acp: {}", e)))?;
 
@@ -109,11 +118,14 @@ impl AcpClient {
     fn read_loop(stdout: ChildStdout, pending: PendingRequests, app_handle: AppHandle) {
         log_line(&app_handle, "[ACP reader] starting read loop");
         let reader = BufReader::new(stdout);
+        let mut exit_reason: Option<String> = None;
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
                 Err(e) => {
-                    log_line(&app_handle, &format!("[ACP reader] read error: {}", e));
+                    let reason = format!("read error: {}", e);
+                    log_line(&app_handle, &format!("[ACP reader] {}", reason));
+                    exit_reason = Some(reason);
                     break;
                 }
             };
@@ -195,6 +207,15 @@ impl AcpClient {
                 }
             }
         }
+        let reason = exit_reason.unwrap_or_else(|| "stdout closed".to_string());
+        log_line(
+            &app_handle,
+            &format!("[ACP reader] exiting; notifying pending requests: {}", reason),
+        );
+        let mut pending_guard = pending.lock().unwrap();
+        for (_, sender) in pending_guard.drain() {
+            let _ = sender.send(Err(AcpError(format!("ACP reader exited: {}", reason))));
+        }
     }
 
     /// Handle incoming notifications from codex-acp
@@ -219,7 +240,7 @@ impl AcpClient {
         let request_json = serde_json::to_string(&request)?;
 
         // Register pending request
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = mpsc::channel();
         {
             let mut pending = self.pending_requests.lock().unwrap();
             pending.insert(id, tx);
@@ -232,9 +253,32 @@ impl AcpClient {
             stdin.flush()?;
         }
 
-        // Wait for response (blocking)
-        rx.blocking_recv()
-            .map_err(|_| AcpError("Request cancelled".into()))?
+        let timeout = request_timeout();
+        match rx.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let mut pending = self.pending_requests.lock().unwrap();
+                pending.remove(&id);
+                log_line(
+                    &self.app_handle,
+                    &format!(
+                        "[ACP] request timeout method={} id={} timeout_secs={}",
+                        method,
+                        id,
+                        timeout.as_secs()
+                    ),
+                );
+                Err(AcpError(format!(
+                    "Request timed out after {}s",
+                    timeout.as_secs()
+                )))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let mut pending = self.pending_requests.lock().unwrap();
+                pending.remove(&id);
+                Err(AcpError("Request channel closed".into()))
+            }
+        }
     }
 
     /// Initialize the ACP connection
@@ -395,6 +439,10 @@ fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
     let ts = format_rfc3339(SystemTime::now()).to_string();
     writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
     Ok(())
+}
+
+fn request_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 impl Drop for AcpClient {
