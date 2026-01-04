@@ -47,12 +47,24 @@
             v-else
             size="small"
             type="primary"
-            circle
+            text
+            class="chat-input__send-button"
             :disabled="!canSend"
             @click="handleSend"
           >
             <template #icon>
-              <n-icon :component="SendOutline" />
+              <svg
+                class="h-4 w-4 chat-input__send-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M22 2L11 13" />
+                <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+              </svg>
             </template>
           </n-button>
         </div>
@@ -64,7 +76,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue';
 import { NButton, NIcon, NSelect } from 'naive-ui';
-import { SendOutline, StopOutline } from '@vicons/ionicons5';
+import { StopOutline } from '@vicons/ionicons5';
 
 interface Props {
   modelValue: string;
@@ -220,6 +232,20 @@ defineExpose({ focus });
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  &__send-button {
+    padding: 0;
+    min-width: 0;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__send-icon {
+    display: block;
   }
 
   &__provider-select {
