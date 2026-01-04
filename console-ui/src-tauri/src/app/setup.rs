@@ -1,10 +1,8 @@
 use std::fs;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::Manager;
 
-use crate::services::console_sidecar::start_console;
 use crate::services::logging::append_log_line;
 use crate::services::profiles::prepare_profiles;
 use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
@@ -26,10 +24,10 @@ pub fn init(app: &mut tauri::App) -> Result<(), String> {
     app.manage(ProfilesState(Mutex::new(profiles)));
     app.manage(ProxyConfigState(Mutex::new(proxy_status.clone())));
     if proxy_status.present {
-        let proxy_path = PathBuf::from(proxy_status.path.clone());
-        if let Err(err) = start_console(&app_handle, &proxy_path, &app_log) {
-            let _ = append_log_line(&app_log, &format!("console start failed: {err}"));
-        }
+        let _ = append_log_line(
+            &app_log,
+            "proxy config ready; waiting for user to select a profile to start console",
+        );
     } else {
         let _ = append_log_line(
             &app_log,

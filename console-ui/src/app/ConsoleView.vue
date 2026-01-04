@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { NButton, NCard, NModal } from 'naive-ui';
+import { NButton, NCard, NModal, NSelect } from 'naive-ui';
+import { isTauri } from '@tauri-apps/api/core';
 import {
   approveCommand,
   denyCommand,
   fetchSnapshot,
   fetchTargets,
   getProxyConfigStatus,
+  listProfiles,
   logUiEvent,
   openConsoleStream,
+  restartConsole,
+  selectProfile,
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from '../services/api';
@@ -21,7 +25,7 @@ import ConsoleLeftPane from '../ui/components/ConsoleLeftPane.vue';
 import SettingsModal from '../ui/components/SettingsModal.vue';
 import NotificationBridge from '../ui/components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from '../services/settings';
-import type { AppSettings, ConsoleEvent, ServiceSnapshot, TargetInfo } from '../shared/types';
+import type { AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
 import { useAiRiskQueue } from '../composables/useAiRiskQueue';
 import { useTerminalState } from '../composables/useTerminalState';
 import type { ResolvedTheme } from '../shared/theme';
@@ -42,6 +46,12 @@ const pendingJumpToken = ref(0);
 const applyThemeMode = inject(APPLY_THEME_MODE, () => {});
 const resolvedTheme = inject(RESOLVED_THEME, ref<ResolvedTheme>('dark'));
 const isChatHistoryOpen = ref(false);
+const startupProfileOpen = ref(false);
+const startupProfiles = ref<ProfileSummary[]>([]);
+const startupSelectedProfile = ref<string | null>(null);
+const startupBusy = ref(false);
+const startupStatusMessage = ref('');
+const startupError = ref('');
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
@@ -54,6 +64,9 @@ const selectedSnapshot = computed(() => {
   }
   return snapshots.value[selectedTargetName.value] ?? null;
 });
+const startupProfileOptions = computed(() =>
+  startupProfiles.value.map((profile) => ({ label: profile.name, value: profile.name }))
+);
 
 const {
   activeTerminalTabId,
@@ -243,6 +256,73 @@ function showNotification(message: string, count?: number, target?: string) {
 function reportUiError(context: string, err?: unknown) {
   const detail = err ? `: ${String(err)}` : '';
   void logUiEvent(`${context}${detail}`);
+}
+
+async function startConsoleSession() {
+  await refreshTargets();
+  void connectWebSocket();
+  void logUiEvent(`origin=${window.location.origin} secure=${window.isSecureContext}`);
+}
+
+async function loadStartupProfiles() {
+  if (!isTauri()) {
+    return;
+  }
+  startupBusy.value = true;
+  startupError.value = '';
+  startupStatusMessage.value = '正在加载环境配置...';
+  try {
+    const data = await listProfiles();
+    startupProfiles.value = data.profiles;
+    startupSelectedProfile.value = data.current || data.profiles[0]?.name || null;
+    startupProfileOpen.value = true;
+    connectionState.value = 'disconnected';
+    startupStatusMessage.value = '';
+  } catch (err) {
+    const message = `加载环境失败：${String(err)}`;
+    startupError.value = message;
+    showNotification(message);
+    reportUiError('load profiles failed', err);
+    startupProfileOpen.value = true;
+  } finally {
+    startupBusy.value = false;
+  }
+}
+
+async function applyStartupProfile() {
+  if (startupBusy.value) {
+    return;
+  }
+  if (!startupSelectedProfile.value) {
+    startupError.value = '请选择要启动的环境。';
+    return;
+  }
+  startupBusy.value = true;
+  startupError.value = '';
+  startupStatusMessage.value = `正在应用环境 ${startupSelectedProfile.value}...`;
+  try {
+    await selectProfile(startupSelectedProfile.value);
+    const status = await getProxyConfigStatus();
+    if (!status.present) {
+      const message = `未找到 ${status.path}，请参考 ${status.example_path} 创建并修改后重试`;
+      startupError.value = message;
+      showNotification(message);
+      connectionState.value = 'disconnected';
+      return;
+    }
+    await restartConsole();
+    startupProfileOpen.value = false;
+    startupStatusMessage.value = '';
+    await startConsoleSession();
+  } catch (err) {
+    const message = `环境启动失败：${String(err)}`;
+    startupError.value = message;
+    showNotification(message);
+    reportUiError('startup profile failed', err);
+    connectionState.value = 'disconnected';
+  } finally {
+    startupBusy.value = false;
+  }
 }
 
 const { aiRiskMap, enqueueAiTask, processAiQueue, scheduleAiForSnapshot } = useAiRiskQueue({
@@ -486,6 +566,11 @@ function handleGlobalKey(event: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleGlobalKey);
+  if (isTauri()) {
+    await loadStartupProfiles();
+    return;
+  }
   try {
     const status = await getProxyConfigStatus();
     if (!status.present) {
@@ -497,10 +582,7 @@ onMounted(async () => {
   } catch (err) {
     void logUiEvent(`proxy config check failed: ${String(err)}`);
   }
-  await refreshTargets();
-  void connectWebSocket();
-  void logUiEvent(`origin=${window.location.origin} secure=${window.isSecureContext}`);
-  window.addEventListener('keydown', handleGlobalKey);
+  await startConsoleSession();
 });
 
 onBeforeUnmount(() => {
@@ -546,6 +628,42 @@ watch(
 
 <template>
   <NotificationBridge :payload="notification" :token="notificationToken" @jump-pending="handleNotificationJump" />
+  <n-modal v-model:show="startupProfileOpen" :mask-closable="false" :close-on-esc="false">
+    <n-card size="small" class="w-[26rem]" :bordered="true">
+      <template #header>选择启动环境</template>
+      <div class="space-y-3">
+        <div class="text-xs text-foreground-muted">
+          每次启动需要选择要使用的环境配置。
+        </div>
+        <NSelect
+          :value="startupSelectedProfile"
+          :options="startupProfileOptions"
+          size="small"
+          :disabled="startupBusy || startupProfileOptions.length === 0"
+          placeholder="请选择环境"
+          to="body"
+          @update:value="(value) => { startupSelectedProfile = value as string; startupError = ''; }"
+        />
+        <div v-if="startupError" class="text-xs text-danger whitespace-pre-wrap">
+          {{ startupError }}
+        </div>
+        <div v-else-if="startupStatusMessage" class="text-xs text-foreground-muted">
+          {{ startupStatusMessage }}
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <n-button size="small" :disabled="startupBusy" @click="isSettingsOpen = true">打开设置</n-button>
+          <n-button
+            size="small"
+            type="primary"
+            :disabled="startupBusy || !startupSelectedProfile"
+            @click="applyStartupProfile"
+          >
+            {{ startupBusy ? '启动中…' : '开始' }}
+          </n-button>
+        </div>
+      </div>
+    </n-card>
+  </n-modal>
   <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
     <div
       class="fixed top-0 left-0 right-0 h-7 z-[4000] pointer-events-auto"
