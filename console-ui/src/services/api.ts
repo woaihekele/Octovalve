@@ -129,6 +129,21 @@ export async function denyCommand(name: string, id: string) {
   }
 }
 
+export async function cancelCommand(name: string, id: string) {
+  if (TAURI_AVAILABLE) {
+    await invoke('proxy_cancel', { name, id });
+    return;
+  }
+  const response = await fetch(joinUrl(HTTP_BASE, `/targets/${encodeURIComponent(name)}/cancel`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  if (!response.ok) {
+    throw new Error(`cancel failed: ${response.status}`);
+  }
+}
+
 export async function getProxyConfigStatus(): Promise<ProxyConfigStatus> {
   if (TAURI_AVAILABLE) {
     return invoke<ProxyConfigStatus>('get_proxy_config_status');

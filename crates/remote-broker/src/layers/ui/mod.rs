@@ -666,6 +666,7 @@ fn format_result_summary(result: &ResultSnapshot) -> String {
         CommandStatus::Denied => "denied".to_string(),
         CommandStatus::Error => "error".to_string(),
         CommandStatus::Approved => "approved".to_string(),
+        CommandStatus::Cancelled => "cancelled".to_string(),
     }
 }
 

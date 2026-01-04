@@ -254,7 +254,8 @@ impl ServerHandler for ProxyHandler {
                         match response.status {
                             CommandStatus::Completed
                             | CommandStatus::Denied
-                            | CommandStatus::Approved => {
+                            | CommandStatus::Approved
+                            | CommandStatus::Cancelled => {
                                 state.note_success(&request.target);
                             }
                             CommandStatus::Error => {

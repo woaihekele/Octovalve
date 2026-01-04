@@ -16,6 +16,7 @@ const HISTORY_LIMIT: usize = 50;
 pub(crate) enum ControlCommand {
     Approve(String),
     Deny(String),
+    Cancel(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

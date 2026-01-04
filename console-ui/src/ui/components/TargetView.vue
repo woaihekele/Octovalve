@@ -25,6 +25,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'approve', id: string): void;
   (e: 'deny', id: string): void;
+  (e: 'cancel', id: string): void;
   (e: 'open-terminal'): void;
   (e: 'close-terminal'): void;
   (e: 'toggle-chat'): void;
@@ -170,6 +171,9 @@ function formatSummary(result: ResultSnapshot) {
   }
   if (result.status === 'error') {
     return 'error';
+  }
+  if (result.status === 'cancelled') {
+    return 'cancelled';
   }
   return result.status;
 }
@@ -584,7 +588,13 @@ onBeforeUnmount(() => {
                   <span
                     v-else
                     class="text-xs px-2 py-0.5 rounded"
-                    :class="(item as ResultSnapshot).status === 'completed' ? 'bg-success/20 text-success' : (item as ResultSnapshot).status === 'denied' ? 'bg-danger/20 text-danger' : 'bg-warning/20 text-warning'"
+                    :class="(item as ResultSnapshot).status === 'completed'
+                      ? 'bg-success/20 text-success'
+                      : (item as ResultSnapshot).status === 'denied'
+                        ? 'bg-danger/20 text-danger'
+                        : (item as ResultSnapshot).status === 'cancelled'
+                          ? 'bg-panel-muted text-foreground-muted'
+                          : 'bg-warning/20 text-warning'"
                   >
                     {{ (item as ResultSnapshot).status }}
                   </span>
@@ -707,6 +717,14 @@ onBeforeUnmount(() => {
                   @click="emit('deny', selectedItem.id)"
                 >
                   Deny <span class="bg-danger/50 px-1.5 rounded text-xs font-mono">{{ formatShortcut(props.settings.shortcuts.deny) }}</span>
+                </button>
+              </div>
+              <div v-else-if="isRunningSelected" class="flex flex-col gap-2">
+                <button
+                  class="flex items-center gap-2 bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded shadow"
+                  @click="emit('cancel', selectedItem.id)"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

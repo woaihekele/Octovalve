@@ -6,14 +6,17 @@ use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
 use protocol::control::{RequestSnapshot, ResultSnapshot, RunningSnapshot, ServiceSnapshot};
 use protocol::CommandResponse;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 
 struct ServiceState {
     pending: Vec<PendingRequest>,
     running: Vec<RunningSnapshot>,
+    running_tokens: HashMap<String, CancellationToken>,
     history: Vec<ResultSnapshot>,
     history_limit: usize,
 }
@@ -23,20 +26,31 @@ impl ServiceState {
         Self {
             pending: Vec::new(),
             running: Vec::new(),
+            running_tokens: HashMap::new(),
             history,
             history_limit,
         }
     }
 
-    fn start_running(&mut self, running: RunningSnapshot) {
+    fn start_running(&mut self, running: RunningSnapshot, token: CancellationToken) {
         self.running.retain(|item| item.id != running.id);
-        self.running.insert(0, running);
+        self.running.insert(0, running.clone());
+        self.running_tokens.insert(running.id, token);
     }
 
     fn finish_running(&mut self, id: &str) -> bool {
         let before = self.running.len();
         self.running.retain(|item| item.id != id);
+        self.running_tokens.remove(id);
         before != self.running.len()
+    }
+
+    fn cancel_running(&mut self, id: &str) -> bool {
+        if let Some(token) = self.running_tokens.get(id) {
+            token.cancel();
+            return true;
+        }
+        false
     }
 
     fn push_result(&mut self, result: ResultSnapshot) {
@@ -167,7 +181,8 @@ async fn handle_server_event(
             if auto_approve_allowed && whitelist.allows_request(&pending.request) {
                 let started_at = SystemTime::now();
                 let running_snapshot = running_snapshot_from_pending(&pending, started_at);
-                state.start_running(running_snapshot);
+                let cancel_token = CancellationToken::new();
+                state.start_running(running_snapshot, cancel_token.clone());
                 let _ = event_tx.send(ServiceEvent::RunningUpdated(state.running.clone()));
 
                 let result_tx = result_tx.clone();
@@ -181,7 +196,14 @@ async fn handle_server_event(
                         command = %request_summary(&pending.request),
                     );
                     let response =
-                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
+                        execute_request(
+                            &pending.request,
+                            &whitelist,
+                            &limits,
+                            &output_dir,
+                            cancel_token,
+                        )
+                        .await;
                     let finished_at = SystemTime::now();
                     let result_snapshot =
                         result_snapshot_from_response(&pending, &response, finished_at);
@@ -216,7 +238,8 @@ async fn handle_command(
 
                 let started_at = SystemTime::now();
                 let running_snapshot = running_snapshot_from_pending(&pending, started_at);
-                state.start_running(running_snapshot);
+                let cancel_token = CancellationToken::new();
+                state.start_running(running_snapshot, cancel_token.clone());
                 let _ = event_tx.send(ServiceEvent::RunningUpdated(state.running.clone()));
 
                 let result_tx = result_tx.clone();
@@ -230,7 +253,14 @@ async fn handle_command(
                         command = %request_summary(&pending.request),
                     );
                     let response =
-                        execute_request(&pending.request, &whitelist, &limits, &output_dir).await;
+                        execute_request(
+                            &pending.request,
+                            &whitelist,
+                            &limits,
+                            &output_dir,
+                            cancel_token,
+                        )
+                        .await;
                     let finished_at = SystemTime::now();
                     let result_snapshot =
                         result_snapshot_from_response(&pending, &response, finished_at);
@@ -266,6 +296,13 @@ async fn handle_command(
                     )
                     .await;
                 });
+            }
+        }
+        ServiceCommand::Cancel(id) => {
+            if state.cancel_running(&id) {
+                tracing::info!(event = "request_cancelled", id = %id);
+            } else {
+                tracing::warn!(event = "request_cancel_miss", id = %id);
             }
         }
         ServiceCommand::Snapshot(respond_to) => {

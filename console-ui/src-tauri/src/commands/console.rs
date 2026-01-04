@@ -150,6 +150,16 @@ pub async fn proxy_deny(
 }
 
 #[tauri::command]
+pub async fn proxy_cancel(
+    name: String,
+    id: String,
+    log_state: State<'_, AppLogState>,
+) -> Result<(), String> {
+    let path = format!("/targets/{name}/cancel");
+    console_post(&path, json!({ "id": id }), &log_state.app_log).await
+}
+
+#[tauri::command]
 pub async fn proxy_reload_remote_brokers(log_state: State<'_, AppLogState>) -> Result<(), String> {
     console_post_with_timeout(
         "/targets/reload-brokers",

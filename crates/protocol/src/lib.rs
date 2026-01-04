@@ -47,6 +47,7 @@ pub enum CommandStatus {
     Approved,
     Denied,
     Error,
+    Cancelled,
     Completed,
 }
 
@@ -84,6 +85,22 @@ impl CommandResponse {
             stdout: None,
             stderr: None,
             error: Some(message.into()),
+        }
+    }
+
+    pub fn cancelled(
+        id: impl Into<String>,
+        exit_code: Option<i32>,
+        stdout: Option<String>,
+        stderr: Option<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            status: CommandStatus::Cancelled,
+            exit_code,
+            stdout,
+            stderr,
+            error: Some("cancelled by operator".to_string()),
         }
     }
 

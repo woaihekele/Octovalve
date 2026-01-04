@@ -151,6 +151,16 @@ async fn handle_control_connection(
                         };
                         send_response(&mut framed, &response).await?;
                     }
+                    ControlRequest::Cancel { id } => {
+                        if let Some(peer) = peer {
+                            tracing::info!(event = "control.cancel_request", peer = %peer, id = %id);
+                        }
+                        let _ = cmd_tx.send(ServiceCommand::Cancel(id)).await;
+                        let response = ControlResponse::Ack {
+                            message: "cancel queued".to_string(),
+                        };
+                        send_response(&mut framed, &response).await?;
+                    }
                     ControlRequest::Subscribe => {
                         subscribed = true;
                         if let Some(peer) = peer {

@@ -76,6 +76,7 @@ pub enum ControlRequest {
     Snapshot,
     Approve { id: String },
     Deny { id: String },
+    Cancel { id: String },
     Subscribe,
 }
 

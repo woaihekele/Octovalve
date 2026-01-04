@@ -7,6 +7,7 @@ use tokio::sync::oneshot;
 pub(crate) enum ServiceCommand {
     Approve(String),
     Deny(String),
+    Cancel(String),
     Snapshot(oneshot::Sender<ServiceSnapshot>),
 }
 

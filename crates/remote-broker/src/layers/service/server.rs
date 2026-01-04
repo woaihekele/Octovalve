@@ -16,6 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tokio_util::sync::CancellationToken;
 
 pub(crate) fn spawn_accept_loop(
     listener: TcpListener,
@@ -232,7 +233,14 @@ async fn handle_connection_auto(
         let record = RequestRecord::from_request(&request, &addr.to_string(), received_at);
         spawn_write_request_record_value(Arc::clone(&output_dir), record);
 
-        let response = execute_request(&request, &whitelist, &limits, &output_dir).await;
+        let response = execute_request(
+            &request,
+            &whitelist,
+            &limits,
+            &output_dir,
+            CancellationToken::new(),
+        )
+        .await;
         let payload = serde_json::to_vec(&response)?;
         framed.send(Bytes::from(payload)).await?;
     }

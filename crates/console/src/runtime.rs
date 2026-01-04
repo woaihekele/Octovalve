@@ -471,6 +471,7 @@ async fn session_loop(
                 let request = match command {
                     ControlCommand::Approve(id) => ControlRequest::Approve { id },
                     ControlCommand::Deny(id) => ControlRequest::Deny { id },
+                    ControlCommand::Cancel(id) => ControlRequest::Cancel { id },
                 };
                 if let Err(err) = send_request(framed, request).await {
                     return Err(err);

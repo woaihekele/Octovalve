@@ -30,6 +30,7 @@ pub fn run() {
             crate::commands::console::proxy_fetch_snapshot,
             crate::commands::console::proxy_approve,
             crate::commands::console::proxy_deny,
+            crate::commands::console::proxy_cancel,
             crate::commands::console::proxy_reload_remote_brokers,
             crate::commands::console::read_console_log,
             crate::commands::ai::ai_risk_assess,

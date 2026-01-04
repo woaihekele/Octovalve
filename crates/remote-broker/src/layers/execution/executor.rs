@@ -5,6 +5,8 @@ use anyhow::Context;
 use protocol::{CommandMode, CommandRequest, CommandResponse, CommandStage};
 use std::collections::BTreeMap;
 use std::io;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -13,14 +15,24 @@ use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+
+const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
 pub async fn execute_request(
     request: &CommandRequest,
     whitelist: &Whitelist,
     limits: &LimitsConfig,
     output_dir: &Path,
+    cancel: CancellationToken,
 ) -> CommandResponse {
     let started_at = Instant::now();
+
+    if cancel.is_cancelled() {
+        let response = CommandResponse::cancelled(request.id.clone(), None, None, None);
+        write_result_record(output_dir, &response, started_at.elapsed()).await;
+        return response;
+    }
 
     if matches!(&request.mode, CommandMode::Shell) && request.raw_command.trim().is_empty() {
         let response = CommandResponse::error(request.id.clone(), "raw_command is empty");
@@ -56,20 +68,41 @@ pub async fn execute_request(
     let stdout_path = output_dir.join(format!("{}.stdout", request.id));
     let stderr_path = output_dir.join(format!("{}.stderr", request.id));
 
-    let response = match tokio::time::timeout(
-        timeout,
-        execute_command(request, max_bytes, &stdout_path, &stderr_path),
-    )
-    .await
-    {
-        Ok(Ok(result)) => CommandResponse::completed(
-            request.id.clone(),
-            result.exit_code,
-            result.stdout,
-            result.stderr,
-        ),
-        Ok(Err(err)) => CommandResponse::error(request.id.clone(), err.to_string()),
-        Err(_) => CommandResponse::error(request.id.clone(), "command timed out"),
+    let mut timed_out = false;
+    let mut exec_fut = Box::pin(execute_command(
+        request,
+        max_bytes,
+        &stdout_path,
+        &stderr_path,
+        cancel.clone(),
+    ));
+    let outcome = tokio::select! {
+        result = &mut exec_fut => result,
+        _ = tokio::time::sleep(timeout) => {
+            timed_out = true;
+            cancel.cancel();
+            exec_fut.await
+        }
+    };
+
+    let response = if timed_out {
+        CommandResponse::error(request.id.clone(), "command timed out")
+    } else {
+        match outcome {
+            Ok(ExecutionOutcome::Completed(result)) => CommandResponse::completed(
+                request.id.clone(),
+                result.exit_code.unwrap_or(1),
+                result.stdout,
+                result.stderr,
+            ),
+            Ok(ExecutionOutcome::Cancelled(result)) => CommandResponse::cancelled(
+                request.id.clone(),
+                result.exit_code,
+                result.stdout,
+                result.stderr,
+            ),
+            Err(err) => CommandResponse::error(request.id.clone(), err.to_string()),
+        }
     };
 
     write_result_record(output_dir, &response, started_at.elapsed()).await;
@@ -77,9 +110,14 @@ pub async fn execute_request(
 }
 
 struct ExecutionResult {
-    exit_code: i32,
+    exit_code: Option<i32>,
     stdout: Option<String>,
     stderr: Option<String>,
+}
+
+enum ExecutionOutcome {
+    Completed(ExecutionResult),
+    Cancelled(ExecutionResult),
 }
 
 async fn execute_command(
@@ -87,7 +125,8 @@ async fn execute_command(
     max_bytes: usize,
     stdout_path: &Path,
     stderr_path: &Path,
-) -> anyhow::Result<ExecutionResult> {
+    cancel: CancellationToken,
+) -> anyhow::Result<ExecutionOutcome> {
     match request.mode {
         CommandMode::Shell => {
             execute_shell(
@@ -97,6 +136,7 @@ async fn execute_command(
                 max_bytes,
                 stdout_path,
                 stderr_path,
+                cancel,
             )
             .await
         }
@@ -108,6 +148,7 @@ async fn execute_command(
                 max_bytes,
                 stdout_path,
                 stderr_path,
+                cancel,
             )
             .await
         }
@@ -121,7 +162,8 @@ async fn execute_pipeline(
     max_bytes: usize,
     stdout_path: &Path,
     stderr_path: &Path,
-) -> anyhow::Result<ExecutionResult> {
+    cancel: CancellationToken,
+) -> anyhow::Result<ExecutionOutcome> {
     let mut children = Vec::with_capacity(pipeline.len());
     let stdout_file = File::create(stdout_path).await?;
     let stderr_file = File::create(stderr_path).await?;
@@ -149,6 +191,7 @@ async fn execute_pipeline(
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.kill_on_drop(true);
+        apply_process_group(&mut cmd);
         let child = cmd
             .spawn()
             .with_context(|| format!("spawn {command} ({resolved})"))?;
@@ -187,14 +230,25 @@ async fn execute_pipeline(
         tokio::spawn(read_stream_capture(last, max_bytes, Some(writer)))
     };
 
+    let mut cancelled = false;
+    let exit_code = tokio::select! {
+        result = async {
+            let mut exit_code = None;
+            for child in &mut children {
+                let status = child.wait().await.context("wait on child")?;
+                exit_code = status.code();
+            }
+            Ok::<Option<i32>, anyhow::Error>(exit_code)
+        } => result?,
+        _ = cancel.cancelled() => {
+            cancelled = true;
+            terminate_children(&mut children).await;
+            None
+        }
+    };
+
     for task in pipe_tasks {
         let _ = task.await;
-    }
-
-    let mut exit_code = 0;
-    for child in &mut children {
-        let status = child.wait().await.context("wait on child")?;
-        exit_code = status.code().unwrap_or(1);
     }
 
     let (stdout_bytes, stdout_truncated) = stdout_task
@@ -234,10 +288,15 @@ async fn execute_pipeline(
         Some(stderr)
     };
 
-    Ok(ExecutionResult {
+    let result = ExecutionResult {
         exit_code,
         stdout,
         stderr,
+    };
+    Ok(if cancelled {
+        ExecutionOutcome::Cancelled(result)
+    } else {
+        ExecutionOutcome::Completed(result)
     })
 }
 
@@ -248,7 +307,8 @@ async fn execute_shell(
     max_bytes: usize,
     stdout_path: &Path,
     stderr_path: &Path,
-) -> anyhow::Result<ExecutionResult> {
+    cancel: CancellationToken,
+) -> anyhow::Result<ExecutionOutcome> {
     let stdout_file = File::create(stdout_path).await?;
     let stderr_file = File::create(stderr_path).await?;
     let stdout_writer = Arc::new(Mutex::new(stdout_file));
@@ -266,6 +326,7 @@ async fn execute_shell(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.kill_on_drop(true);
+    apply_process_group(&mut cmd);
     let mut child = cmd
         .spawn()
         .with_context(|| format!("spawn /bin/bash -lc {raw_command}"))?;
@@ -275,8 +336,15 @@ async fn execute_shell(
     let stdout_task = tokio::spawn(read_stream_capture(stdout, max_bytes, Some(stdout_writer)));
     let stderr_task = tokio::spawn(read_stream_capture(stderr, max_bytes, Some(stderr_writer)));
 
-    let status = child.wait().await.context("wait on child")?;
-    let exit_code = status.code().unwrap_or(1);
+    let mut cancelled = false;
+    let status = tokio::select! {
+        status = child.wait() => Some(status.context("wait on child")?),
+        _ = cancel.cancelled() => {
+            cancelled = true;
+            terminate_child(&mut child).await
+        }
+    };
+    let exit_code = status.and_then(|status| status.code());
 
     let (stdout_bytes, stdout_truncated) = stdout_task
         .await
@@ -306,11 +374,75 @@ async fn execute_shell(
         Some(out)
     };
 
-    Ok(ExecutionResult {
+    let result = ExecutionResult {
         exit_code,
         stdout,
         stderr,
+    };
+    Ok(if cancelled {
+        ExecutionOutcome::Cancelled(result)
+    } else {
+        ExecutionOutcome::Completed(result)
     })
+}
+
+#[cfg(unix)]
+fn apply_process_group(cmd: &mut Command) {
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn apply_process_group(_cmd: &mut Command) {}
+
+#[cfg(unix)]
+fn signal_child(child: &mut tokio::process::Child, signal: i32) {
+    if let Some(pid) = child.id() {
+        unsafe {
+            libc::kill(-(pid as i32), signal);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_child(_child: &mut tokio::process::Child, _signal: i32) {}
+
+async fn terminate_child(child: &mut tokio::process::Child) -> Option<std::process::ExitStatus> {
+    signal_child(child, libc::SIGINT);
+    match tokio::time::timeout(CANCEL_GRACE, child.wait()).await {
+        Ok(status) => return status.ok(),
+        Err(_) => {
+            signal_child(child, libc::SIGKILL);
+            let _ = child.kill().await;
+            match tokio::time::timeout(CANCEL_GRACE, child.wait()).await {
+                Ok(status) => status.ok(),
+                Err(_) => None,
+            }
+        }
+    }
+}
+
+async fn terminate_children(children: &mut [tokio::process::Child]) {
+    for child in children.iter_mut() {
+        signal_child(child, libc::SIGINT);
+    }
+    for child in children.iter_mut() {
+        if tokio::time::timeout(CANCEL_GRACE, child.wait())
+            .await
+            .is_ok()
+        {
+            continue;
+        }
+        signal_child(child, libc::SIGKILL);
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
 }
 
 fn resolve_command_path(command: &str) -> String {

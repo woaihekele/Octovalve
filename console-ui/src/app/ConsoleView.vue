@@ -4,6 +4,7 @@ import { NButton, NCard, NModal, NSelect } from 'naive-ui';
 import { isTauri } from '@tauri-apps/api/core';
 import {
   approveCommand,
+  cancelCommand,
   denyCommand,
   fetchSnapshot,
   fetchTargets,
@@ -553,6 +554,16 @@ async function deny(id: string) {
   }
 }
 
+async function cancel(id: string) {
+  if (!selectedTargetName.value) return;
+  try {
+    await cancelCommand(selectedTargetName.value, id);
+  } catch (err) {
+    showNotification('取消失败，请检查 console 服务');
+    reportUiError('cancel command failed', err);
+  }
+}
+
 function refreshAiRisk(payload: { target: string; id: string }) {
   const snapshot = snapshots.value[payload.target];
   const request = snapshot?.queue.find((item) => item.id === payload.id);
@@ -875,6 +886,7 @@ watch(
       @toggle-chat="isChatOpen = !isChatOpen"
       @approve="approve"
       @deny="deny"
+      @cancel="cancel"
       @refresh-risk="refreshAiRisk"
       @open-terminal="openSelectedTerminal"
       @close-terminal="closeSelectedTerminal"

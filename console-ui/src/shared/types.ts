@@ -32,7 +32,7 @@ export interface TargetInfo {
 }
 
 export type CommandMode = 'shell' | 'argv';
-export type CommandStatus = 'approved' | 'denied' | 'error' | 'completed';
+export type CommandStatus = 'approved' | 'denied' | 'error' | 'cancelled' | 'completed';
 
 export interface CommandStage {
   argv: string[];

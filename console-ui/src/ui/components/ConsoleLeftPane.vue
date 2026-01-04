@@ -60,6 +60,7 @@
           :ai-enabled="aiEnabled"
           @approve="emit('approve', $event)"
           @deny="emit('deny', $event)"
+          @cancel="emit('cancel', $event)"
           @refresh-risk="emit('refresh-risk', $event)"
           @open-terminal="emit('open-terminal')"
           @close-terminal="emit('close-terminal')"
@@ -228,6 +229,7 @@ const emit = defineEmits<{
   (e: 'toggle-chat'): void;
   (e: 'approve', id: string): void;
   (e: 'deny', id: string): void;
+  (e: 'cancel', id: string): void;
   (e: 'refresh-risk', payload: { target: string; id: string }): void;
   (e: 'open-terminal'): void;
   (e: 'close-terminal'): void;

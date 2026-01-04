@@ -95,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/reload-brokers", post(reload_remote_brokers))
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
+        .route("/targets/:name/cancel", post(cancel_command))
         .route("/targets/:name/terminal", get(terminal_ws_handler))
         .route("/ws", get(ws_handler))
         .with_state(app_state)
@@ -254,6 +255,24 @@ async fn deny_command(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(Json(ActionResponse {
         message: "deny queued".to_string(),
+    }))
+}
+
+async fn cancel_command(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<CommandPayload>,
+) -> Result<Json<ActionResponse>, StatusCode> {
+    let sender = state.state.read().await.command_sender(&name);
+    let Some(sender) = sender else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    sender
+        .send(ControlCommand::Cancel(payload.id))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Json(ActionResponse {
+        message: "cancel queued".to_string(),
     }))
 }
 
