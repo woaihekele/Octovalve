@@ -561,11 +561,6 @@ function isCtrlBackquote(event: KeyboardEvent) {
   return event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'Backquote';
 }
 
-function isCtrlArrow(event: KeyboardEvent, direction: 'prev' | 'next') {
-  const code = direction === 'prev' ? 'ArrowLeft' : 'ArrowRight';
-  return event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && event.code === code;
-}
-
 function isEditableTarget(target: EventTarget | null) {
   if (!target) {
     return false;
@@ -607,31 +602,6 @@ function toggleTerminalFocus(): boolean {
   return true;
 }
 
-function switchTerminalSession(direction: 'prev' | 'next'): boolean {
-  const entry = selectedTerminalEntry.value;
-  if (!entry) {
-    return false;
-  }
-  const tabs = entry.state.tabs;
-  if (tabs.length <= 1) {
-    return false;
-  }
-  const activeId = entry.state.activeId ?? tabs[0]?.id;
-  if (!activeId) {
-    return false;
-  }
-  const currentIndex = tabs.findIndex((tab) => tab.id === activeId);
-  if (currentIndex < 0) {
-    return false;
-  }
-  const nextIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
-  if (nextIndex < 0 || nextIndex >= tabs.length) {
-    return false;
-  }
-  handleActivateTerminalTab(tabs[nextIndex].id);
-  return true;
-}
-
 function handleGlobalKey(event: KeyboardEvent) {
   if (isCtrlBackquote(event)) {
     if (isSettingsOpen.value) {
@@ -650,25 +620,7 @@ function handleGlobalKey(event: KeyboardEvent) {
     isSettingsOpen.value = true;
     return;
   }
-  const editableTarget = isEditableTarget(event.target);
-  const terminalFocused = leftPaneRef.value?.isActiveTerminalFocused() ?? false;
-  if (isCtrlArrow(event, 'prev')) {
-    if (!isSettingsOpen.value && (terminalFocused || !editableTarget)) {
-      if (switchTerminalSession('prev')) {
-        event.preventDefault();
-      }
-    }
-    return;
-  }
-  if (isCtrlArrow(event, 'next')) {
-    if (!isSettingsOpen.value && (terminalFocused || !editableTarget)) {
-      if (switchTerminalSession('next')) {
-        event.preventDefault();
-      }
-    }
-    return;
-  }
-  if (editableTarget) {
+  if (isEditableTarget(event.target)) {
     return;
   }
   if (isSettingsOpen.value) {
