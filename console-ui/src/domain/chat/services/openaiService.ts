@@ -41,8 +41,71 @@ export interface ChatStreamEvent {
   error?: string;
 }
 
+type OpenaiStreamCallback = (event: ChatStreamEvent) => void;
+type OpenaiStreamBridge = {
+  callbacks: Set<OpenaiStreamCallback>;
+  unlisten: UnlistenFn | null;
+  listening: boolean;
+  pending: Promise<void> | null;
+};
+
+const OPENAI_STREAM_BRIDGE_KEY = '__octovalveOpenaiStreamBridge';
+
 function logUiEvent(message: string) {
   void invoke('log_ui_event', { message });
+}
+
+// Keep a single OpenAI stream listener across HMR reloads.
+function getOpenaiStreamBridge(): OpenaiStreamBridge {
+  const global = globalThis as typeof globalThis & {
+    [OPENAI_STREAM_BRIDGE_KEY]?: OpenaiStreamBridge;
+  };
+  if (!global[OPENAI_STREAM_BRIDGE_KEY]) {
+    global[OPENAI_STREAM_BRIDGE_KEY] = {
+      callbacks: new Set(),
+      unlisten: null,
+      listening: false,
+      pending: null,
+    };
+  }
+  return global[OPENAI_STREAM_BRIDGE_KEY] as OpenaiStreamBridge;
+}
+
+async function ensureOpenaiStreamListener() {
+  const bridge = getOpenaiStreamBridge();
+  if (bridge.listening) {
+    return;
+  }
+  if (bridge.pending) {
+    await bridge.pending;
+    return;
+  }
+  bridge.pending = listen<ChatStreamEvent>('openai-stream', (event) => {
+    const activeBridge = getOpenaiStreamBridge();
+    if (activeBridge.callbacks.size === 0) {
+      return;
+    }
+    for (const callback of Array.from(activeBridge.callbacks)) {
+      try {
+        callback(event.payload);
+      } catch (err) {
+        console.warn('[openaiService] stream callback failed:', err);
+      }
+    }
+  })
+    .then((unlisten) => {
+      const activeBridge = getOpenaiStreamBridge();
+      activeBridge.unlisten = unlisten;
+      activeBridge.listening = true;
+      activeBridge.pending = null;
+    })
+    .catch((err) => {
+      const activeBridge = getOpenaiStreamBridge();
+      activeBridge.pending = null;
+      activeBridge.listening = false;
+      throw err;
+    });
+  await bridge.pending;
 }
 
 /**
@@ -99,11 +162,20 @@ export async function mcpCallTool(name: string, arguments_: Record<string, unkno
  * Listen to OpenAI stream events
  */
 export async function onOpenaiStream(
-  callback: (event: ChatStreamEvent) => void
+  callback: OpenaiStreamCallback
 ): Promise<UnlistenFn> {
-  return listen<ChatStreamEvent>('openai-stream', (event) => {
-    callback(event.payload);
-  });
+  const bridge = getOpenaiStreamBridge();
+  bridge.callbacks.add(callback);
+  await ensureOpenaiStreamListener();
+  return () => {
+    const activeBridge = getOpenaiStreamBridge();
+    activeBridge.callbacks.delete(callback);
+    if (activeBridge.callbacks.size === 0 && activeBridge.unlisten) {
+      activeBridge.unlisten();
+      activeBridge.unlisten = null;
+      activeBridge.listening = false;
+    }
+  };
 }
 
 // Convenience service object
