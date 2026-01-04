@@ -155,7 +155,6 @@ export interface AppSettings {
     approve: string;
     deny: string;
     fullScreen: string;
-    toggleList: string;
     openSettings: string;
   };
 }

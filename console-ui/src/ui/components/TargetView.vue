@@ -38,6 +38,7 @@ const terminalContainerRef = ref<HTMLDivElement | null>(null);
 const terminalHeight = ref<number | null>(null);
 const containerHeight = ref(0);
 const isResizing = ref(false);
+const lastPendingCount = ref(0);
 const terminalHeightStorageKey = 'console-ui.target-terminal.height';
 const minTerminalHeight = 240;
 const minContentHeight = 240;
@@ -104,6 +105,21 @@ watch(
     }
     selectByIndex(0);
   }
+);
+
+watch(
+  () => pendingList.value.length,
+  (length) => {
+    if (length === 0) {
+      lastPendingCount.value = 0;
+      return;
+    }
+    if (lastPendingCount.value === 0) {
+      selectedId.value = pendingList.value[0]?.id ?? null;
+    }
+    lastPendingCount.value = length;
+  },
+  { immediate: true }
 );
 
 watch(

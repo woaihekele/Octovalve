@@ -19,7 +19,6 @@ const shortcutFields = [
   { key: 'jumpNextPending', label: '跳转到下一个 Pending' },
   { key: 'approve', label: '批准' },
   { key: 'deny', label: '拒绝' },
-  { key: 'toggleList', label: '切换 Pending/History' },
   { key: 'fullScreen', label: '全屏输出' },
   { key: 'openSettings', label: '打开设置' },
 ] as const;
