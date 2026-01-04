@@ -24,3 +24,11 @@ pub struct ResolvedBrokerConfig {
     pub path: PathBuf,
     pub source: String,
 }
+
+#[derive(Clone, Serialize)]
+pub struct StartupCheckResult {
+    pub ok: bool,
+    pub errors: Vec<String>,
+    pub proxy_path: String,
+    pub broker_path: String,
+}

@@ -26,6 +26,13 @@ export type ProxyConfigStatus = {
   example_path: string;
 };
 
+export type StartupCheckResult = {
+  ok: boolean;
+  errors: string[];
+  proxy_path: string;
+  broker_path: string;
+};
+
 export type TerminalOutputEvent = {
   session_id: string;
   data: string;
@@ -301,6 +308,13 @@ export async function restartConsole() {
     throw new Error('config editor only available in Tauri');
   }
   await invoke('restart_console');
+}
+
+export async function validateStartupConfig(): Promise<StartupCheckResult> {
+  if (!TAURI_AVAILABLE) {
+    return { ok: true, errors: [], proxy_path: '', broker_path: '' };
+  }
+  return invoke<StartupCheckResult>('validate_startup_config');
 }
 
 export async function reloadRemoteBrokers() {

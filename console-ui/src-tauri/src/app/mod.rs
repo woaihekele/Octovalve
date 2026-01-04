@@ -24,6 +24,7 @@ pub fn run() {
             crate::commands::config::read_broker_config,
             crate::commands::config::write_broker_config,
             crate::commands::console::restart_console,
+            crate::commands::console::validate_startup_config,
             crate::commands::console::log_ui_event,
             crate::commands::console::proxy_fetch_targets,
             crate::commands::console::proxy_fetch_snapshot,

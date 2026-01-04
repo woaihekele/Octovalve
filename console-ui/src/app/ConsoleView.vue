@@ -13,6 +13,7 @@ import {
   openConsoleStream,
   restartConsole,
   selectProfile,
+  validateStartupConfig,
   type ConsoleConnectionStatus,
   type ConsoleStreamHandle,
 } from '../services/api';
@@ -310,6 +311,17 @@ async function applyStartupProfile() {
       connectionState.value = 'disconnected';
       return;
     }
+    startupStatusMessage.value = '正在校验配置...';
+    const check = await validateStartupConfig();
+    if (!check.ok) {
+      const message = `配置检查失败：\n- ${check.errors.join('\n- ')}`;
+      startupError.value = message;
+      showNotification('配置检查失败，请查看详情');
+      reportUiError('startup config invalid', check.errors.join(' | '));
+      connectionState.value = 'disconnected';
+      return;
+    }
+    startupStatusMessage.value = '正在启动 console...';
     await restartConsole();
     startupProfileOpen.value = false;
     startupStatusMessage.value = '';

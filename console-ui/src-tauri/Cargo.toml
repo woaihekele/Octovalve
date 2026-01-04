@@ -26,6 +26,7 @@ tokio = { version = "1.38", features = ["rt-multi-thread", "macros", "time", "pr
 tokio-tungstenite = "0.23"
 urlencoding = "2.1"
 uuid = { version = "1.8", features = ["v4"] }
+protocol = { path = "../../crates/protocol" }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

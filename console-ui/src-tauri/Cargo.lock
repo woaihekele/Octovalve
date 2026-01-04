@@ -2250,6 +2250,7 @@ dependencies = [
  "futures-util",
  "humantime",
  "libc",
+ "protocol",
  "reqwest 0.11.27",
  "rmcp",
  "serde",
@@ -2687,6 +2688,14 @@ dependencies = [
  "tokio",
  "tracing",
  "windows",
+]
+
+[[package]]
+name = "protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

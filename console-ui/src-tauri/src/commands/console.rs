@@ -9,10 +9,11 @@ use crate::services::console_http::{
     console_get, console_post, console_post_with_timeout, HTTP_RELOAD_TIMEOUT,
 };
 use crate::services::console_sidecar::{start_console, stop_console};
+use crate::services::startup_check;
 use crate::services::console_ws::start_console_stream as start_console_stream_service;
 use crate::services::logging::append_log_line;
-use crate::state::{AppLogState, ProxyConfigState};
-use crate::types::LogChunk;
+use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
+use crate::types::{LogChunk, StartupCheckResult};
 
 fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
     let config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
@@ -75,6 +76,17 @@ pub fn restart_console(
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn validate_startup_config(
+    app: AppHandle,
+    proxy_state: State<ProxyConfigState>,
+    profiles_state: State<ProfilesState>,
+) -> Result<StartupCheckResult, String> {
+    let status = proxy_state.0.lock().unwrap().clone();
+    let profiles = profiles_state.0.lock().unwrap().clone();
+    startup_check::validate_startup_config(&app, &status, &profiles)
 }
 
 #[tauri::command]

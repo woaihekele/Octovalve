@@ -8,4 +8,5 @@ pub mod logging;
 pub mod mcp;
 pub mod openai;
 pub mod profiles;
+pub mod startup_check;
 pub mod terminal;
