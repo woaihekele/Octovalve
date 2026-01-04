@@ -5,6 +5,7 @@
     :is-streaming="isStreaming"
     :is-connected="isConnected"
     :provider="provider"
+    :send-on-enter="sendOnEnter"
     title="AI 助手"
     greeting="你好，我是 AI 助手"
     @send="emit('send', $event)"
@@ -37,6 +38,7 @@ defineProps<{
   isStreaming: boolean;
   isConnected: boolean;
   provider: 'acp' | 'openai';
+  sendOnEnter: boolean;
   isHistoryOpen: boolean;
   openaiSessions: ChatSession[];
   activeSessionId: string | null;

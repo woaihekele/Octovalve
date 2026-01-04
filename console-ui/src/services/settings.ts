@@ -34,6 +34,7 @@ const DEFAULT_AI_SETTINGS: AiSettings = {
 
 const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
   provider: 'openai',
+  sendOnEnter: false,
   openai: {
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
@@ -120,12 +121,14 @@ export function loadSettings(): AppSettings {
       maxConcurrency: normalizeNumber(parsedAi.maxConcurrency, DEFAULT_AI_SETTINGS.maxConcurrency, 1, 10),
     };
     const parsedChat = (parsed.chat ?? {}) as Partial<ChatProviderConfig>;
-    const normalizeChatProvider = (value: unknown): 'openai' | 'acp' => 
+    const normalizeChatProvider = (value: unknown): 'openai' | 'acp' =>
       (value === 'openai' || value === 'acp') ? value : DEFAULT_CHAT_SETTINGS.provider;
+    const normalizeBool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
     const parsedOpenai = (parsedChat.openai ?? {}) as Partial<ChatProviderConfig['openai']>;
     const parsedAcp = (parsedChat.acp ?? {}) as Partial<ChatProviderConfig['acp']>;
     const normalizedChat: ChatProviderConfig = {
       provider: normalizeChatProvider(parsedChat.provider),
+      sendOnEnter: normalizeBool(parsedChat.sendOnEnter, DEFAULT_CHAT_SETTINGS.sendOnEnter),
       openai: {
         baseUrl: normalizeText(parsedOpenai.baseUrl, DEFAULT_CHAT_SETTINGS.openai.baseUrl),
         apiKey: normalizeText(parsedOpenai.apiKey, DEFAULT_CHAT_SETTINGS.openai.apiKey),

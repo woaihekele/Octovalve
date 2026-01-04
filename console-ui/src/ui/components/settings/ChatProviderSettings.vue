@@ -1,19 +1,7 @@
 <script setup lang="ts">
-import { NSelect, NInput, NInputNumber, NAlert } from 'naive-ui';
+import { NSelect, NInput, NInputNumber, NAlert, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
-
-export interface ChatProviderConfig {
-  provider: 'openai' | 'acp';
-  openai: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    chatPath: string;
-  };
-  acp: {
-    path: string;
-  };
-}
+import type { ChatProviderConfig } from '../../../shared/types';
 
 const props = defineProps<{
   config: ChatProviderConfig;
@@ -30,6 +18,10 @@ const providerOptions: SelectOption[] = [
 
 function updateProvider(value: 'openai' | 'acp') {
   emit('update', { ...props.config, provider: value });
+}
+
+function updateSendOnEnter(value: boolean) {
+  emit('update', { ...props.config, sendOnEnter: value });
 }
 
 function updateOpenaiField(field: keyof ChatProviderConfig['openai'], value: string) {
@@ -60,6 +52,21 @@ function updateAcpPath(value: string) {
         class="w-48"
         @update:value="updateProvider"
       />
+    </div>
+
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <div class="text-sm font-medium">发送快捷键</div>
+        <div class="text-xs text-foreground-muted">默认 Cmd+Enter 发送</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-foreground-muted">Enter 发送</span>
+        <NSwitch
+          :value="props.config.sendOnEnter"
+          size="small"
+          @update:value="updateSendOnEnter"
+        />
+      </div>
     </div>
 
     <!-- OpenAI API Settings -->

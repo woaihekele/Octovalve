@@ -64,10 +64,11 @@
 
       <ChatInput
         v-model="inputValue"
-        :placeholder="placeholder"
+        :placeholder="resolvedPlaceholder"
         :disabled="!isConnected"
         :is-streaming="isStreaming"
         :provider="provider"
+        :send-on-enter="sendOnEnter"
         @send="handleSend"
         @cancel="$emit('cancel')"
         @change-provider="$emit('change-provider', $event)"
@@ -93,16 +94,17 @@ interface Props {
   isStreaming?: boolean;
   isConnected?: boolean;
   provider?: 'acp' | 'openai';
+  sendOnEnter?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: 'AI 助手',
   greeting: '你好，我是 AI 助手',
-  placeholder: '输入消息，按 Enter 发送...',
   width: 380,
   isStreaming: false,
   isConnected: true,
   provider: 'acp',
+  sendOnEnter: false,
 });
 
 const emit = defineEmits<{
@@ -117,6 +119,12 @@ const emit = defineEmits<{
 const widthStorageKey = 'console-ui.chat-panel.width';
 const minPanelWidth = 320;
 const maxPanelWidth = 720;
+const resolvedPlaceholder = computed(() => {
+  if (props.placeholder) {
+    return props.placeholder;
+  }
+  return props.sendOnEnter ? '输入消息，按 Enter 发送...' : '输入消息，按 Cmd+Enter 发送...';
+});
 
 function clampWidth(value: number) {
   return Math.min(maxPanelWidth, Math.max(minPanelWidth, value));

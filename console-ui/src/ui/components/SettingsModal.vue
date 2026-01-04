@@ -55,6 +55,7 @@ function cloneSettings(source: AppSettings): AppSettings {
     ai: { ...source.ai },
     chat: {
       provider: source.chat.provider,
+      sendOnEnter: source.chat.sendOnEnter,
       openai: { ...source.chat.openai },
       acp: { ...source.chat.acp },
     },

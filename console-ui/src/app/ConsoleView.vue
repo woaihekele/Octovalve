@@ -889,6 +889,7 @@ watch(
       :is-streaming="chatIsStreaming"
       :is-connected="chatIsConnected"
       :provider="chatProvider"
+      :send-on-enter="settings.chat.sendOnEnter"
       :is-history-open="isChatHistoryOpen"
       :openai-sessions="openaiSessions"
       :active-session-id="chatStore.activeSessionId"

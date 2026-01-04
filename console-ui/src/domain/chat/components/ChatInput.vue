@@ -84,6 +84,7 @@ interface Props {
   disabled?: boolean;
   isStreaming?: boolean;
   provider?: 'acp' | 'openai';
+  sendOnEnter?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -91,6 +92,7 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   isStreaming: false,
   provider: 'acp',
+  sendOnEnter: false,
 });
 
 const emit = defineEmits<{
@@ -103,21 +105,18 @@ const emit = defineEmits<{
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isFocused = ref(false);
 const isComposing = ref(false);
-let compositionEndTimer: ReturnType<typeof setTimeout> | null = null;
+const ignoreNextEnter = ref(false);
 
 function handleCompositionStart() {
   isComposing.value = true;
-  if (compositionEndTimer) {
-    clearTimeout(compositionEndTimer);
-    compositionEndTimer = null;
-  }
+  ignoreNextEnter.value = false;
 }
 
 function handleCompositionEnd() {
-  // Delay setting isComposing to false to allow the Enter key event to be processed
-  compositionEndTimer = setTimeout(() => {
-    isComposing.value = false;
-  }, 100);
+  isComposing.value = false;
+  if (props.sendOnEnter) {
+    ignoreNextEnter.value = true;
+  }
 }
 
 const providerOptions = [
@@ -135,9 +134,21 @@ const canSend = computed(() => {
 });
 
 function handleKeyDown(event: KeyboardEvent) {
-  // Shift+Enter = newline, Enter = send (but not during IME composition)
-  // Check both our state and the native isComposing property
-  if (event.key === 'Enter' && !event.shiftKey && !isComposing.value && !event.isComposing) {
+  if (event.key !== 'Enter') return;
+  if (props.sendOnEnter) {
+    if (event.shiftKey || isComposing.value || event.isComposing) {
+      return;
+    }
+    if (ignoreNextEnter.value) {
+      ignoreNextEnter.value = false;
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    handleSend();
+    return;
+  }
+  if (event.metaKey && !event.shiftKey && !isComposing.value && !event.isComposing) {
     event.preventDefault();
     handleSend();
   }
