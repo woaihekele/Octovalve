@@ -614,25 +614,25 @@ onBeforeUnmount(() => {
               @click="selectedId = item.id"
             >
               <div class="flex justify-between items-start mb-1 gap-2">
-                <span class="font-mono text-sm line-clamp-1" :class="item.id === selectedId ? 'text-accent' : 'text-foreground'">
+                <span class="min-w-0 flex-1 font-mono text-sm line-clamp-1" :class="item.id === selectedId ? 'text-accent' : 'text-foreground'">
                   {{ item.raw_command }}
                 </span>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 shrink-0">
                   <span
                     v-if="isPendingItem(item)"
-                    class="text-xs px-2 py-0.5 rounded bg-accent/20 text-accent"
+                    class="text-xs px-2 py-0.5 rounded bg-accent/20 text-accent whitespace-nowrap"
                   >
                     {{ $t('target.status.pending') }}
                   </span>
                   <span
                     v-else-if="isRunningItem(item)"
-                    class="text-xs px-2 py-0.5 rounded bg-panel-muted text-foreground"
+                    class="text-xs px-2 py-0.5 rounded bg-panel-muted text-foreground whitespace-nowrap"
                   >
                     {{ $t('target.status.running') }}
                   </span>
                   <span
                     v-else
-                    class="text-xs px-2 py-0.5 rounded"
+                    class="text-xs px-2 py-0.5 rounded whitespace-nowrap"
                     :class="(item as ResultSnapshot).status === 'completed'
                       ? 'bg-success/20 text-success'
                       : (item as ResultSnapshot).status === 'denied'
