@@ -12,6 +12,13 @@ export default defineConfig({
       languageWorkers: ['editorWorkerService'],
     }),
   ],
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler',
+      },
+    },
+  },
   server: {
     port: 15173,
     proxy: {
