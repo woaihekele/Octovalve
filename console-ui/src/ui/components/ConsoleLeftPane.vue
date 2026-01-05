@@ -97,6 +97,7 @@
                     :ref="setTerminalRef(entry.target.name, tab.id)"
                     :target="entry.target"
                     :theme="resolvedTheme"
+                    :terminal-scale="settings.terminalScale"
                     :visible="
                       selectedTerminalOpen &&
                       selectedTargetName === entry.target.name &&

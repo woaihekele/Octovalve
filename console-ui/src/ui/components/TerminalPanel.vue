@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch, withDefaults } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -9,11 +9,14 @@ import { terminalClose, terminalInput, terminalOpen, terminalResize } from '../.
 import type { TargetInfo } from '../../shared/types';
 import type { ResolvedTheme } from '../../shared/theme';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   target: TargetInfo;
   visible: boolean;
   theme: ResolvedTheme;
-}>();
+  terminalScale?: number;
+}>(), {
+  terminalScale: 1,
+});
 
 const containerRef = ref<HTMLDivElement | null>(null);
 const statusMessage = ref<string | null>(null);
@@ -51,6 +54,7 @@ defineExpose({
 });
 
 const termName = 'xterm-256color';
+const BASE_TERMINAL_FONT_SIZE = 12;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 function buildExtendedAnsi(overrides: Record<number, string>): string[] {
@@ -193,6 +197,10 @@ function resolveTerminalTheme() {
   return GITHUB_DARK_THEME;
 }
 
+function resolveTerminalFontSize() {
+  return BASE_TERMINAL_FONT_SIZE * (props.terminalScale || 1);
+}
+
 function applyTerminalTheme() {
   if (!terminal) {
     return;
@@ -200,6 +208,20 @@ function applyTerminalTheme() {
   terminal.options.theme = resolveTerminalTheme();
   if (terminal.rows > 0) {
     terminal.refresh(0, terminal.rows - 1);
+  }
+}
+
+function applyTerminalScale() {
+  if (!terminal) {
+    return;
+  }
+  terminal.options.fontSize = resolveTerminalFontSize();
+  fitAddon?.fit();
+  if (terminal.rows > 0) {
+    terminal.refresh(0, terminal.rows - 1);
+  }
+  if (sessionId) {
+    void terminalResize(sessionId, terminal.cols, terminal.rows);
   }
 }
 
@@ -235,7 +257,7 @@ async function openSession() {
 
   terminal = new Terminal({
     cursorBlink: true,
-    fontSize: 12,
+    fontSize: resolveTerminalFontSize(),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     theme: resolveTerminalTheme(),
     scrollback: 5000,
@@ -395,6 +417,14 @@ watch(
   () => {
     applyTerminalTheme();
   }
+);
+
+watch(
+  () => props.terminalScale,
+  () => {
+    applyTerminalScale();
+  },
+  { flush: 'post' }
 );
 
 watch(

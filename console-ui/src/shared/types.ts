@@ -152,6 +152,8 @@ export interface AppSettings {
   notificationsEnabled: boolean;
   theme: ThemeMode;
   language: AppLanguage;
+  uiScale: number;
+  terminalScale: number;
   ai: AiSettings;
   chat: ChatProviderConfig;
   shortcuts: {

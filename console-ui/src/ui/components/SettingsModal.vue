@@ -57,6 +57,8 @@ function cloneSettings(source: AppSettings): AppSettings {
     notificationsEnabled: source.notificationsEnabled,
     theme: source.theme,
     language: source.language,
+    uiScale: source.uiScale,
+    terminalScale: source.terminalScale,
     ai: { ...source.ai },
     chat: {
       provider: source.chat.provider,
@@ -101,6 +103,7 @@ const logStatusMessage = ref('');
 const logHasOutput = ref(false);
 const logOffset = ref(0);
 const logTerminalRef = ref<HTMLDivElement | null>(null);
+const LOG_BASE_FONT_SIZE = 12;
 let logPollTimer: number | null = null;
 let logTerminal: Terminal | null = null;
 let logFitAddon: FitAddon | null = null;
@@ -312,6 +315,10 @@ function resolveLogTheme(): ITheme {
   };
 }
 
+function resolveLogFontSize() {
+  return LOG_BASE_FONT_SIZE * (localSettings.value.terminalScale || 1);
+}
+
 function ensureLogTerminal() {
   if (logTerminal || !logTerminalRef.value) {
     return;
@@ -319,7 +326,7 @@ function ensureLogTerminal() {
   logTerminal = new Terminal({
     disableStdin: true,
     convertEol: true,
-    fontSize: 12,
+    fontSize: resolveLogFontSize(),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     theme: resolveLogTheme(),
     scrollback: 2000,
@@ -339,6 +346,17 @@ function applyLogTheme() {
     return;
   }
   logTerminal.options.theme = resolveLogTheme();
+  if (logTerminal.rows > 0) {
+    logTerminal.refresh(0, logTerminal.rows - 1);
+  }
+}
+
+function applyLogScale() {
+  if (!logTerminal) {
+    return;
+  }
+  logTerminal.options.fontSize = resolveLogFontSize();
+  logFitAddon?.fit();
   if (logTerminal.rows > 0) {
     logTerminal.refresh(0, logTerminal.rows - 1);
   }
@@ -845,6 +863,13 @@ watch(
   () => props.resolvedTheme,
   () => {
     applyLogTheme();
+  }
+);
+
+watch(
+  () => localSettings.value.terminalScale,
+  () => {
+    applyLogScale();
   }
 );
 

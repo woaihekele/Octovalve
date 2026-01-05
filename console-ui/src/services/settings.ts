@@ -85,6 +85,8 @@ function buildDefaultSettings(language: AppLanguage): AppSettings {
 }
 
 const DEFAULT_AI_SETTINGS: AiSettings = buildDefaultAiSettings(DEFAULT_LANGUAGE);
+const DEFAULT_UI_SCALE = 1;
+const DEFAULT_TERMINAL_SCALE = 1;
 
 const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
   provider: 'openai',
@@ -104,6 +106,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   theme: 'system',
   language: DEFAULT_LANGUAGE,
+  uiScale: DEFAULT_UI_SCALE,
+  terminalScale: DEFAULT_TERMINAL_SCALE,
   ai: DEFAULT_AI_SETTINGS,
   chat: DEFAULT_CHAT_SETTINGS,
   shortcuts: {
@@ -165,6 +169,13 @@ export function loadSettings(): AppSettings {
       fullScreen: normalizeWithFallback(parsedShortcuts.fullScreen, DEFAULT_SETTINGS.shortcuts.fullScreen),
       openSettings: normalizeWithFallback(parsedShortcuts.openSettings, DEFAULT_SETTINGS.shortcuts.openSettings),
     };
+    const normalizedUiScale = normalizeNumber(parsed.uiScale, DEFAULT_SETTINGS.uiScale, 0.8, 1.5);
+    const normalizedTerminalScale = normalizeNumber(
+      parsed.terminalScale,
+      DEFAULT_SETTINGS.terminalScale,
+      0.8,
+      1.5
+    );
     const normalizeLanguage = (value: unknown, fallback: AppLanguage): AppLanguage =>
       value === 'en-US' || value === 'zh-CN' ? value : fallback;
     const normalizedLanguage = normalizeLanguage(parsed.language, detectSystemLanguage());
@@ -204,6 +215,8 @@ export function loadSettings(): AppSettings {
       ...parsed,
       theme: normalizeThemeMode(parsed.theme, DEFAULT_SETTINGS.theme),
       language: normalizedLanguage,
+      uiScale: normalizedUiScale,
+      terminalScale: normalizedTerminalScale,
       ai: normalizedAi,
       chat: normalizedChat,
       shortcuts: normalizedShortcuts,

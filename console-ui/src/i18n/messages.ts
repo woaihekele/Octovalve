@@ -280,6 +280,10 @@ export const messages = {
         languageHelp: '界面语言',
         notifications: '新 Pending 通知',
         notificationsHelp: '有新的待审批时弹出提示',
+        uiScale: '界面缩放',
+        uiScaleHelp: '1.0 = 100%，调整整体界面（不影响终端）',
+        terminalScale: '终端缩放',
+        terminalScaleHelp: '1.0 = 100%，仅调整终端字体',
       },
       ai: {
         enable: '启用 AI 检查',
@@ -714,6 +718,10 @@ export const messages = {
         languageHelp: 'UI language',
         notifications: 'Pending Notifications',
         notificationsHelp: 'Show a toast when new approvals arrive',
+        uiScale: 'UI Scale',
+        uiScaleHelp: '1.0 = 100%, scales the UI (terminal excluded)',
+        terminalScale: 'Terminal Scale',
+        terminalScaleHelp: '1.0 = 100%, adjusts terminal font size only',
       },
       ai: {
         enable: 'Enable AI Inspection',

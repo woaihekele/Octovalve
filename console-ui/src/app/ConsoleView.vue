@@ -28,6 +28,7 @@ import ConsoleLeftPane from '../ui/components/ConsoleLeftPane.vue';
 import SettingsModal from '../ui/components/SettingsModal.vue';
 import NotificationBridge from '../ui/components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from '../services/settings';
+import { applyUiScale } from '../services/uiScale';
 import type { AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
 import { useAiRiskQueue } from '../composables/useAiRiskQueue';
 import { useTerminalState } from '../composables/useTerminalState';
@@ -930,6 +931,14 @@ watch(
   () => settings.value.theme,
   (mode) => {
     applyThemeMode(mode);
+  },
+  { immediate: true }
+);
+
+watch(
+  () => settings.value.uiScale,
+  (value) => {
+    void applyUiScale(value);
   },
   { immediate: true }
 );

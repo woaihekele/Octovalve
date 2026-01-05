@@ -21,6 +21,7 @@
           "permissions": [
             "core:default",
             "core:window:allow-start-dragging",
+            "webview:allow-set-webview-zoom",
             {
               "identifier": "shell:allow-spawn",
               "allow": [

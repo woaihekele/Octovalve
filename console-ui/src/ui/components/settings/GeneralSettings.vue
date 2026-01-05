@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NSelect, NSwitch } from 'naive-ui';
+import { NInputNumber, NSelect, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import type { AppSettings } from '../../../shared/types';
@@ -38,6 +38,14 @@ function updateNotifications(value: boolean) {
 
 function updateLanguage(value: string) {
   emit('update', 'language', value);
+}
+
+function updateUiScale(value: number | null) {
+  emit('update', 'uiScale', value ?? 1);
+}
+
+function updateTerminalScale(value: number | null) {
+  emit('update', 'terminalScale', value ?? 1);
 }
 </script>
 
@@ -80,6 +88,38 @@ function updateLanguage(value: string) {
         :value="props.settings.notificationsEnabled"
         size="small"
         @update:value="updateNotifications"
+      />
+    </div>
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <div class="text-sm font-medium">{{ $t('settings.general.uiScale') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.general.uiScaleHelp') }}</div>
+      </div>
+      <NInputNumber
+        :value="props.settings.uiScale"
+        size="small"
+        :min="0.8"
+        :max="1.5"
+        :step="0.1"
+        :precision="1"
+        class="w-28"
+        @update:value="updateUiScale"
+      />
+    </div>
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <div class="text-sm font-medium">{{ $t('settings.general.terminalScale') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.general.terminalScaleHelp') }}</div>
+      </div>
+      <NInputNumber
+        :value="props.settings.terminalScale"
+        size="small"
+        :min="0.8"
+        :max="1.5"
+        :step="0.1"
+        :precision="1"
+        class="w-28"
+        @update:value="updateTerminalScale"
       />
     </div>
   </div>
