@@ -24,7 +24,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
   const aiRunning = ref(0);
   let aiPumpScheduled = false;
   let aiPersistTimer: number | null = null;
-  const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
+  const t = i18n.global.t;
 
   function reportError(context: string, err?: unknown) {
     onError?.(context, err);

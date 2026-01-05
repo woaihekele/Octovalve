@@ -13,7 +13,7 @@ export function useChatService() {
   const store = useChatStore();
   const { messages, isStreaming, isConnected, error, canSend, activeSession } = storeToRefs(store);
   const abortController = ref<AbortController | null>(null);
-  const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
+  const t = i18n.global.t;
 
   async function connect(): Promise<void> {
     store.setConnected(true);

@@ -8,7 +8,7 @@ import { fetchTargets } from '../../../services/api';
 import type { TargetInfo } from '../../../shared/types';
 import { i18n } from '../../../i18n';
 
-const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
+const t = i18n.global.t;
 
 export type ChatProvider = 'acp' | 'openai';
 

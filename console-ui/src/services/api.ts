@@ -14,7 +14,7 @@ const DEFAULT_HTTP = 'http://127.0.0.1:19309';
 const DEFAULT_WS = 'ws://127.0.0.1:19309/ws';
 
 const TAURI_AVAILABLE = isTauri();
-const t = (...args: Parameters<typeof i18n.global.t>) => i18n.global.t(...args);
+const t = i18n.global.t;
 const RAW_HTTP = (import.meta.env.VITE_CONSOLE_HTTP as string | undefined) || DEFAULT_HTTP;
 const RAW_WS = (import.meta.env.VITE_CONSOLE_WS as string | undefined) || DEFAULT_WS;
 const HTTP_BASE = TAURI_AVAILABLE && RAW_HTTP.startsWith('/') ? DEFAULT_HTTP : RAW_HTTP;
