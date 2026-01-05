@@ -117,7 +117,7 @@ pub(crate) async fn bootstrap_remote_broker(
     .await?;
     if check_output.trim() != "running" {
         let start_cmd = format!(
-            "setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} --log-to-stderr </dev/null > {} 2>&1 &",
+            "setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} --log-to-stderr </dev/null >> {} 2>&1 &",
             shell_escape(&remote_bin),
             shell_escape(&bootstrap.remote_listen_addr),
             shell_escape(&bootstrap.remote_control_addr),
