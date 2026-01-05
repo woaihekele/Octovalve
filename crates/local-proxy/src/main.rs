@@ -14,8 +14,8 @@ use rmcp::service::ServiceExt;
 use rmcp::transport::stdio;
 use state::{build_proxy_state, ProxyState};
 use std::io;
-use std::path::PathBuf;
 use std::sync::Arc;
+use system_utils::path::expand_tilde;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
@@ -154,18 +154,4 @@ async fn precheck_tunnels(
         }
     }
     Ok(())
-}
-
-fn expand_tilde(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home);
-        }
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
-    }
-    PathBuf::from(path)
 }

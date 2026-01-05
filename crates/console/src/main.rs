@@ -33,8 +33,8 @@ use axum::{Json, Router};
 use clap::Parser;
 use serde::Deserialize;
 use std::net::IpAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
+use system_utils::path::expand_tilde;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
@@ -425,20 +425,6 @@ fn build_tunnel_targets(state: &ConsoleState) -> Vec<TunnelTargetSpec> {
             })
         })
         .collect()
-}
-
-fn expand_tilde(path: &str) -> PathBuf {
-    if path == "~" {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home);
-        }
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
-    }
-    PathBuf::from(path)
 }
 
 fn spawn_target_ip_resolution(

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+system-utils = { path = "../system-utils" }
 tokio.workspace = true
 tracing.workspace = true
 tunnel-protocol = { path = "../tunnel-protocol" }

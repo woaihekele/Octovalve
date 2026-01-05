@@ -10,6 +10,7 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
+use crate::paths::sidecar_path;
 use crate::services::config::{ensure_file, DEFAULT_BROKER_CONFIG};
 use crate::services::logging::append_log_line;
 use crate::services::profiles::resolve_broker_config_path;
@@ -153,21 +154,6 @@ pub fn stop_console(app: &AppHandle) {
     }
     let _ = append_log_line(&log_path, "console stop timed out; sending kill");
     let _ = sidecar.child.kill();
-}
-
-fn sidecar_path(name: &str) -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "failed to resolve sidecar dir".to_string())?;
-    #[cfg(windows)]
-    {
-        return Ok(dir.join(format!("{name}.exe")));
-    }
-    #[cfg(not(windows))]
-    {
-        return Ok(dir.join(name));
-    }
 }
 
 fn resolve_linux_broker(app: &AppHandle, filename: &str, resource_path: &str) -> Option<PathBuf> {

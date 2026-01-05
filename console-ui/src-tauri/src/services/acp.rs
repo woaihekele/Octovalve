@@ -89,7 +89,7 @@ pub async fn acp_start(
             &log_path_clone,
             "[acp_start] spawn_blocking: calling AcpClient::start",
         );
-        let client = AcpClient::start(&codex_acp_path, app_clone)?;
+        let client = AcpClient::start(&codex_acp_path, app_clone, log_path_clone.clone())?;
         let _ = append_log_line(
             &log_path_clone,
             "[acp_start] spawn_blocking: client started, calling initialize",

@@ -1,15 +1,15 @@
 use anyhow::Context;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Output, Stdio};
-use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
-use tokio::time::{timeout, Duration};
+use tokio::time::Duration;
 use tracing::info;
 use tunnel_protocol::ForwardSpec;
+use system_utils::process::run_command_with_timeout;
+use system_utils::ssh::apply_askpass_env;
 
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 10;
-const ASKPASS_SCRIPT: &str = "#!/bin/sh\nprintf '%s' \"$OCTOVALVE_SSH_PASS\"\n";
 
 pub(crate) struct SshTarget {
     pub(crate) ssh: String,
@@ -161,41 +161,11 @@ fn build_ssh_base(target: &SshTarget, allow_password: bool) -> anyhow::Result<Co
 }
 
 fn configure_askpass(cmd: &mut Command, password: &str) -> anyhow::Result<()> {
-    let script = ensure_askpass_script()?;
     info!(
         event = "ssh.auth.askpass",
         "using SSH_ASKPASS for password auth"
     );
-    cmd.env("OCTOVALVE_SSH_PASS", password);
-    cmd.env("SSH_ASKPASS", script);
-    cmd.env("SSH_ASKPASS_REQUIRE", "force");
-    cmd.env("DISPLAY", "1");
-    Ok(())
-}
-
-fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
-    let home = std::env::var("HOME").context("failed to resolve HOME for askpass")?;
-    let dir = PathBuf::from(home).join(".octovalve");
-    std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
-    let path = dir.join("ssh-askpass.sh");
-    let mut needs_write = true;
-    if let Ok(existing) = std::fs::read(&path) {
-        if existing == ASKPASS_SCRIPT.as_bytes() {
-            needs_write = false;
-        }
-    }
-    if needs_write {
-        std::fs::write(&path, ASKPASS_SCRIPT)
-            .with_context(|| format!("failed to write {}", path.display()))?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)?.permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(&path, perms)?;
-    }
-    Ok(path)
+    apply_askpass_env(cmd, password)
 }
 
 async fn run_ssh_command(cmd: &mut Command, label: &str) -> anyhow::Result<()> {
@@ -212,36 +182,7 @@ async fn run_ssh_command(cmd: &mut Command, label: &str) -> anyhow::Result<()> {
 }
 
 async fn run_ssh_command_output(cmd: &mut Command, label: &str) -> anyhow::Result<Output> {
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|err| anyhow::anyhow!(err))?;
-    let mut stdout_pipe = child.stdout.take();
-    let mut stderr_pipe = child.stderr.take();
-    let status = match timeout(SSH_COMMAND_TIMEOUT, child.wait()).await {
-        Ok(result) => result.with_context(|| format!("{label} failed"))?,
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            return Err(anyhow::anyhow!(
-                "{label} timed out after {}s",
-                SSH_COMMAND_TIMEOUT.as_secs()
-            ));
-        }
-    };
-    let mut stdout = Vec::new();
-    if let Some(mut pipe) = stdout_pipe.take() {
-        let _ = pipe.read_to_end(&mut stdout).await;
-    }
-    let mut stderr = Vec::new();
-    if let Some(mut pipe) = stderr_pipe.take() {
-        let _ = pipe.read_to_end(&mut stderr).await;
-    }
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
+    run_command_with_timeout(cmd, SSH_COMMAND_TIMEOUT, label).await
 }
 
 fn parse_host_port(addr: &str) -> anyhow::Result<(String, u16)> {

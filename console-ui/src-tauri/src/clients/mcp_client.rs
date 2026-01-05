@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
+use crate::paths::sidecar_path;
+
 const DEFAULT_CLIENT_ID: &str = "octovalve-console-openai";
 
 pub struct McpClientState(pub Mutex<Option<McpClient>>);
@@ -127,21 +129,6 @@ fn format_service_error(err: ServiceError) -> String {
             None => format!("mcp error: {}", data.message),
         },
         _ => err.to_string(),
-    }
-}
-
-fn sidecar_path(name: &str) -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "failed to resolve sidecar dir".to_string())?;
-    #[cfg(windows)]
-    {
-        return Ok(dir.join(format!("{name}.exe")));
-    }
-    #[cfg(not(windows))]
-    {
-        return Ok(dir.join(name));
     }
 }
 

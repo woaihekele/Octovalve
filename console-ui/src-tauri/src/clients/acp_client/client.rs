@@ -1,60 +1,27 @@
 //! ACP client for managing codex-acp subprocess and protocol communication.
 
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use humantime::format_rfc3339;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::clients::acp_types::*;
 use crate::services::console_sidecar::build_console_path;
+use crate::services::logging::append_log_line;
 
-/// Error type for ACP operations
-#[derive(Debug)]
-pub struct AcpError(pub String);
-
-impl std::fmt::Display for AcpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for AcpError {
-    fn from(s: String) -> Self {
-        AcpError(s)
-    }
-}
-
-impl From<&str> for AcpError {
-    fn from(s: &str) -> Self {
-        AcpError(s.to_string())
-    }
-}
-
-impl From<std::io::Error> for AcpError {
-    fn from(e: std::io::Error) -> Self {
-        AcpError(e.to_string())
-    }
-}
-
-impl From<serde_json::Error> for AcpError {
-    fn from(e: serde_json::Error) -> Self {
-        AcpError(e.to_string())
-    }
-}
+use super::error::AcpError;
 
 type PendingRequests = Arc<Mutex<HashMap<u64, mpsc::Sender<Result<Value, AcpError>>>>>;
 
-/// ACP client managing the codex-acp subprocess
+/// ACP client managing the codex-acp subprocess.
 pub struct AcpClient {
     process: Child,
     stdin: Arc<Mutex<ChildStdin>>,
@@ -63,12 +30,16 @@ pub struct AcpClient {
     pending_requests: PendingRequests,
     session_id: Mutex<Option<String>>,
     init_result: Mutex<Option<InitializeResult>>,
-    app_handle: AppHandle,
+    log_path: PathBuf,
 }
 
 impl AcpClient {
-    /// Start a new codex-acp process
-    pub fn start(codex_acp_path: &PathBuf, app_handle: AppHandle) -> Result<Self, AcpError> {
+    /// Start a new codex-acp process.
+    pub fn start(
+        codex_acp_path: &PathBuf,
+        app_handle: AppHandle,
+        log_path: PathBuf,
+    ) -> Result<Self, AcpError> {
         let mut command = Command::new(codex_acp_path);
         command
             .stdin(Stdio::piped())
@@ -96,11 +67,12 @@ impl AcpClient {
         let stdin = Arc::new(Mutex::new(stdin));
         let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
 
-        // Spawn reader thread
+        // Spawn reader thread.
         let pending_clone = pending_requests.clone();
         let app_handle_clone = app_handle.clone();
+        let log_path_clone = log_path.clone();
         let reader_handle = std::thread::spawn(move || {
-            Self::read_loop(stdout, pending_clone, app_handle_clone);
+            Self::read_loop(stdout, pending_clone, app_handle_clone, log_path_clone);
         });
         Ok(Self {
             process,
@@ -110,13 +82,18 @@ impl AcpClient {
             pending_requests,
             session_id: Mutex::new(None),
             init_result: Mutex::new(None),
-            app_handle,
+            log_path,
         })
     }
 
-    /// Read loop for processing messages from codex-acp
-    fn read_loop(stdout: ChildStdout, pending: PendingRequests, app_handle: AppHandle) {
-        log_line(&app_handle, "[ACP reader] starting read loop");
+    /// Read loop for processing messages from codex-acp.
+    fn read_loop(
+        stdout: ChildStdout,
+        pending: PendingRequests,
+        app_handle: AppHandle,
+        log_path: PathBuf,
+    ) {
+        log_line(&log_path, "[ACP reader] starting read loop");
         let reader = BufReader::new(stdout);
         let mut exit_reason: Option<String> = None;
         for line in reader.lines() {
@@ -124,7 +101,7 @@ impl AcpClient {
                 Ok(l) => l,
                 Err(e) => {
                     let reason = format!("read error: {}", e);
-                    log_line(&app_handle, &format!("[ACP reader] {}", reason));
+                    log_line(&log_path, &format!("[ACP reader] {}", reason));
                     exit_reason = Some(reason);
                     break;
                 }
@@ -135,7 +112,7 @@ impl AcpClient {
             }
 
             log_line(
-                &app_handle,
+                &log_path,
                 &format!(
                     "[ACP reader] received line: {}",
                     &line[..line.len().min(200)]
@@ -145,7 +122,7 @@ impl AcpClient {
             let message: AcpMessage = match serde_json::from_str(&line) {
                 Ok(m) => m,
                 Err(e) => {
-                    log_line(&app_handle, &format!("[ACP reader] parse error: {}", e));
+                    log_line(&log_path, &format!("[ACP reader] parse error: {}", e));
                     continue;
                 }
             };
@@ -153,17 +130,17 @@ impl AcpClient {
             match message {
                 AcpMessage::Notification(notification) => {
                     log_line(
-                        &app_handle,
+                        &log_path,
                         &format!(
                             "[ACP reader] parsed as Notification: {}",
                             notification.method
                         ),
                     );
-                    Self::handle_notification(&app_handle, &notification);
+                    Self::handle_notification(&app_handle, &log_path, &notification);
                 }
                 AcpMessage::Response(response) => {
                     log_line(
-                        &app_handle,
+                        &log_path,
                         &format!("[ACP reader] parsed as Response, id: {:?}", response.id),
                     );
                     if let Some(id) = response.id {
@@ -175,31 +152,27 @@ impl AcpClient {
                                 Ok(response.result.unwrap_or(Value::Null))
                             };
                             let _ = sender.send(result);
-                        } else {
-                            // No pending request - this is likely a prompt response
-                            // Emit as completion event
-                            if let Some(result) = &response.result {
-                                if let Some(stop_reason) = result.get("stopReason") {
+                        } else if let Some(result) = &response.result {
+                            if let Some(stop_reason) = result.get("stopReason") {
+                                log_line(
+                                    &log_path,
+                                    &format!(
+                                        "[ACP reader] emitting completion event: {:?}",
+                                        stop_reason
+                                    ),
+                                );
+                                let event = AcpEvent {
+                                    event_type: "prompt/complete".to_string(),
+                                    payload: result.clone(),
+                                };
+                                if let Err(e) = app_handle.emit("acp-event", &event) {
                                     log_line(
-                                        &app_handle,
+                                        &log_path,
                                         &format!(
-                                            "[ACP reader] emitting completion event: {:?}",
-                                            stop_reason
+                                            "[ACP] Failed to emit completion event: {}",
+                                            e
                                         ),
                                     );
-                                    let event = AcpEvent {
-                                        event_type: "prompt/complete".to_string(),
-                                        payload: result.clone(),
-                                    };
-                                    if let Err(e) = app_handle.emit("acp-event", &event) {
-                                        log_line(
-                                            &app_handle,
-                                            &format!(
-                                                "[ACP] Failed to emit completion event: {}",
-                                                e
-                                            ),
-                                        );
-                                    }
                                 }
                             }
                         }
@@ -209,7 +182,7 @@ impl AcpClient {
         }
         let reason = exit_reason.unwrap_or_else(|| "stdout closed".to_string());
         log_line(
-            &app_handle,
+            &log_path,
             &format!("[ACP reader] exiting; notifying pending requests: {}", reason),
         );
         let mut pending_guard = pending.lock().unwrap();
@@ -218,10 +191,14 @@ impl AcpClient {
         }
     }
 
-    /// Handle incoming notifications from codex-acp
-    fn handle_notification(app_handle: &AppHandle, notification: &JsonRpcNotification) {
+    /// Handle incoming notifications from codex-acp.
+    fn handle_notification(
+        app_handle: &AppHandle,
+        log_path: &Path,
+        notification: &JsonRpcNotification,
+    ) {
         log_line(
-            app_handle,
+            log_path,
             &format!("[ACP] Emitting notification: {}", notification.method),
         );
         let event = AcpEvent {
@@ -229,24 +206,24 @@ impl AcpClient {
             payload: notification.params.clone().unwrap_or(Value::Null),
         };
         if let Err(e) = app_handle.emit("acp-event", &event) {
-            log_line(app_handle, &format!("[ACP] Failed to emit event: {}", e));
+            log_line(log_path, &format!("[ACP] Failed to emit event: {}", e));
         }
     }
 
-    /// Send a JSON-RPC request and wait for response
+    /// Send a JSON-RPC request and wait for response.
     fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, AcpError> {
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = JsonRpcRequest::new(id, method, params);
         let request_json = serde_json::to_string(&request)?;
 
-        // Register pending request
+        // Register pending request.
         let (tx, rx) = mpsc::channel();
         {
             let mut pending = self.pending_requests.lock().unwrap();
             pending.insert(id, tx);
         }
 
-        // Send request
+        // Send request.
         {
             let mut stdin = self.stdin.lock().unwrap();
             writeln!(stdin, "{}", request_json)?;
@@ -260,7 +237,7 @@ impl AcpClient {
                 let mut pending = self.pending_requests.lock().unwrap();
                 pending.remove(&id);
                 log_line(
-                    &self.app_handle,
+                    &self.log_path,
                     &format!(
                         "[ACP] request timeout method={} id={} timeout_secs={}",
                         method,
@@ -281,7 +258,7 @@ impl AcpClient {
         }
     }
 
-    /// Initialize the ACP connection
+    /// Initialize the ACP connection.
     pub fn initialize(&self) -> Result<InitializeResult, AcpError> {
         let params = InitializeParams {
             protocol_version: "1".to_string(),
@@ -304,7 +281,7 @@ impl AcpClient {
         Ok(init_result)
     }
 
-    /// Authenticate with the agent
+    /// Authenticate with the agent.
     pub fn authenticate(&self, method_id: &str) -> Result<(), AcpError> {
         let params = AuthenticateParams {
             method_id: method_id.to_string(),
@@ -313,9 +290,9 @@ impl AcpClient {
         Ok(())
     }
 
-    /// Create a new session
+    /// Create a new session.
     pub fn new_session(&self, cwd: &str) -> Result<NewSessionResult, AcpError> {
-        // Ensure cwd is absolute
+        // Ensure cwd is absolute.
         let cwd_path = std::path::Path::new(cwd);
         let absolute_cwd = if cwd_path.is_absolute() {
             cwd.to_string()
@@ -337,7 +314,7 @@ impl AcpClient {
         Ok(session_result)
     }
 
-    /// Load an existing session
+    /// Load an existing session.
     pub fn load_session(&self, session_id: &str) -> Result<LoadSessionResult, AcpError> {
         let params = LoadSessionParams {
             session_id: session_id.to_string(),
@@ -350,8 +327,8 @@ impl AcpClient {
         Ok(load_result)
     }
 
-    /// Send a prompt to the current session (non-blocking)
-    /// Content comes via notifications, completion comes via response
+    /// Send a prompt to the current session (non-blocking).
+    /// Content comes via notifications, completion comes via response.
     pub fn prompt(&self, content: &str, context: Option<Vec<ContextItem>>) -> Result<(), AcpError> {
         let session_id = self
             .session_id
@@ -366,18 +343,15 @@ impl AcpClient {
             context,
         };
 
-        // Send request but don't block waiting - let reader thread handle response
+        // Send request but don't block waiting - let reader thread handle response.
         self.send_request_async("session/prompt", Some(serde_json::to_value(&params)?))
     }
 
-    /// Send a request without waiting for response (reader thread will handle it)
+    /// Send a request without waiting for response (reader thread will handle it).
     fn send_request_async(&self, method: &str, params: Option<Value>) -> Result<(), AcpError> {
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = JsonRpcRequest::new(id, method, params);
         let request_json = serde_json::to_string(&request)?;
-
-        // Don't register pending request - we'll handle response in reader thread
-        // by emitting an event
 
         let mut stdin = self.stdin.lock().unwrap();
         writeln!(stdin, "{}", request_json)?;
@@ -385,7 +359,7 @@ impl AcpClient {
         Ok(())
     }
 
-    /// Cancel the current operation
+    /// Cancel the current operation.
     pub fn cancel(&self) -> Result<(), AcpError> {
         let session_id = self
             .session_id
@@ -395,50 +369,35 @@ impl AcpClient {
             .ok_or_else(|| AcpError("No active session".into()))?;
 
         let params = CancelParams { session_id };
-        // Use async request (don't wait for response)
+        // Use async request (don't wait for response).
         self.send_request_async("session/cancel", Some(serde_json::to_value(&params)?))
     }
 
-    /// Get the current session ID
+    /// Get the current session ID.
     pub fn get_session_id(&self) -> Option<String> {
         self.session_id.lock().unwrap().clone()
     }
 
-    /// Get the initialization result
+    /// Get the initialization result.
     pub fn get_init_result(&self) -> Option<InitializeResult> {
         self.init_result.lock().unwrap().clone()
     }
 
-    /// Stop the codex-acp process
+    /// Stop the codex-acp process.
     pub fn stop(&mut self) {
-        log_line(&self.app_handle, "[ACP] stop: killing process");
+        log_line(&self.log_path, "[ACP] stop: killing process");
         let _ = self.process.kill();
-        // Don't wait for reader thread - it will exit when stdout closes
-        // Just detach it by taking the handle
+        // Don't wait for reader thread - it will exit when stdout closes.
         let _ = self.reader_handle.take();
-        log_line(&self.app_handle, "[ACP] stop: done");
+        log_line(&self.log_path, "[ACP] stop: done");
     }
 }
 
-fn log_line(app_handle: &AppHandle, message: &str) {
-    let Ok(config_dir) = app_handle.path().app_config_dir() else {
-        return;
-    };
-    let logs_dir = config_dir.join("logs");
-    let _ = fs::create_dir_all(&logs_dir);
-    let log_path = logs_dir.join("app.log");
-    let _ = append_log_line(&log_path, message);
-}
-
-fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|err| err.to_string())?;
-    let ts = format_rfc3339(SystemTime::now()).to_string();
-    writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
-    Ok(())
+fn log_line(log_path: &Path, message: &str) {
+    if let Some(parent) = log_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = append_log_line(log_path, message);
 }
 
 fn request_timeout() -> Duration {
@@ -451,7 +410,7 @@ impl Drop for AcpClient {
     }
 }
 
-/// State wrapper for Tauri
+/// State wrapper for Tauri.
 pub struct AcpClientState(pub Mutex<Option<AcpClient>>);
 
 impl Default for AcpClientState {

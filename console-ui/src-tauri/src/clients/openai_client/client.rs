@@ -1,79 +1,19 @@
 use futures_util::StreamExt;
-use humantime::format_rfc3339;
 use reqwest::redirect::Policy;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use std::time::SystemTime;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{watch, Mutex};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenAiConfig {
-    pub base_url: String,
-    pub api_key: String,
-    pub model: String,
-    #[serde(default = "default_chat_path")]
-    pub chat_path: String,
-}
+use crate::services::http_utils::join_base_path;
+use crate::services::logging::append_log_line;
 
-fn default_chat_path() -> String {
-    "/v1/chat/completions".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub call_type: String,
-    pub function: FunctionCall,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tool {
-    #[serde(rename = "type")]
-    pub tool_type: String,
-    pub function: ToolFunction,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolFunction {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatStreamEvent {
-    pub event_type: String,
-    pub content: Option<String>,
-    pub tool_calls: Option<Vec<ToolCall>>,
-    pub finish_reason: Option<String>,
-    pub error: Option<String>,
-}
+use super::types::{
+    ChatMessage, ChatStreamEvent, FunctionCall, OpenAiConfig, Tool, ToolCall,
+};
 
 pub struct OpenAiClient {
     config: OpenAiConfig,
@@ -89,14 +29,14 @@ impl OpenAiClient {
         let (cancel_tx, _cancel_rx) = watch::channel(0u64);
         let http_client = match build_http_client() {
             Ok(client) => {
-                log_to_path(
+                let _ = append_log_line(
                     &log_path,
                     "[openai_client] reqwest configured http1_only=true redirect=none pool_idle=0",
                 );
                 client
             }
             Err(err) => {
-                log_to_path(
+                let _ = append_log_line(
                     &log_path,
                     &format!(
                         "[openai_client] reqwest build failed: {}; falling back to default",
@@ -147,11 +87,10 @@ impl OpenAiClient {
         let messages = self.messages.lock().await.clone();
         let tools = self.tools.lock().await.clone();
 
-        let url = format!(
-            "{}{}",
-            self.config.base_url.trim_end_matches('/'),
-            self.config.chat_path
-        );
+        let url = join_base_path(&self.config.base_url, &self.config.chat_path).map_err(|err| {
+            self.log_line(&format!("[openai_send] invalid url: {err}"));
+            err
+        })?;
         self.log_line(&format!(
             "[openai_send] url={} model={} messages={} tools={}",
             url,
@@ -293,7 +232,14 @@ impl OpenAiClient {
                         }
 
                         if let Some(data) = strip_sse_data_prefix(&line) {
-                            let done = self.handle_sse_data(app_handle, data, &mut full_content, &mut tool_calls).await?;
+                            let done = self
+                                .handle_sse_data(
+                                    app_handle,
+                                    data,
+                                    &mut full_content,
+                                    &mut tool_calls,
+                                )
+                                .await?;
                             if done {
                                 return Ok(());
                             }
@@ -493,18 +439,3 @@ fn build_http_client() -> Result<Client, reqwest::Error> {
 
 // Global client state
 pub struct OpenAiClientState(pub Mutex<Option<Arc<OpenAiClient>>>);
-
-fn append_log_line(path: &Path, message: &str) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|err| err.to_string())?;
-    let ts = format_rfc3339(SystemTime::now()).to_string();
-    writeln!(file, "[{ts}] {message}").map_err(|err| err.to_string())?;
-    Ok(())
-}
-
-fn log_to_path(path: &Path, message: &str) {
-    let _ = append_log_line(path, message);
-}

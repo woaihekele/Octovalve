@@ -3,6 +3,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde_json::{json, Value};
 
+use crate::services::http_utils::join_base_path;
 use crate::types::ai::{AiRiskModelResponse, AiRiskRequest, AiRiskResponse};
 
 pub async fn ai_risk_assess(request: AiRiskRequest) -> Result<AiRiskResponse, String> {
@@ -46,19 +47,6 @@ pub async fn ai_risk_assess(request: AiRiskRequest) -> Result<AiRiskResponse, St
         return Err("ai response missing content".to_string());
     }
     parse_ai_risk_content(content)
-}
-
-fn join_base_path(base: &str, path: &str) -> Result<String, String> {
-    if base.trim().is_empty() {
-        return Err("base_url is empty".to_string());
-    }
-    let normalized_base = base.trim_end_matches('/');
-    let normalized_path = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{path}")
-    };
-    Ok(format!("{normalized_base}{normalized_path}"))
 }
 
 fn parse_ai_risk_content(content: &str) -> Result<AiRiskResponse, String> {

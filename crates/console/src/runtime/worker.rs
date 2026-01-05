@@ -1,45 +1,28 @@
-use crate::bootstrap::{
-    bootstrap_remote_broker, stop_remote_broker, BootstrapConfig, UnsupportedRemotePlatform,
-};
-use crate::control::{ControlRequest, ControlResponse, ServiceEvent};
-use crate::events::ConsoleEvent;
-use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
-use crate::tunnel::TargetRuntime;
-use anyhow::Context;
-use bytes::Bytes;
-use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::net::TcpStream;
+
 use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::timeout;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use tunnel_manager::TunnelManager;
 use tunnel_protocol::{ForwardPurpose, ForwardSpec};
 
+use crate::bootstrap::{
+    bootstrap_remote_broker, stop_remote_broker, BootstrapConfig, UnsupportedRemotePlatform,
+};
+use crate::control::ControlRequest;
+use crate::events::ConsoleEvent;
+use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
+use crate::tunnel::TargetRuntime;
+
+use super::control::{connect_control, send_request, wait_for_control_ready};
+use super::session::{session_loop, SessionTracker};
+use super::status::set_status_and_notify;
+
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 const FAST_RECONNECT_DELAY: Duration = Duration::from_secs(1);
-const CONTROL_READY_TIMEOUT: Duration = Duration::from_secs(6);
-const CONTROL_READY_INTERVAL: Duration = Duration::from_millis(200);
-const CONTROL_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const INITIAL_CONNECT_GRACE: Duration = Duration::from_secs(15);
-
-struct SessionTracker {
-    started_at: Instant,
-    snapshot_received: bool,
-}
-
-impl SessionTracker {
-    fn new() -> Self {
-        Self {
-            started_at: Instant::now(),
-            snapshot_received: false,
-        }
-    }
-}
 
 pub(crate) async fn spawn_target_workers(
     state: Arc<RwLock<ConsoleState>>,
@@ -124,18 +107,14 @@ async fn run_target_worker(
                 };
                 if let Err(err) = manager.ensure_forward(&tunnel_client_id, forward).await {
                     let error = err.to_string();
-                    if in_connect_grace(ever_snapshot, connect_grace_started) {
-                        set_connecting_status(&runtime.name, &state, &event_tx).await;
-                    } else {
-                        set_status_and_notify(
-                            &runtime.name,
-                            TargetStatus::Down,
-                            Some(error),
-                            &state,
-                            &event_tx,
-                        )
-                        .await;
-                    }
+                    handle_connect_failure(
+                        &runtime.name,
+                        error,
+                        in_connect_grace(ever_snapshot, connect_grace_started),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     warn!(target = %runtime.name, error = %err, "failed to ensure tunnel");
                     if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
@@ -171,13 +150,11 @@ async fn run_target_worker(
                         &event_tx,
                     )
                     .await;
-                } else if in_connect_grace(ever_snapshot, connect_grace_started) {
-                    set_connecting_status(&runtime.name, &state, &event_tx).await;
                 } else {
-                    set_status_and_notify(
+                    handle_connect_failure(
                         &runtime.name,
-                        TargetStatus::Down,
-                        Some(error),
+                        error,
+                        in_connect_grace(ever_snapshot, connect_grace_started),
                         &state,
                         &event_tx,
                     )
@@ -212,18 +189,14 @@ async fn run_target_worker(
         if runtime.ssh.is_some() && !ever_snapshot {
             if let Err(err) = wait_for_control_ready(&runtime.name, &addr, &shutdown).await {
                 let error = err.to_string();
-                if in_connect_grace(ever_snapshot, connect_grace_started) {
-                    set_connecting_status(&runtime.name, &state, &event_tx).await;
-                } else {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some(error),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
-                }
+                handle_connect_failure(
+                    &runtime.name,
+                    error,
+                    in_connect_grace(ever_snapshot, connect_grace_started),
+                    &state,
+                    &event_tx,
+                )
+                .await;
                 warn!(target = %runtime.name, error = %err, "control addr not ready");
                 let delay = if in_connect_grace(ever_snapshot, connect_grace_started) {
                     FAST_RECONNECT_DELAY
@@ -243,18 +216,14 @@ async fn run_target_worker(
                 let mut tracker = SessionTracker::new();
                 if let Err(err) = send_request(&mut framed, ControlRequest::Subscribe).await {
                     let error = err.to_string();
-                    if in_connect_grace(ever_snapshot, connect_grace_started) {
-                        set_connecting_status(&runtime.name, &state, &event_tx).await;
-                    } else {
-                        set_status_and_notify(
-                            &runtime.name,
-                            TargetStatus::Down,
-                            Some(error),
-                            &state,
-                            &event_tx,
-                        )
-                        .await;
-                    }
+                    handle_connect_failure(
+                        &runtime.name,
+                        error,
+                        in_connect_grace(ever_snapshot, connect_grace_started),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     warn!(target = %runtime.name, error = %err, "failed to subscribe");
                     if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
@@ -263,18 +232,14 @@ async fn run_target_worker(
                 }
                 if let Err(err) = send_request(&mut framed, ControlRequest::Snapshot).await {
                     let error = err.to_string();
-                    if in_connect_grace(ever_snapshot, connect_grace_started) {
-                        set_connecting_status(&runtime.name, &state, &event_tx).await;
-                    } else {
-                        set_status_and_notify(
-                            &runtime.name,
-                            TargetStatus::Down,
-                            Some(error),
-                            &state,
-                            &event_tx,
-                        )
-                        .await;
-                    }
+                    handle_connect_failure(
+                        &runtime.name,
+                        error,
+                        in_connect_grace(ever_snapshot, connect_grace_started),
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     warn!(target = %runtime.name, error = %err, "failed to request snapshot");
                     if wait_reconnect_or_shutdown(&shutdown, RECONNECT_DELAY).await {
                         break true;
@@ -295,20 +260,16 @@ async fn run_target_worker(
                 .await
                 {
                     let error = err.to_string();
-                    if !tracker.snapshot_received
-                        && in_connect_grace(ever_snapshot, connect_grace_started)
-                    {
-                        set_connecting_status(&runtime.name, &state, &event_tx).await;
-                    } else {
-                        set_status_and_notify(
-                            &runtime.name,
-                            TargetStatus::Down,
-                            Some(error),
-                            &state,
-                            &event_tx,
-                        )
-                        .await;
-                    }
+                    let use_grace = !tracker.snapshot_received
+                        && in_connect_grace(ever_snapshot, connect_grace_started);
+                    handle_connect_failure(
+                        &runtime.name,
+                        error,
+                        use_grace,
+                        &state,
+                        &event_tx,
+                    )
+                    .await;
                     warn!(target = %runtime.name, error = %err, "control session ended");
                     if !tracker.snapshot_received {
                         warn!(
@@ -343,18 +304,14 @@ async fn run_target_worker(
             }
             Err(err) => {
                 let error = err.to_string();
-                if in_connect_grace(ever_snapshot, connect_grace_started) {
-                    set_connecting_status(&runtime.name, &state, &event_tx).await;
-                } else {
-                    set_status_and_notify(
-                        &runtime.name,
-                        TargetStatus::Down,
-                        Some(error),
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
-                }
+                handle_connect_failure(
+                    &runtime.name,
+                    error,
+                    in_connect_grace(ever_snapshot, connect_grace_started),
+                    &state,
+                    &event_tx,
+                )
+                .await;
                 warn!(target = %runtime.name, error = %err, "failed to connect control channel");
                 connect_failures += 1;
                 if connect_failures >= 3 {
@@ -401,42 +358,17 @@ async fn set_connecting_status(
     set_status_and_notify(name, TargetStatus::Down, None, state, event_tx).await;
 }
 
-async fn wait_for_control_ready(
-    target: &str,
-    addr: &str,
-    shutdown: &CancellationToken,
-) -> anyhow::Result<()> {
-    let start = Instant::now();
-    let mut logged = false;
-    loop {
-        if shutdown.is_cancelled() {
-            anyhow::bail!("shutdown requested");
-        }
-        match timeout(CONTROL_READY_CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
-            Ok(Ok(stream)) => {
-                drop(stream);
-                return Ok(());
-            }
-            Ok(Err(_)) | Err(_) => {
-                if !logged {
-                    info!(
-                        event = "control.ready.wait",
-                        target = %target,
-                        addr = %addr,
-                        timeout_ms = CONTROL_READY_TIMEOUT.as_millis(),
-                        "waiting for control listener"
-                    );
-                    logged = true;
-                }
-            }
-        }
-        if start.elapsed() >= CONTROL_READY_TIMEOUT {
-            anyhow::bail!(
-                "control addr not ready after {}ms",
-                CONTROL_READY_TIMEOUT.as_millis()
-            );
-        }
-        tokio::time::sleep(CONTROL_READY_INTERVAL).await;
+async fn handle_connect_failure(
+    name: &str,
+    error: String,
+    use_grace: bool,
+    state: &Arc<RwLock<ConsoleState>>,
+    event_tx: &broadcast::Sender<ConsoleEvent>,
+) {
+    if use_grace {
+        set_connecting_status(name, state, event_tx).await;
+    } else {
+        set_status_and_notify(name, TargetStatus::Down, Some(error), state, event_tx).await;
     }
 }
 
@@ -455,140 +387,6 @@ fn control_forward_spec(runtime: &TargetRuntime) -> Option<ForwardSpec> {
     })
 }
 
-async fn session_loop(
-    framed: &mut Framed<TcpStream, LengthDelimitedCodec>,
-    name: &str,
-    state: &Arc<RwLock<ConsoleState>>,
-    cmd_rx: &mut mpsc::Receiver<ControlCommand>,
-    shutdown: &CancellationToken,
-    event_tx: &broadcast::Sender<ConsoleEvent>,
-    tracker: &mut SessionTracker,
-) -> anyhow::Result<()> {
-    loop {
-        tokio::select! {
-            _ = shutdown.cancelled() => return Ok(()),
-            Some(command) = cmd_rx.recv() => {
-                let request = match command {
-                    ControlCommand::Approve(id) => ControlRequest::Approve { id },
-                    ControlCommand::Deny(id) => ControlRequest::Deny { id },
-                    ControlCommand::Cancel(id) => ControlRequest::Cancel { id },
-                };
-                if let Err(err) = send_request(framed, request).await {
-                    return Err(err);
-                }
-            }
-            frame = framed.next() => {
-                let frame = frame.context("control stream closed")?;
-                let bytes = frame.context("read control frame")?;
-                let response: ControlResponse = serde_json::from_slice(&bytes)?;
-                handle_response(name, state, response, event_tx, tracker).await;
-            }
-        }
-    }
-}
-
-async fn handle_response(
-    name: &str,
-    state: &Arc<RwLock<ConsoleState>>,
-    response: ControlResponse,
-    event_tx: &broadcast::Sender<ConsoleEvent>,
-    tracker: &mut SessionTracker,
-) {
-    match response {
-        ControlResponse::Snapshot { snapshot } => {
-            let queue_len = snapshot.queue.len();
-            let history_len = snapshot.history.len();
-            let last_id = snapshot
-                .last_result
-                .as_ref()
-                .map(|result| result.id.as_str());
-            let latency_ms = tracker.started_at.elapsed().as_millis();
-            if !tracker.snapshot_received {
-                tracker.snapshot_received = true;
-                info!(
-                    event = "control.snapshot.received",
-                    target = %name,
-                    latency_ms = latency_ms,
-                    queue_len = queue_len,
-                    history_len = history_len,
-                    last_result_id = ?last_id,
-                    "control snapshot received"
-                );
-            } else {
-                info!(
-                    event = "control.snapshot.update",
-                    target = %name,
-                    queue_len = queue_len,
-                    history_len = history_len,
-                    last_result_id = ?last_id,
-                    "control snapshot updated"
-                );
-            }
-            let mut guard = state.write().await;
-            guard.set_status(name, TargetStatus::Ready, None);
-            guard.apply_snapshot(name, snapshot);
-            drop(guard);
-            emit_target_update(name, state, event_tx).await;
-        }
-        ControlResponse::Event { event } => {
-            match &event {
-                ServiceEvent::QueueUpdated(queue) => {
-                    info!(
-                        target = %name,
-                        queue_len = queue.len(),
-                        "control queue updated"
-                    );
-                }
-                ServiceEvent::RunningUpdated(running) => {
-                    info!(
-                        target = %name,
-                        running_len = running.len(),
-                        "control running updated"
-                    );
-                }
-                ServiceEvent::ResultUpdated(result) => {
-                    info!(
-                        target = %name,
-                        result_id = %result.id,
-                        "control result updated"
-                    );
-                }
-                ServiceEvent::ConnectionsChanged => {
-                    info!(target = %name, "control connections changed");
-                }
-            }
-            let mut guard = state.write().await;
-            guard.set_status(name, TargetStatus::Ready, None);
-            guard.apply_event(name, event);
-            drop(guard);
-            emit_target_update(name, state, event_tx).await;
-        }
-        ControlResponse::Ack { .. } => {}
-        ControlResponse::Error { message } => {
-            let mut guard = state.write().await;
-            guard.set_status(name, TargetStatus::Ready, Some(message));
-            drop(guard);
-            emit_target_update(name, state, event_tx).await;
-        }
-    }
-}
-
-async fn connect_control(addr: &str) -> anyhow::Result<Framed<TcpStream, LengthDelimitedCodec>> {
-    let stream = TcpStream::connect(addr)
-        .await
-        .with_context(|| format!("failed to connect control addr {addr}"))?;
-    Ok(Framed::new(stream, LengthDelimitedCodec::new()))
-}
-
-async fn send_request(
-    framed: &mut Framed<TcpStream, LengthDelimitedCodec>,
-    request: ControlRequest,
-) -> anyhow::Result<()> {
-    let payload = serde_json::to_vec(&request)?;
-    framed.send(Bytes::from(payload)).await?;
-    Ok(())
-}
-
 impl TargetRuntime {
     fn from_spec(spec: TargetSpec) -> Self {
         TargetRuntime {
@@ -601,33 +399,5 @@ impl TargetRuntime {
             control_local_port: spec.control_local_port,
             control_local_addr: spec.control_local_addr,
         }
-    }
-}
-
-async fn set_status_and_notify(
-    name: &str,
-    status: TargetStatus,
-    error: Option<String>,
-    state: &Arc<RwLock<ConsoleState>>,
-    event_tx: &broadcast::Sender<ConsoleEvent>,
-) {
-    {
-        let mut state = state.write().await;
-        state.set_status(name, status, error);
-    }
-    emit_target_update(name, state, event_tx).await;
-}
-
-async fn emit_target_update(
-    name: &str,
-    state: &Arc<RwLock<ConsoleState>>,
-    event_tx: &broadcast::Sender<ConsoleEvent>,
-) {
-    let target = {
-        let state = state.read().await;
-        state.target_info(name)
-    };
-    if let Some(target) = target {
-        let _ = event_tx.send(ConsoleEvent::TargetUpdated { target });
     }
 }

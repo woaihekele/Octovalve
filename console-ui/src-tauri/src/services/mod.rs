@@ -4,6 +4,7 @@ pub mod config;
 pub mod console_http;
 pub mod console_sidecar;
 pub mod console_ws;
+pub mod http_utils;
 pub mod logging;
 pub mod mcp;
 pub mod openai;

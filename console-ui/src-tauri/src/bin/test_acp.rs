@@ -1,9 +1,10 @@
+use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
-use tauri::Listener;
+use tauri::{Listener, Manager};
 
 use octovalve_console::clients::acp_client::AcpClient;
 use octovalve_console::clients::acp_types::SessionUpdate;
@@ -55,6 +56,14 @@ fn main() -> Result<(), String> {
         .build(tauri::generate_context!())
         .map_err(|e| format!("build app failed: {}", e))?;
     let app_handle = app.handle().clone();
+    let config_dir = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("app_config_dir failed: {}", e))?;
+    fs::create_dir_all(&config_dir).map_err(|e| format!("create_dir_all failed: {}", e))?;
+    let logs_dir = config_dir.join("logs");
+    fs::create_dir_all(&logs_dir).map_err(|e| format!("create logs dir failed: {}", e))?;
+    let app_log = logs_dir.join("app.log");
 
     let (tx, rx) = mpsc::channel::<AcpEventPayload>();
     let _listener_id = app_handle.listen("acp-event", move |event| {
@@ -68,7 +77,7 @@ fn main() -> Result<(), String> {
         }
     });
 
-    let mut client = AcpClient::start(&codex_acp_path, app_handle.clone())
+    let mut client = AcpClient::start(&codex_acp_path, app_handle.clone(), app_log)
         .map_err(|e| format!("start failed: {}", e))?;
     let init = client
         .initialize()

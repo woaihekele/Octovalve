@@ -9,17 +9,16 @@ use base64::Engine;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::sync::mpsc as std_mpsc;
 use std::thread;
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
 use tracing::{info, warn};
+use system_utils::ssh::askpass_env;
 
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_TERM: &str = "xterm-256color";
-const ASKPASS_SCRIPT: &str = "#!/bin/sh\nprintf '%s' \"$OCTOVALVE_SSH_PASS\"\n";
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TerminalQuery {
@@ -340,36 +339,10 @@ async fn send_response(
 }
 
 fn configure_askpass(cmd: &mut CommandBuilder, password: &str) -> anyhow::Result<()> {
-    let script = ensure_askpass_script()?;
-    cmd.env("OCTOVALVE_SSH_PASS", password);
-    cmd.env("SSH_ASKPASS", script.to_string_lossy().to_string());
-    cmd.env("SSH_ASKPASS_REQUIRE", "force");
-    cmd.env("DISPLAY", "1");
+    for (key, value) in askpass_env(password)? {
+        cmd.env(key, value);
+    }
     Ok(())
-}
-
-fn ensure_askpass_script() -> anyhow::Result<PathBuf> {
-    let home = std::env::var("HOME")?;
-    let dir = PathBuf::from(home).join(".octovalve");
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join("ssh-askpass.sh");
-    let mut needs_write = true;
-    if let Ok(existing) = std::fs::read(&path) {
-        if existing == ASKPASS_SCRIPT.as_bytes() {
-            needs_write = false;
-        }
-    }
-    if needs_write {
-        std::fs::write(&path, ASKPASS_SCRIPT.as_bytes())?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)?.permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(&path, perms)?;
-    }
-    Ok(path)
 }
 
 fn apply_locale_env(cmd: &mut CommandBuilder, preferred: Option<&str>) {

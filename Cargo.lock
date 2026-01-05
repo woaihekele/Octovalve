@@ -330,6 +330,7 @@ dependencies = [
  "protocol",
  "serde",
  "serde_json",
+ "system-utils",
  "tokio",
  "tokio-util",
  "toml",
@@ -1055,6 +1056,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-words",
+ "system-utils",
  "tokio",
  "tokio-util",
  "toml",
@@ -1690,6 +1692,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
+name = "system-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tokio",
+]
+
+[[package]]
 name = "termios"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2009,6 +2019,7 @@ name = "tunnel-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "system-utils",
  "tokio",
  "tracing",
  "tunnel-protocol",
