@@ -1,0 +1,56 @@
+# Octovalve local-proxy config example.
+#
+# Usage:
+# 1) Copy this file to ~/.octovalve/local-proxy-config.toml
+# 2) Edit targets below.
+# 3) Restart the Octovalve app.
+#
+# Notes:
+# - This config defines how the console connects to remote brokers via SSH.
+# - Prefer SSH key authentication; use ssh_password only if necessary.
+# - broker_config_path lets the console sidecar load a custom broker config file.
+#   Supports absolute paths, "~", or paths relative to this file.
+
+# Optional broker config path override.
+# broker_config_path = "~/.octovalve/remote-broker-config.toml"
+
+# Default target name used when no target is specified explicitly.
+default_target = "example"
+
+[defaults]
+# Command timeout in milliseconds.
+timeout_ms = 30000
+# Maximum bytes returned for stdout/stderr.
+max_output_bytes = 1048576
+# Local bind address for forwarded ports.
+local_bind = "127.0.0.1"
+# Remote broker listen address on the target machine.
+remote_addr = "127.0.0.1:19307"
+# Remote broker control channel address on the target machine.
+control_remote_addr = "127.0.0.1:19308"
+# Extra SSH options applied to every target.
+ssh_args = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
+# Optional SSH password (prefer key-based auth).
+# ssh_password = "password"
+
+[[targets]]
+# Unique target name used in the UI and CLI.
+name = "example"
+# Description shown in the UI.
+desc = "Example target (replace with your machine)"
+# SSH user and host.
+ssh = "user@host"
+# Optional explicit host metadata.
+# hostname = "host"
+# ip = "1.2.3.4"
+# Local forwarded port for the broker data channel.
+local_port = 19311
+# Local forwarded port for the broker control channel.
+control_local_port = 19411
+# Optional per-target overrides.
+# remote_addr = "127.0.0.1:19307"
+# control_remote_addr = "127.0.0.1:19308"
+# local_bind = "127.0.0.1"
+# control_local_bind = "127.0.0.1"
+# ssh_args = ["-i", "/path/to/key"]
+# ssh_password = "password"
