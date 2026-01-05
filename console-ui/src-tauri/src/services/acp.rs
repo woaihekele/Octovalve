@@ -8,7 +8,7 @@ use crate::clients::acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, Lo
 use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::console_sidecar::build_console_path;
 use crate::services::logging::append_log_line;
-use crate::services::profiles::octovalve_dir;
+use crate::services::profiles::{expand_tilde_path, octovalve_dir};
 use crate::state::{AppLogState, ProxyConfigState};
 
 fn resolve_codex_acp_path(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, String> {
@@ -90,6 +90,30 @@ fn build_mcp_servers(proxy_bin: &Path, proxy_config: &Path) -> Vec<serde_json::V
         "args": args,
         "env": [],
     })]
+}
+
+fn resolve_acp_cwd(app: &AppHandle, cwd: &str) -> Result<PathBuf, String> {
+    let trimmed = cwd.trim();
+    let workspace_base = octovalve_dir(app)
+        .map(|dir| dir.join("workspace"))
+        .or_else(|_| app.path().app_config_dir().map(|dir| dir.join("workspace")))
+        .or_else(|_| app.path().home_dir().map(|dir| dir.join("workspace")))
+        .map_err(|err| err.to_string())?;
+
+    std::fs::create_dir_all(&workspace_base).map_err(|err| err.to_string())?;
+
+    if trimmed.is_empty() || trimmed == "." {
+        return Ok(workspace_base);
+    }
+
+    let expanded = expand_tilde_path(app, trimmed).unwrap_or_else(|_| PathBuf::from(trimmed));
+    let absolute = if expanded.is_absolute() {
+        expanded
+    } else {
+        workspace_base.join(expanded)
+    };
+    std::fs::create_dir_all(&absolute).map_err(|err| err.to_string())?;
+    Ok(absolute)
 }
 
 pub async fn acp_start(
@@ -204,12 +228,15 @@ pub async fn acp_authenticate(app: AppHandle, method_id: String) -> Result<(), S
 }
 
 pub async fn acp_new_session(app: AppHandle, cwd: String) -> Result<AcpSessionInfo, String> {
+    let resolved_cwd = resolve_acp_cwd(&app, &cwd)?;
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_handle.state::<AcpClientState>();
         let guard = state.0.lock().unwrap();
         let client = guard.as_ref().ok_or("ACP client not started")?;
-        let result = client.new_session(&cwd).map_err(|e| e.to_string())?;
+        let result = client
+            .new_session(&resolved_cwd.to_string_lossy())
+            .map_err(|e| e.to_string())?;
         Ok(AcpSessionInfo {
             session_id: result.session_id,
             modes: vec![],

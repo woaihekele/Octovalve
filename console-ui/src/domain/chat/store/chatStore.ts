@@ -35,6 +35,7 @@ export const useChatStore = defineStore('chat', () => {
   const acpInitialized = ref(false);
   const authMethods = ref<AuthMethod[]>([]);
   const acpCapabilities = ref<AgentCapabilities | null>(null);
+  const acpCwd = ref<string | null>(null);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
 
@@ -605,6 +606,7 @@ export const useChatStore = defineStore('chat', () => {
       acpCapabilities.value = response.agentCapabilities ?? null;
       provider.value = 'acp';
       providerInitialized.value = true;
+      acpCwd.value = cwd;
       openaiContextSessionId.value = null;
       setupAcpEventListener();
       if (activeSession.value?.acpSessionId) {
@@ -666,12 +668,13 @@ export const useChatStore = defineStore('chat', () => {
     { flush: 'post' }
   );
 
-  async function sendAcpMessage(content: string, cwd = '.') {
+  async function sendAcpMessage(content: string, cwd?: string) {
     if (!acpInitialized.value) {
       throw new Error('ACP not initialized');
     }
 
-    await ensureAcpSessionLoaded(cwd);
+    const resolvedCwd = cwd ?? acpCwd.value ?? '.';
+    await ensureAcpSessionLoaded(resolvedCwd);
 
     // Add user message
     addMessage({
@@ -743,6 +746,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     acpInitialized.value = false;
     acpCapabilities.value = null;
+    acpCwd.value = null;
     providerInitialized.value = false;
     setConnected(false);
     console.log('[chatStore] stopAcp done');
@@ -758,6 +762,108 @@ export const useChatStore = defineStore('chat', () => {
     });
   }
 
+  function findToolCall(messageId: string, toolCallId: string): ToolCall | undefined {
+    const session = activeSession.value;
+    if (!session) return undefined;
+    const msg = session.messages.find((m) => m.id === messageId);
+    return msg?.toolCalls?.find((t) => t.id === toolCallId);
+  }
+
+  function mapAcpToolStatus(status: unknown): ToolCall['status'] | undefined {
+    if (typeof status !== 'string') {
+      return undefined;
+    }
+    switch (status) {
+      case 'pending':
+        return 'pending';
+      case 'in_progress':
+        return 'running';
+      case 'completed':
+        return 'completed';
+      case 'failed':
+        return 'failed';
+      default:
+        return undefined;
+    }
+  }
+
+  function normalizeToolArguments(rawInput: unknown): Record<string, unknown> {
+    if (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
+      return rawInput as Record<string, unknown>;
+    }
+    if (rawInput === undefined) {
+      return {};
+    }
+    return { value: rawInput };
+  }
+
+  function stringifyForDisplay(value: unknown): string {
+    if (value === undefined) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function extractContentText(content: unknown): string | null {
+    if (!content || typeof content !== 'object') {
+      return null;
+    }
+    const maybeText = (content as { text?: unknown }).text;
+    return typeof maybeText === 'string' ? maybeText : null;
+  }
+
+  function formatToolCallContent(content: unknown): string | null {
+    if (!Array.isArray(content)) {
+      return null;
+    }
+    const parts: string[] = [];
+    for (const item of content) {
+      if (item && typeof item === 'object') {
+        const itemObj = item as Record<string, unknown>;
+        if (itemObj.type === 'content') {
+          const text = extractContentText(itemObj.content);
+          if (text) {
+            parts.push(text);
+            continue;
+          }
+        }
+      }
+      parts.push(stringifyForDisplay(item));
+    }
+    return parts.length > 0 ? parts.join('\n') : null;
+  }
+
+  function extractToolOutput(update: Record<string, unknown>, existing?: ToolCall): string | null {
+    const meta = (update._meta ?? update.meta) as Record<string, unknown> | undefined;
+    const terminalOutput = meta?.terminal_output as Record<string, unknown> | undefined;
+    const terminalData = terminalOutput?.data;
+    if (typeof terminalData === 'string') {
+      return terminalData;
+    }
+
+    const contentText = formatToolCallContent(update.content);
+    if (contentText) {
+      return contentText;
+    }
+
+    const hasExistingOutput = Boolean(existing?.result);
+    if (!hasExistingOutput && update.rawOutput !== undefined) {
+      return stringifyForDisplay(update.rawOutput);
+    }
+    if (!hasExistingOutput && update.raw_output !== undefined) {
+      return stringifyForDisplay(update.raw_output);
+    }
+
+    return null;
+  }
+
   function handleAcpEvent(event: AcpEvent) {
     const method = event.type;
     const payload = event.payload as Record<string, unknown>;
@@ -765,50 +871,66 @@ export const useChatStore = defineStore('chat', () => {
     if (method === 'session/update') {
       const update = payload.update as Record<string, unknown> | undefined;
       if (!update) return;
-      
-      const sessionUpdate = update.sessionUpdate as string | undefined;
-      
-      if (sessionUpdate === 'agent_message_chunk') {
-        const content = update.content as { text?: string; type?: string } | undefined;
-        if (content?.text && currentAssistantMessageId.value) {
-          const contentType = content.type;
-          if (contentType === 'reasoning' || contentType === 'reasoning_content' || contentType === 'thinking') {
-            pendingAssistantReasoning += content.text;
-            scheduleFlush();
+
+      const sessionUpdate = (update.sessionUpdate ?? update.session_update) as string | undefined;
+
+      if (sessionUpdate === 'agent_message_chunk' || sessionUpdate === 'agent_thought_chunk' || sessionUpdate === 'agent_reasoning_chunk') {
+        const contentText = extractContentText(update.content);
+        if (contentText && currentAssistantMessageId.value) {
+          if (sessionUpdate === 'agent_thought_chunk' || sessionUpdate === 'agent_reasoning_chunk') {
+            pendingAssistantReasoning += contentText;
           } else {
-            pendingAssistantContent += content.text;
-            scheduleFlush();
+            pendingAssistantContent += contentText;
           }
+          scheduleFlush();
         }
       } else if (sessionUpdate === 'tool_call') {
-        // Tool call started
-        const toolCallId = update.toolCallId as string;
+        const toolCallId = (update.toolCallId ?? update.tool_call_id) as string | undefined;
         const title = update.title as string | undefined;
         const name = update.name as string | undefined;
-        if (currentAssistantMessageId.value && toolCallId) {
+        const rawInput = update.rawInput ?? update.raw_input;
+        const status = mapAcpToolStatus(update.status);
+        if (currentAssistantMessageId.value && toolCallId && !findToolCall(currentAssistantMessageId.value, toolCallId)) {
           addToolCall(currentAssistantMessageId.value, {
             id: toolCallId,
             name: name || title || 'Unknown Tool',
-            arguments: {},
-            status: 'running',
+            arguments: normalizeToolArguments(rawInput),
+            status: status ?? 'running',
           });
         }
       } else if (sessionUpdate === 'tool_call_update') {
-        // Tool call output/status update
-        const toolCallId = update.toolCallId as string;
-        const content = update.content as { text?: string } | undefined;
-        const status = update.status as string | undefined;
+        const toolCallId = (update.toolCallId ?? update.tool_call_id) as string | undefined;
         if (currentAssistantMessageId.value && toolCallId) {
+          const existing = findToolCall(currentAssistantMessageId.value, toolCallId);
+          const title = update.title as string | undefined;
+          const name = update.name as string | undefined;
+          const rawInput = update.rawInput ?? update.raw_input;
+          const status = mapAcpToolStatus(update.status);
           const updates: Partial<ToolCall> = {};
-          if (content?.text) {
-            updates.result = (updates.result || '') + content.text;
+          const output = extractToolOutput(update, existing);
+          if (output) {
+            updates.result = output;
           }
-          if (status === 'completed' || status === 'done') {
-            updates.status = 'completed';
-          } else if (status === 'failed' || status === 'error') {
-            updates.status = 'failed';
+          if (status) {
+            updates.status = status;
           }
-          updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
+          if (title || name) {
+            updates.name = name || title;
+          }
+          if (rawInput !== undefined) {
+            updates.arguments = normalizeToolArguments(rawInput);
+          }
+          if (!existing) {
+            addToolCall(currentAssistantMessageId.value, {
+              id: toolCallId,
+              name: updates.name || 'Unknown Tool',
+              arguments: updates.arguments ?? {},
+              status: updates.status ?? 'running',
+              result: updates.result,
+            });
+          } else {
+            updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
+          }
         }
       } else if (sessionUpdate === 'task_complete') {
         flushPending();
@@ -866,6 +988,9 @@ export const useChatStore = defineStore('chat', () => {
         }
         if (updates.name !== undefined) {
           tc.name = updates.name;
+        }
+        if (updates.arguments !== undefined) {
+          tc.arguments = updates.arguments;
         }
       }
     }
@@ -1333,7 +1458,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // Unified send message
-  async function sendMessage(content: string, cwd = '.') {
+  async function sendMessage(content: string, cwd?: string) {
     if (provider.value === 'openai') {
       return sendOpenaiMessage(content);
     } else {
