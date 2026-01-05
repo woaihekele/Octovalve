@@ -193,7 +193,7 @@ const assistantMarkdown = computed(() => {
       max-width: 100%;
       font-size: 14px;
       white-space: pre-wrap;
-      line-height: 1;
+      line-height: 1.5;
       word-break: keep-all;
       overflow-wrap: break-word;
 
