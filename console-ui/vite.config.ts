@@ -6,6 +6,10 @@ const monacoPluginFactory =
   (monacoEditorPlugin as unknown as { default?: typeof monacoEditorPlugin }).default ?? monacoEditorPlugin;
 
 export default defineConfig({
+  define: {
+    __INTLIFY_JIT_COMPILATION__: true,
+    __INTLIFY_PROD_DEVTOOLS__: true,
+  },
   plugins: [
     vue(),
     monacoPluginFactory({
