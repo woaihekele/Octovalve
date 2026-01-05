@@ -1,5 +1,5 @@
 export type TargetStatus = 'ready' | 'down';
-export type ThemeMode = 'system' | 'dark' | 'light' | 'darcula';
+export type ThemeMode = 'system' | 'dark' | 'light' | 'darcula' | 'one-dark-pro';
 export type AppLanguage = 'zh-CN' | 'en-US';
 
 export interface ConfigFilePayload {

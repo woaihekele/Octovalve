@@ -1,16 +1,23 @@
 import type { ThemeMode } from './types';
 
-export type ResolvedTheme = 'dark' | 'light' | 'darcula';
+export type ResolvedTheme = 'dark' | 'light' | 'darcula' | 'one-dark-pro';
 
 export const THEME_OPTIONS = [
   { value: 'system', labelKey: 'theme.system' },
   { value: 'dark', labelKey: 'theme.dark' },
   { value: 'light', labelKey: 'theme.light' },
   { value: 'darcula', labelKey: 'theme.darcula' },
+  { value: 'one-dark-pro', labelKey: 'theme.oneDarkPro' },
 ] as const;
 
 export function isThemeMode(value: unknown): value is ThemeMode {
-  return value === 'dark' || value === 'light' || value === 'system' || value === 'darcula';
+  return (
+    value === 'dark' ||
+    value === 'light' ||
+    value === 'system' ||
+    value === 'darcula' ||
+    value === 'one-dark-pro'
+  );
 }
 
 export function normalizeThemeMode(value: unknown, fallback: ThemeMode): ThemeMode {
@@ -23,6 +30,9 @@ export function resolveTheme(mode: ThemeMode, prefersDark: boolean): ResolvedThe
   }
   if (mode === 'darcula') {
     return 'darcula';
+  }
+  if (mode === 'one-dark-pro') {
+    return 'one-dark-pro';
   }
   return mode;
 }

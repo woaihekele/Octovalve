@@ -30,6 +30,12 @@ function resolveMonacoTheme() {
   if (props.theme === 'darcula') {
     return 'darcula';
   }
+  if (props.theme === 'one-dark-pro') {
+    return 'one-dark-pro';
+  }
+  if (props.theme === 'dark') {
+    return 'octo-dark';
+  }
   return 'vs-dark';
 }
 
@@ -103,6 +109,66 @@ function ensureDarculaTheme(monaco: typeof Monaco) {
   }
 }
 
+function ensureOctoDarkTheme(monaco: typeof Monaco) {
+  try {
+    monaco.editor.defineTheme('octo-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '8b949e' },
+        { token: 'keyword', foreground: 'ff7b72' },
+        { token: 'number', foreground: 'd29922' },
+        { token: 'string', foreground: '3fb950' },
+        { token: 'type.identifier', foreground: 'e3b341' },
+        { token: 'function', foreground: '79c0ff' },
+      ],
+      colors: {
+        'editor.background': '#0d1117',
+        'editor.foreground': '#c9d1d9',
+        'editorLineNumber.foreground': '#6e7681',
+        'editorLineNumber.activeForeground': '#c9d1d9',
+        'editorCursor.foreground': '#58a6ff',
+        'editor.selectionBackground': '#1f6feb33',
+        'editor.inactiveSelectionBackground': '#1f6feb1a',
+        'editorIndentGuide.background': '#30363d',
+        'editorIndentGuide.activeBackground': '#484f58',
+      },
+    });
+  } catch {
+    // ignore defineTheme errors
+  }
+}
+
+function ensureOneDarkProTheme(monaco: typeof Monaco) {
+  try {
+    monaco.editor.defineTheme('one-dark-pro', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '5c6370' },
+        { token: 'keyword', foreground: 'c678dd' },
+        { token: 'number', foreground: 'd19a66' },
+        { token: 'string', foreground: '98c379' },
+        { token: 'type.identifier', foreground: 'e5c07b' },
+        { token: 'function', foreground: '61afef' },
+      ],
+      colors: {
+        'editor.background': '#282c34',
+        'editor.foreground': '#abb2bf',
+        'editorLineNumber.foreground': '#4b5263',
+        'editorLineNumber.activeForeground': '#abb2bf',
+        'editorCursor.foreground': '#528bff',
+        'editor.selectionBackground': '#3e4451',
+        'editor.inactiveSelectionBackground': '#3e445180',
+        'editorIndentGuide.background': '#3b4048',
+        'editorIndentGuide.activeBackground': '#4b5263',
+      },
+    });
+  } catch {
+    // ignore defineTheme errors
+  }
+}
+
 async function initEditor() {
   if (!containerRef.value || editor) {
     return;
@@ -110,6 +176,8 @@ async function initEditor() {
   monacoApi = await import('monaco-editor');
   ensureTomlLanguage(monacoApi);
   ensureDarculaTheme(monacoApi);
+  ensureOctoDarkTheme(monacoApi);
+  ensureOneDarkProTheme(monacoApi);
   monacoApi.editor.setTheme(resolveMonacoTheme());
   editor = monacoApi.editor.create(containerRef.value, {
     value: props.modelValue ?? '',

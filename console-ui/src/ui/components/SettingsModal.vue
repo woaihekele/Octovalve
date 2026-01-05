@@ -310,12 +310,29 @@ function resolveRgbVar(name: string, fallback: string) {
   return `rgb(${normalized})`;
 }
 
+function resolveRgbaVar(name: string, fallback: string, alpha: number) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return `rgba(${fallback.replace(/\s+/g, ', ')}, ${alpha})`;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = raw || fallback;
+  if (value.startsWith('rgb')) {
+    const match = value.match(/rgba?\(([^)]+)\)/);
+    if (match) {
+      return `rgba(${match[1]}, ${alpha})`;
+    }
+    return `rgba(${fallback.replace(/\s+/g, ', ')}, ${alpha})`;
+  }
+  const normalized = value.replace(/\s+/g, ', ');
+  return `rgba(${normalized}, ${alpha})`;
+}
+
 function resolveLogTheme(): ITheme {
   return {
     background: resolveRgbVar('--color-panel-muted', '30 41 59'),
     foreground: resolveRgbVar('--color-text', '226 232 240'),
     cursor: resolveRgbVar('--color-accent', '99 102 241'),
-    selectionBackground: 'rgba(99, 102, 241, 0.35)',
+    selectionBackground: resolveRgbaVar('--color-accent', '99 102 241', 0.35),
   };
 }
 

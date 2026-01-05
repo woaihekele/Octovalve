@@ -107,6 +107,25 @@ const EXTENDED_ANSI_DARK = buildExtendedAnsi({
   232: '#161b22',
 });
 
+const EXTENDED_ANSI_ONE_DARK = buildExtendedAnsi({
+  3: '#d19a66',
+  5: '#c678dd',
+  9: '#e06c75',
+  10: '#98c379',
+  11: '#e5c07b',
+  13: '#c678dd',
+  15: '#abb2bf',
+  16: '#282c34',
+  21: '#61afef',
+  27: '#61afef',
+  34: '#98c379',
+  45: '#56b6c2',
+  51: '#56b6c2',
+  196: '#e06c75',
+  226: '#e5c07b',
+  232: '#21252b',
+});
+
 const GITHUB_LIGHT_THEME: ITheme = {
   background: '#ffffff',
   foreground: '#24292f',
@@ -187,12 +206,42 @@ const GITHUB_DARK_THEME: ITheme = {
   extendedAnsi: EXTENDED_ANSI_DARK,
 };
 
+const ONE_DARK_PRO_THEME: ITheme = {
+  background: '#282c34',
+  foreground: '#abb2bf',
+  cursor: '#528bff',
+  cursorAccent: '#282c34',
+  selectionBackground: 'rgba(82, 139, 255, 0.35)',
+  selectionInactiveBackground: 'rgba(82, 139, 255, 0.22)',
+  selectionForeground: '#abb2bf',
+  black: '#3f4451',
+  red: '#e06c75',
+  green: '#98c379',
+  yellow: '#e5c07b',
+  blue: '#61afef',
+  magenta: '#c678dd',
+  cyan: '#56b6c2',
+  white: '#abb2bf',
+  brightBlack: '#4b5263',
+  brightRed: '#e06c75',
+  brightGreen: '#98c379',
+  brightYellow: '#e5c07b',
+  brightBlue: '#61afef',
+  brightMagenta: '#c678dd',
+  brightCyan: '#56b6c2',
+  brightWhite: '#d7dae0',
+  extendedAnsi: EXTENDED_ANSI_ONE_DARK,
+};
+
 function resolveTerminalTheme() {
   if (props.theme === 'light') {
     return GITHUB_LIGHT_THEME;
   }
   if (props.theme === 'darcula') {
     return DARCULA_THEME;
+  }
+  if (props.theme === 'one-dark-pro') {
+    return ONE_DARK_PRO_THEME;
   }
   return GITHUB_DARK_THEME;
 }

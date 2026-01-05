@@ -20,6 +20,7 @@ export const messages = {
       dark: '深色',
       light: '浅色',
       darcula: 'Darcula',
+      oneDarkPro: 'One Dark Pro',
     },
     language: {
       zh: '中文',
@@ -275,7 +276,7 @@ export const messages = {
       },
       general: {
         theme: '主题',
-        themeHelp: '系统/深色/浅色/Darcula',
+        themeHelp: '系统/深色/浅色/Darcula/One Dark Pro',
         language: '语言',
         languageHelp: '界面语言',
         notifications: '新 Pending 通知',
@@ -460,6 +461,7 @@ export const messages = {
       dark: 'Dark',
       light: 'Light',
       darcula: 'Darcula',
+      oneDarkPro: 'One Dark Pro',
     },
     language: {
       zh: 'Chinese',
@@ -715,7 +717,7 @@ export const messages = {
       },
       general: {
         theme: 'Theme',
-        themeHelp: 'System/Dark/Light/Darcula',
+        themeHelp: 'System/Dark/Light/Darcula/One Dark Pro',
         language: 'Language',
         languageHelp: 'UI language',
         notifications: 'Pending Notifications',
