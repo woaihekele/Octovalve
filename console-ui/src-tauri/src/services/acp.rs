@@ -131,60 +131,84 @@ pub async fn acp_start(
     })
 }
 
-pub fn acp_authenticate(state: State<'_, AcpClientState>, method_id: String) -> Result<(), String> {
-    let guard = state.0.lock().unwrap();
-    let client = guard.as_ref().ok_or("ACP client not started")?;
-    client.authenticate(&method_id).map_err(|e| e.to_string())
-}
-
-pub fn acp_new_session(
-    state: State<'_, AcpClientState>,
-    cwd: String,
-) -> Result<AcpSessionInfo, String> {
-    let guard = state.0.lock().unwrap();
-    let client = guard.as_ref().ok_or("ACP client not started")?;
-    let result = client.new_session(&cwd).map_err(|e| e.to_string())?;
-    Ok(AcpSessionInfo {
-        session_id: result.session_id,
-        modes: vec![],
-        models: vec![],
+pub async fn acp_authenticate(app: AppHandle, method_id: String) -> Result<(), String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AcpClientState>();
+        let guard = state.0.lock().unwrap();
+        let client = guard.as_ref().ok_or("ACP client not started")?;
+        client.authenticate(&method_id).map_err(|e| e.to_string())
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-pub fn acp_load_session(
-    state: State<'_, AcpClientState>,
-    session_id: String,
-) -> Result<LoadSessionResult, String> {
-    let guard = state.0.lock().unwrap();
-    let client = guard.as_ref().ok_or("ACP client not started")?;
-    client.load_session(&session_id).map_err(|e| e.to_string())
+pub async fn acp_new_session(app: AppHandle, cwd: String) -> Result<AcpSessionInfo, String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AcpClientState>();
+        let guard = state.0.lock().unwrap();
+        let client = guard.as_ref().ok_or("ACP client not started")?;
+        let result = client.new_session(&cwd).map_err(|e| e.to_string())?;
+        Ok(AcpSessionInfo {
+            session_id: result.session_id,
+            modes: vec![],
+            models: vec![],
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-pub fn acp_prompt(
-    state: State<'_, AcpClientState>,
-    log_state: State<'_, AppLogState>,
+pub async fn acp_load_session(app: AppHandle, session_id: String) -> Result<LoadSessionResult, String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AcpClientState>();
+        let guard = state.0.lock().unwrap();
+        let client = guard.as_ref().ok_or("ACP client not started")?;
+        client.load_session(&session_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub async fn acp_prompt(
+    app: AppHandle,
     content: String,
     context: Option<Vec<ContextItem>>,
 ) -> Result<(), String> {
-    let _ = append_log_line(
-        &log_state.app_log,
-        &format!("[acp_prompt] called with content: {}", content),
-    );
-    let guard = state.0.lock().unwrap();
-    let client = guard.as_ref().ok_or("ACP client not started")?;
-    let _ = append_log_line(&log_state.app_log, "[acp_prompt] calling client.prompt...");
-    client.prompt(&content, context).map_err(|e| {
-        let _ = append_log_line(&log_state.app_log, &format!("[acp_prompt] error: {}", e));
-        e.to_string()
-    })?;
-    let _ = append_log_line(&log_state.app_log, "[acp_prompt] done");
-    Ok(())
+    let log_path = app.state::<AppLogState>().app_log.clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = append_log_line(
+            &log_path,
+            &format!("[acp_prompt] called with content: {}", content),
+        );
+        let state = app_handle.state::<AcpClientState>();
+        let guard = state.0.lock().unwrap();
+        let client = guard.as_ref().ok_or("ACP client not started")?;
+        let _ = append_log_line(&log_path, "[acp_prompt] calling client.prompt...");
+        client.prompt(&content, context).map_err(|e| {
+            let _ = append_log_line(&log_path, &format!("[acp_prompt] error: {}", e));
+            e.to_string()
+        })?;
+        let _ = append_log_line(&log_path, "[acp_prompt] done");
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-pub fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
-    let guard = state.0.lock().unwrap();
-    let client = guard.as_ref().ok_or("ACP client not started")?;
-    client.cancel().map_err(|e| e.to_string())
+pub async fn acp_cancel(app: AppHandle) -> Result<(), String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AcpClientState>();
+        let guard = state.0.lock().unwrap();
+        let client = guard.as_ref().ok_or("ACP client not started")?;
+        client.cancel().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {

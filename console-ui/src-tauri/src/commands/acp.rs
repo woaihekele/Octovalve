@@ -3,7 +3,6 @@ use tauri::State;
 use crate::clients::acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
 use crate::services::acp;
 use crate::clients::AcpClientState;
-use crate::state::AppLogState;
 
 #[tauri::command]
 pub async fn acp_start(
@@ -16,39 +15,35 @@ pub async fn acp_start(
 }
 
 #[tauri::command]
-pub fn acp_authenticate(state: State<'_, AcpClientState>, method_id: String) -> Result<(), String> {
-    acp::acp_authenticate(state, method_id)
+pub async fn acp_authenticate(app: tauri::AppHandle, method_id: String) -> Result<(), String> {
+    acp::acp_authenticate(app, method_id).await
 }
 
 #[tauri::command]
-pub fn acp_new_session(
-    state: State<'_, AcpClientState>,
-    cwd: String,
-) -> Result<AcpSessionInfo, String> {
-    acp::acp_new_session(state, cwd)
+pub async fn acp_new_session(app: tauri::AppHandle, cwd: String) -> Result<AcpSessionInfo, String> {
+    acp::acp_new_session(app, cwd).await
 }
 
 #[tauri::command]
-pub fn acp_load_session(
-    state: State<'_, AcpClientState>,
+pub async fn acp_load_session(
+    app: tauri::AppHandle,
     session_id: String,
 ) -> Result<LoadSessionResult, String> {
-    acp::acp_load_session(state, session_id)
+    acp::acp_load_session(app, session_id).await
 }
 
 #[tauri::command]
-pub fn acp_prompt(
-    state: State<'_, AcpClientState>,
-    log_state: State<'_, AppLogState>,
+pub async fn acp_prompt(
+    app: tauri::AppHandle,
     content: String,
     context: Option<Vec<ContextItem>>,
 ) -> Result<(), String> {
-    acp::acp_prompt(state, log_state, content, context)
+    acp::acp_prompt(app, content, context).await
 }
 
 #[tauri::command]
-pub fn acp_cancel(state: State<'_, AcpClientState>) -> Result<(), String> {
-    acp::acp_cancel(state)
+pub async fn acp_cancel(app: tauri::AppHandle) -> Result<(), String> {
+    acp::acp_cancel(app).await
 }
 
 #[tauri::command]

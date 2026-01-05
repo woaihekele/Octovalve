@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::services::profiles;
 use crate::state::{ProfilesState, ProxyConfigState};
@@ -16,67 +16,100 @@ pub fn list_profiles(state: State<ProfilesState>) -> ProfilesStatus {
 }
 
 #[tauri::command]
-pub fn create_profile(
-    name: String,
-    app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
-) -> Result<(), String> {
-    profiles::create_profile(name, app, profiles_state)
+pub async fn create_profile(name: String, app: tauri::AppHandle) -> Result<(), String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::create_profile(name, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn delete_profile(
-    name: String,
-    app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
-) -> Result<(), String> {
-    profiles::delete_profile(name, app, profiles_state)
+pub async fn delete_profile(name: String, app: tauri::AppHandle) -> Result<(), String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::delete_profile(name, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn select_profile(
-    name: String,
-    app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
-    proxy_state: State<ProxyConfigState>,
-) -> Result<(), String> {
-    profiles::select_profile(name, app, profiles_state, proxy_state)
+pub async fn select_profile(name: String, app: tauri::AppHandle) -> Result<(), String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        let proxy_state = state_handle.state::<ProxyConfigState>();
+        profiles::select_profile(name, app_handle, profiles_state, proxy_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn read_profile_proxy_config(
+pub async fn read_profile_proxy_config(
     name: String,
     app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
 ) -> Result<crate::types::ConfigFilePayload, String> {
-    profiles::read_profile_proxy_config(name, app, profiles_state)
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::read_profile_proxy_config(name, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn write_profile_proxy_config(
+pub async fn write_profile_proxy_config(
     name: String,
     content: String,
     app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
 ) -> Result<(), String> {
-    profiles::write_profile_proxy_config(name, content, app, profiles_state)
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::write_profile_proxy_config(name, content, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn read_profile_broker_config(
+pub async fn read_profile_broker_config(
     name: String,
     app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
 ) -> Result<crate::types::ConfigFilePayload, String> {
-    profiles::read_profile_broker_config(name, app, profiles_state)
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::read_profile_broker_config(name, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn write_profile_broker_config(
+pub async fn write_profile_broker_config(
     name: String,
     content: String,
     app: tauri::AppHandle,
-    profiles_state: State<ProfilesState>,
 ) -> Result<(), String> {
-    profiles::write_profile_broker_config(name, content, app, profiles_state)
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::write_profile_broker_config(name, content, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }

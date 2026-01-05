@@ -20,9 +20,12 @@ fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir.join("logs").join("console.log"))
 }
 
-#[tauri::command]
-pub fn read_console_log(offset: u64, max_bytes: u64, app: AppHandle) -> Result<LogChunk, String> {
-    let path = console_log_path(&app)?;
+fn read_console_log_blocking(
+    offset: u64,
+    max_bytes: u64,
+    app: &AppHandle,
+) -> Result<LogChunk, String> {
+    let path = console_log_path(app)?;
     if !path.exists() {
         return Ok(LogChunk {
             content: String::new(),
@@ -54,44 +57,72 @@ pub fn read_console_log(offset: u64, max_bytes: u64, app: AppHandle) -> Result<L
 }
 
 #[tauri::command]
-pub fn restart_console(
+pub async fn read_console_log(
+    offset: u64,
+    max_bytes: u64,
     app: AppHandle,
-    state: State<ProxyConfigState>,
-    log_state: State<AppLogState>,
-) -> Result<(), String> {
-    let console_log = console_log_path(&app)?;
-    let _ = append_log_line(&console_log, "console restart requested");
-    stop_console(&app);
-    let status = state.0.lock().unwrap().clone();
-    if !status.present {
-        return Err("proxy config missing".to_string());
-    }
-    match start_console(&app, Path::new(&status.path), &log_state.app_log) {
-        Ok(_) => {
-            let _ = append_log_line(&console_log, "console restart started");
-        }
-        Err(err) => {
-            let _ = append_log_line(&console_log, &format!("console restart failed: {err}"));
-            return Err(err);
-        }
-    }
-    Ok(())
+) -> Result<LogChunk, String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        read_console_log_blocking(offset, max_bytes, &app_handle)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn validate_startup_config(
+pub async fn restart_console(
     app: AppHandle,
-    proxy_state: State<ProxyConfigState>,
-    profiles_state: State<ProfilesState>,
+    state: State<'_, ProxyConfigState>,
+    log_state: State<'_, AppLogState>,
+) -> Result<(), String> {
+    let status = state.0.lock().unwrap().clone();
+    let app_log = log_state.app_log.clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let console_log = console_log_path(&app_handle)?;
+        let _ = append_log_line(&console_log, "console restart requested");
+        stop_console(&app_handle);
+        if !status.present {
+            return Err("proxy config missing".to_string());
+        }
+        match start_console(&app_handle, Path::new(&status.path), &app_log) {
+            Ok(_) => {
+                let _ = append_log_line(&console_log, "console restart started");
+                Ok(())
+            }
+            Err(err) => {
+                let _ = append_log_line(&console_log, &format!("console restart failed: {err}"));
+                Err(err)
+            }
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn validate_startup_config(
+    app: AppHandle,
+    proxy_state: State<'_, ProxyConfigState>,
+    profiles_state: State<'_, ProfilesState>,
 ) -> Result<StartupCheckResult, String> {
     let status = proxy_state.0.lock().unwrap().clone();
     let profiles = profiles_state.0.lock().unwrap().clone();
-    startup_check::validate_startup_config(&app, &status, &profiles)
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        startup_check::validate_startup_config(&app_handle, &status, &profiles)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
-pub fn log_ui_event(message: String, state: State<AppLogState>) -> Result<(), String> {
-    append_log_line(&state.app_log, &message)
+pub async fn log_ui_event(message: String, state: State<'_, AppLogState>) -> Result<(), String> {
+    let log_path = state.app_log.clone();
+    tauri::async_runtime::spawn_blocking(move || append_log_line(&log_path, &message))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]

@@ -16,10 +16,16 @@ pub fn handle(window: &Window, event: &WindowEvent) {
 pub fn handle_run(app_handle: &AppHandle, event: RunEvent) {
     match event {
         RunEvent::ExitRequested { .. } => {
-            stop_console(app_handle);
+            let app_handle = app_handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                stop_console(&app_handle);
+            });
         }
         RunEvent::Exit => {
-            stop_console(app_handle);
+            let app_handle = app_handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                stop_console(&app_handle);
+            });
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen {
