@@ -26,3 +26,9 @@ declare module 'vue' {
     ToastNotification: typeof import('./ui/components/ToastNotification.vue')['default']
   }
 }
+
+declare module "@vue/runtime-core" {
+  export interface ComponentCustomProperties {
+    $t: (key: string, ...args: any[]) => string;
+  }
+}
