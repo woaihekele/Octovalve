@@ -131,6 +131,18 @@ const pendingProviderLabel = computed(() => {
   return t('common.unknown');
 });
 
+function isAcpAuthTimeout(err: unknown) {
+  const message = String(err).toLowerCase();
+  return message.includes('timeout') || message.includes('timed out') || message.includes('超时');
+}
+
+function formatAcpAuthError(err: unknown) {
+  if (isAcpAuthTimeout(err)) {
+    return t('chat.authTimeout');
+  }
+  return t('chat.authFailed', { error: String(err) });
+}
+
 // Initialize chat provider based on settings
 async function initChatProvider() {
   const chatConfig = settings.value.chat;
@@ -152,6 +164,7 @@ async function initChatProvider() {
           console.log('[initChatProvider] authenticateAcp done');
         } catch (authErr) {
           console.warn('[initChatProvider] authenticateAcp failed (optional):', authErr);
+          showNotification(formatAcpAuthError(authErr));
         }
       }
     }

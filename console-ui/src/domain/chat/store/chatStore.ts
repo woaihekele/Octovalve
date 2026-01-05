@@ -631,6 +631,7 @@ export const useChatStore = defineStore('chat', () => {
       await acpService.authenticate(methodId);
       setConnected(true);
     } catch (e) {
+      setConnected(false);
       setError(`Authentication failed: ${e}`);
       throw e;
     }

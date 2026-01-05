@@ -112,6 +112,8 @@ export const messages = {
         confirm: '确认切换',
         failed: '切换失败：{error}',
       },
+      authFailed: 'ACP 认证失败：{error}',
+      authTimeout: 'ACP 认证超时，请稍后重试',
       reasoning: '推理过程',
       role: {
         user: '用户',
@@ -544,6 +546,8 @@ export const messages = {
         confirm: 'Confirm switch',
         failed: 'Switch failed: {error}',
       },
+      authFailed: 'ACP authentication failed: {error}',
+      authTimeout: 'ACP authentication timed out. Please try again.',
       reasoning: 'Reasoning',
       role: {
         user: 'User',
