@@ -69,7 +69,7 @@
       <ChatInput
         v-model="inputValue"
         :placeholder="resolvedPlaceholder"
-        :disabled="!isConnected"
+        :disabled="!isConnected || inputLocked"
         :is-streaming="isStreaming"
         :provider="provider"
         :send-on-enter="sendOnEnter"
@@ -98,6 +98,7 @@ interface Props {
   messages: ChatMessage[];
   isStreaming?: boolean;
   isConnected?: boolean;
+  inputLocked?: boolean;
   provider?: 'acp' | 'openai';
   sendOnEnter?: boolean;
 }
@@ -106,6 +107,7 @@ const props = withDefaults(defineProps<Props>(), {
   width: 380,
   isStreaming: false,
   isConnected: true,
+  inputLocked: false,
   provider: 'acp',
   sendOnEnter: false,
 });

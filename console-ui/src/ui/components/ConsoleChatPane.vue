@@ -4,6 +4,7 @@
     :messages="messages"
     :is-streaming="isStreaming"
     :is-connected="isConnected"
+    :input-locked="inputLocked"
     :provider="provider"
     :send-on-enter="sendOnEnter"
     :title="$t('chat.title')"
@@ -37,6 +38,7 @@ defineProps<{
   messages: ChatMessage[];
   isStreaming: boolean;
   isConnected: boolean;
+  inputLocked: boolean;
   provider: 'acp' | 'openai';
   sendOnEnter: boolean;
   isHistoryOpen: boolean;

@@ -120,6 +120,7 @@ const {
 const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
+const chatInputLocked = computed(() => providerSwitching.value);
 const pendingProviderLabel = computed(() => {
   if (pendingProvider.value === 'acp') {
     return t('chat.provider.acpLabel');
@@ -1003,6 +1004,7 @@ watch(
       :messages="chatMessages"
       :is-streaming="chatIsStreaming"
       :is-connected="chatIsConnected"
+      :input-locked="chatInputLocked"
       :provider="chatProvider"
       :send-on-enter="settings.chat.sendOnEnter"
       :is-history-open="isChatHistoryOpen"
