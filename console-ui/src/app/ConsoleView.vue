@@ -29,7 +29,7 @@ import SettingsModal from '../ui/components/SettingsModal.vue';
 import NotificationBridge from '../ui/components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from '../services/settings';
 import { applyUiScale } from '../services/uiScale';
-import type { AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
+import type { AppLanguage, AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
 import { useAiRiskQueue } from '../composables/useAiRiskQueue';
 import { useTerminalState } from '../composables/useTerminalState';
 import type { ResolvedTheme } from '../shared/theme';
@@ -61,6 +61,9 @@ const startupError = ref('');
 const booting = ref(false);
 const hasConnected = ref(false);
 const focusConfigToken = ref(0);
+const previewLanguage = ref<AppLanguage | null>(null);
+const previewUiScale = ref<number | null>(null);
+const previewTerminalScale = ref<number | null>(null);
 const STARTUP_SESSION_KEY = 'octovalve.startup.completed';
 type ConsoleLeftPaneExpose = {
   focusActiveTerminal: () => void;
@@ -75,6 +78,15 @@ const lastPendingCounts = ref<Record<string, number>>({});
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
+const effectiveLanguage = computed(
+  () => previewLanguage.value ?? settings.value.language
+);
+const effectiveUiScale = computed(
+  () => previewUiScale.value ?? settings.value.uiScale
+);
+const effectiveTerminalScale = computed(
+  () => previewTerminalScale.value ?? settings.value.terminalScale
+);
 const selectedSnapshot = computed(() => {
   if (!selectedTargetName.value) {
     return null;
@@ -670,7 +682,37 @@ function handleSettingsSave(value: AppSettings) {
   const previousSettings = settings.value;
   settings.value = value;
   isSettingsOpen.value = false;
+  clearSettingsPreview();
   void refreshChatProviderFromSettings(previousSettings, value);
+}
+
+function handleSettingsPreview(
+  key: 'language' | 'uiScale' | 'terminalScale',
+  value: unknown
+) {
+  if (key === 'language') {
+    previewLanguage.value =
+      value === 'zh-CN' || value === 'en-US' ? (value as AppLanguage) : null;
+    return;
+  }
+  if (key === 'uiScale') {
+    previewUiScale.value = typeof value === 'number' ? value : null;
+    return;
+  }
+  if (key === 'terminalScale') {
+    previewTerminalScale.value = typeof value === 'number' ? value : null;
+  }
+}
+
+function clearSettingsPreview() {
+  previewLanguage.value = null;
+  previewUiScale.value = null;
+  previewTerminalScale.value = null;
+}
+
+function handleSettingsClose() {
+  isSettingsOpen.value = false;
+  clearSettingsPreview();
 }
 
 function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
@@ -894,7 +936,7 @@ watch(
 );
 
 watch(
-  () => settings.value.language,
+  () => effectiveLanguage.value,
   (value) => {
     locale.value = value;
   }
@@ -936,7 +978,7 @@ watch(
 );
 
 watch(
-  () => settings.value.uiScale,
+  () => effectiveUiScale.value,
   (value) => {
     void applyUiScale(value);
   },
@@ -1006,6 +1048,7 @@ watch(
       :selected-terminal-entry="selectedTerminalEntry"
       :active-terminal-tab-id="activeTerminalTabId"
       :terminal-entries="terminalEntries"
+      :terminal-scale="effectiveTerminalScale"
       :resolved-theme="resolvedTheme"
       @select-target="selectedTargetName = $event"
       @open-settings="isSettingsOpen = true"
@@ -1049,8 +1092,9 @@ watch(
       :settings="settings"
       :resolved-theme="resolvedTheme"
       :focus-config-token="focusConfigToken"
-      @close="isSettingsOpen = false"
+      @close="handleSettingsClose"
       @save="handleSettingsSave"
+      @preview="handleSettingsPreview"
     />
 
   <n-modal v-model:show="providerSwitchConfirmOpen" :mask-closable="false" :close-on-esc="true">

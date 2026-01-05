@@ -97,7 +97,7 @@
                     :ref="setTerminalRef(entry.target.name, tab.id)"
                     :target="entry.target"
                     :theme="resolvedTheme"
-                    :terminal-scale="settings.terminalScale"
+                    :terminal-scale="terminalScale"
                     :visible="
                       selectedTerminalOpen &&
                       selectedTargetName === entry.target.name &&
@@ -162,6 +162,7 @@ const props = defineProps<{
   selectedTerminalEntry: TerminalEntry | null;
   activeTerminalTabId: string | number | undefined;
   terminalEntries: TerminalEntry[];
+  terminalScale: number;
   resolvedTheme: ResolvedTheme;
 }>();
 

@@ -48,6 +48,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'save', settings: AppSettings): void;
+  (e: 'preview', key: 'language' | 'uiScale' | 'terminalScale', value: unknown): void;
 }>();
 
 const applyThemeMode = inject(APPLY_THEME_MODE, () => {});
@@ -271,6 +272,9 @@ function updateSetting(key: keyof AppSettings, value: unknown) {
   (localSettings.value as Record<string, unknown>)[key] = value;
   if (key === 'theme') {
     applyThemeMode(value as ThemeMode);
+  }
+  if (key === 'language' || key === 'uiScale' || key === 'terminalScale') {
+    emit('preview', key, value);
   }
 }
 
