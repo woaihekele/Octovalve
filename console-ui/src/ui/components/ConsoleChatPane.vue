@@ -12,7 +12,6 @@
     @send="emit('send', $event)"
     @cancel="emit('cancel')"
     @show-history="emit('show-history')"
-    @new-session="emit('new-session')"
     @clear="emit('clear')"
     @change-provider="emit('change-provider', $event)"
   />
@@ -50,7 +49,6 @@ const emit = defineEmits<{
   (e: 'send', content: string): void;
   (e: 'cancel'): void;
   (e: 'show-history'): void;
-  (e: 'new-session'): void;
   (e: 'clear'): void;
   (e: 'change-provider', provider: 'acp' | 'openai'): void;
   (e: 'close-history'): void;

@@ -243,12 +243,8 @@ async function handleChatCancel() {
   await cancelActiveChat();
 }
 
-function handleChatNewSession() {
-  chatStore.createSession();
-}
-
 function handleChatClear() {
-  chatStore.clearMessages();
+  chatStore.createSession();
 }
 
 function handleChatShowHistory() {
@@ -1078,7 +1074,6 @@ watch(
       @send="handleChatSend"
       @cancel="handleChatCancel"
       @show-history="handleChatShowHistory"
-      @new-session="handleChatNewSession"
       @clear="handleChatClear"
       @change-provider="handleChangeProvider"
       @close-history="isChatHistoryOpen = false"
