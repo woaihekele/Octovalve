@@ -3,15 +3,18 @@ use tauri::State;
 use crate::clients::acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
 use crate::services::acp;
 use crate::clients::AcpClientState;
+use crate::state::ProxyConfigState;
 
 #[tauri::command]
 pub async fn acp_start(
     app: tauri::AppHandle,
     state: State<'_, AcpClientState>,
+    proxy_state: State<'_, ProxyConfigState>,
     cwd: String,
     codex_acp_path: Option<String>,
+    acp_args: Option<String>,
 ) -> Result<AcpInitResponse, String> {
-    acp::acp_start(app, state, cwd, codex_acp_path).await
+    acp::acp_start(app, state, proxy_state, cwd, codex_acp_path, acp_args).await
 }
 
 #[tauri::command]

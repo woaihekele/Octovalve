@@ -1,13 +1,15 @@
 use std::path::{Path, PathBuf};
 
+use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::clients::acp_client::{self, AcpClient, AcpClientState};
 use crate::clients::acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
+use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::console_sidecar::build_console_path;
 use crate::services::logging::append_log_line;
 use crate::services::profiles::octovalve_dir;
-use crate::state::AppLogState;
+use crate::state::{AppLogState, ProxyConfigState};
 
 fn resolve_codex_acp_path(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, String> {
     if let Some(value) = configured {
@@ -47,11 +49,56 @@ fn find_in_path(program: &str, path_var: &str) -> Option<PathBuf> {
     None
 }
 
+fn parse_acp_args(raw: Option<String>) -> Result<Vec<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    shlex::split(trimmed).ok_or_else(|| "Invalid ACP arguments (check quotes)".to_string())
+}
+
+fn format_config_literal(value: &str) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|err| err.to_string())
+}
+
+fn build_mcp_cli_override(proxy_bin: &Path, proxy_config: &Path) -> Result<String, String> {
+    let command_value = proxy_bin.to_string_lossy();
+    let config_value = proxy_config.to_string_lossy();
+    let command = format_config_literal(command_value.as_ref())?;
+    let args = vec![
+        format_config_literal("--config")?,
+        format_config_literal(config_value.as_ref())?,
+    ];
+    let args_literal = format!("[{}]", args.join(", "));
+    Ok(format!(
+        "mcp_servers.octovalve={{command={},args={}}}",
+        command, args_literal
+    ))
+}
+
+fn build_mcp_servers(proxy_bin: &Path, proxy_config: &Path) -> Vec<serde_json::Value> {
+    let args = vec![
+        "--config".to_string(),
+        proxy_config.to_string_lossy().to_string(),
+    ];
+    vec![json!({
+        "name": "octovalve",
+        "command": proxy_bin.to_string_lossy(),
+        "args": args,
+        "env": [],
+    })]
+}
+
 pub async fn acp_start(
     app: AppHandle,
     state: State<'_, AcpClientState>,
+    proxy_state: State<'_, ProxyConfigState>,
     cwd: String,
     codex_acp_path: Option<String>,
+    acp_args: Option<String>,
 ) -> Result<AcpInitResponse, String> {
     let log_path = app.state::<AppLogState>().app_log.clone();
     let _ = append_log_line(&log_path, &format!("[acp_start] called with cwd: {}", cwd));
@@ -73,6 +120,18 @@ pub async fn acp_start(
         }
     };
 
+    let proxy_status = proxy_state.0.lock().unwrap().clone();
+    let proxy_config_path = PathBuf::from(proxy_status.path);
+    let proxy_bin = resolve_octovalve_proxy_bin().map_err(|e| {
+        let _ = append_log_line(&log_path, &format!("[acp_start] proxy resolve error: {}", e));
+        e
+    })?;
+    let mcp_servers = build_mcp_servers(&proxy_bin, &proxy_config_path);
+    let mut acp_args = parse_acp_args(acp_args)?;
+    let mcp_override = build_mcp_cli_override(&proxy_bin, &proxy_config_path)?;
+    acp_args.push("-c".to_string());
+    acp_args.push(mcp_override);
+
     {
         let mut guard = state.0.lock().unwrap();
         if let Some(mut client) = guard.take() {
@@ -89,7 +148,8 @@ pub async fn acp_start(
             &log_path_clone,
             "[acp_start] spawn_blocking: calling AcpClient::start",
         );
-        let client = AcpClient::start(&codex_acp_path, app_clone, log_path_clone.clone())?;
+        let client =
+            AcpClient::start(&codex_acp_path, app_clone, log_path_clone.clone(), acp_args, mcp_servers)?;
         let _ = append_log_line(
             &log_path_clone,
             "[acp_start] spawn_blocking: client started, calling initialize",

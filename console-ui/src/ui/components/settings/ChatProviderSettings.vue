@@ -41,6 +41,13 @@ function updateAcpPath(value: string) {
     acp: { ...props.config.acp, path: value },
   });
 }
+
+function updateAcpArgs(value: string) {
+  emit('update', {
+    ...props.config,
+    acp: { ...props.config.acp, args: value },
+  });
+}
 </script>
 
 <template>
@@ -142,6 +149,17 @@ function updateAcpPath(value: string) {
           size="small"
           placeholder="/usr/local/bin/codex-acp"
           @update:value="updateAcpPath"
+        />
+      </div>
+
+      <div class="space-y-1">
+        <div class="text-sm">{{ $t('settings.chat.acp.arguments') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.acp.argumentsHelp') }}</div>
+        <NInput
+          :value="props.config.acp.args"
+          size="small"
+          placeholder='-c mcp_servers.octovalve={command="octovalve-proxy",args=["--config","/path"]}'
+          @update:value="updateAcpArgs"
         />
       </div>
     </div>

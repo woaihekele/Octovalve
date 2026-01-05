@@ -145,6 +145,7 @@ export interface ChatProviderConfig {
   };
   acp: {
     path: string;
+    args: string;
   };
 }
 

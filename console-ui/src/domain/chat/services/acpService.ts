@@ -113,8 +113,12 @@ export interface CompletePayload {
 /**
  * Start the ACP client and initialize connection
  */
-export async function acpStart(cwd: string, codexAcpPath?: string): Promise<AcpInitResponse> {
-  return invoke<AcpInitResponse>('acp_start', { cwd, codexAcpPath });
+export async function acpStart(
+  cwd: string,
+  codexAcpPath?: string,
+  acpArgs?: string
+): Promise<AcpInitResponse> {
+  return invoke<AcpInitResponse>('acp_start', { cwd, codexAcpPath, acpArgs });
 }
 
 /**

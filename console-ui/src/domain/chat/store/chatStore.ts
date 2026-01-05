@@ -594,11 +594,11 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // ACP Actions
-  async function initializeAcp(cwd: string, codexAcpPath?: string) {
+  async function initializeAcp(cwd: string, codexAcpPath?: string, acpArgs?: string) {
     console.log('[chatStore] initializeAcp called with cwd:', cwd);
     try {
       console.log('[chatStore] initializeAcp: calling acpService.start...');
-      const response = await acpService.start(cwd, codexAcpPath);
+      const response = await acpService.start(cwd, codexAcpPath, acpArgs);
       console.log('[chatStore] initializeAcp: acpService.start returned:', response);
       authMethods.value = response.authMethods;
       acpInitialized.value = true;

@@ -337,6 +337,8 @@ export const messages = {
           hint: 'ACP (Agent Client Protocol) 需要安装 codex-acp 命令行工具',
           path: 'codex-acp 路径',
           pathHelp: '留空使用系统 PATH 中的 codex-acp',
+          arguments: '启动参数',
+          argumentsHelp: '填写 codex-acp 启动参数（示例：-c ...）。内置 MCP 会自动附加。',
         },
       },
       shortcuts: {
@@ -775,6 +777,8 @@ export const messages = {
           hint: 'ACP (Agent Client Protocol) requires codex-acp CLI',
           path: 'codex-acp Path',
           pathHelp: 'Leave empty to use codex-acp from PATH',
+          arguments: 'Arguments',
+          argumentsHelp: 'Extra codex-acp CLI args (e.g. -c ...). Built-in MCP is always appended.',
         },
       },
       shortcuts: {

@@ -30,6 +30,7 @@ pub struct AcpClient {
     pending_requests: PendingRequests,
     session_id: Mutex<Option<String>>,
     init_result: Mutex<Option<InitializeResult>>,
+    mcp_servers: Vec<Value>,
     log_path: PathBuf,
 }
 
@@ -39,6 +40,8 @@ impl AcpClient {
         codex_acp_path: &PathBuf,
         app_handle: AppHandle,
         log_path: PathBuf,
+        acp_args: Vec<String>,
+        mcp_servers: Vec<Value>,
     ) -> Result<Self, AcpError> {
         let mut command = Command::new(codex_acp_path);
         command
@@ -46,6 +49,9 @@ impl AcpClient {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .env("PATH", build_console_path());
+        if !acp_args.is_empty() {
+            command.args(acp_args);
+        }
         if std::env::var_os("HOME").is_none() {
             if let Ok(home) = app_handle.path().home_dir() {
                 command.env("HOME", home);
@@ -82,6 +88,7 @@ impl AcpClient {
             pending_requests,
             session_id: Mutex::new(None),
             init_result: Mutex::new(None),
+            mcp_servers,
             log_path,
         })
     }
@@ -304,7 +311,7 @@ impl AcpClient {
 
         let params = NewSessionParams {
             cwd: absolute_cwd,
-            mcp_servers: vec![],
+            mcp_servers: self.mcp_servers.clone(),
         };
 
         let result = self.send_request("session/new", Some(serde_json::to_value(&params)?))?;

@@ -99,6 +99,7 @@ const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
   },
   acp: {
     path: '',
+    args: '',
   },
 };
 
@@ -208,6 +209,7 @@ export function loadSettings(): AppSettings {
       },
       acp: {
         path: normalizeText(parsedAcp.path, DEFAULT_CHAT_SETTINGS.acp.path),
+        args: normalizeText(parsedAcp.args, DEFAULT_CHAT_SETTINGS.acp.args),
       },
     };
     return {

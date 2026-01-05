@@ -77,7 +77,7 @@ fn main() -> Result<(), String> {
         }
     });
 
-    let mut client = AcpClient::start(&codex_acp_path, app_handle.clone(), app_log)
+    let mut client = AcpClient::start(&codex_acp_path, app_handle.clone(), app_log, Vec::new(), Vec::new())
         .map_err(|e| format!("start failed: {}", e))?;
     let init = client
         .initialize()

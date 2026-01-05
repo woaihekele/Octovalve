@@ -167,7 +167,7 @@ async function initChatProvider() {
     } else {
       // ACP provider
       console.log('[initChatProvider] calling initializeAcp...');
-      await chatStore.initializeAcp('.', chatConfig.acp.path);
+      await chatStore.initializeAcp('.', chatConfig.acp.path, chatConfig.acp.args);
       console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
       
       // Authentication is optional - don't fail if it's not available
@@ -727,7 +727,7 @@ function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
 }
 
 function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
-  return previous.chat.acp.path !== next.chat.acp.path;
+  return previous.chat.acp.path !== next.chat.acp.path || previous.chat.acp.args !== next.chat.acp.args;
 }
 
 async function refreshChatProviderFromSettings(previous: AppSettings, next: AppSettings) {
