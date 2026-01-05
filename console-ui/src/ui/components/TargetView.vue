@@ -515,7 +515,7 @@ onBeforeUnmount(() => {
           :class="
             props.target.terminal_available
               ? props.terminalOpen
-                ? 'bg-panel/60 text-foreground border-accent/30'
+                ? 'bg-panel/70 text-foreground border-accent/60 ring-1 ring-accent/40'
                 : 'bg-panel/60 text-foreground border-border hover:border-accent/40'
               : 'bg-panel/30 text-foreground-muted border-border/60 cursor-not-allowed'
           "
@@ -525,7 +525,6 @@ onBeforeUnmount(() => {
         :title="props.terminalOpen ? $t('target.terminal.close') : $t('target.terminal.open')"
         >
           <svg
-            v-if="!props.terminalOpen"
             class="h-4 w-4"
             viewBox="0 0 24 24"
             fill="none"
@@ -538,26 +537,13 @@ onBeforeUnmount(() => {
             <polyline points="8 9 11 12 8 15"></polyline>
             <line x1="13" y1="15" x2="17" y2="15"></line>
           </svg>
-          <svg
-            v-else
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
         </button>
 
         <button
           class="p-2 rounded border transition-colors"
           :class="
             props.chatOpen
-              ? 'bg-panel/60 text-foreground border-accent/30'
+              ? 'bg-panel/70 text-foreground border-accent/60 ring-1 ring-accent/40'
               : 'bg-panel/60 text-foreground border-border hover:border-accent/40'
           "
           @click="emit('toggle-chat')"
