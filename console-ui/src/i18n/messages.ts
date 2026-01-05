@@ -308,7 +308,7 @@ export const messages = {
         maxConcurrency: '最大并发',
         maxConcurrencyHelp: '同时评估的请求数',
         prompt: 'Prompt',
-        promptHelp: '支持 {{field}} 占位',
+        promptHelp: '支持 {\'{{field}}\'} 占位',
         promptReset: '恢复默认',
       },
       chat: {
@@ -748,7 +748,7 @@ export const messages = {
         maxConcurrency: 'Max Concurrency',
         maxConcurrencyHelp: 'Concurrent assessments',
         prompt: 'Prompt',
-        promptHelp: 'Supports {{field}} placeholders',
+        promptHelp: 'Supports {\'{{field}}\'} placeholders',
         promptReset: 'Reset',
       },
       chat: {
