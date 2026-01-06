@@ -4,7 +4,13 @@ use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::clients::acp_client::{self, AcpClient, AcpClientState};
-use crate::clients::acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
+use crate::clients::acp_types::{
+    AcpInitResponse,
+    AcpSessionInfo,
+    ContentBlock,
+    ContextItem,
+    LoadSessionResult,
+};
 use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::console_sidecar::build_console_path;
 use crate::services::logging::append_log_line;
@@ -261,7 +267,7 @@ pub async fn acp_load_session(app: AppHandle, session_id: String) -> Result<Load
 
 pub async fn acp_prompt(
     app: AppHandle,
-    content: String,
+    prompt: Vec<ContentBlock>,
     context: Option<Vec<ContextItem>>,
 ) -> Result<(), String> {
     let log_path = app.state::<AppLogState>().app_log.clone();
@@ -269,13 +275,13 @@ pub async fn acp_prompt(
     tauri::async_runtime::spawn_blocking(move || {
         let _ = append_log_line(
             &log_path,
-            &format!("[acp_prompt] called with content: {}", content),
+            &format!("[acp_prompt] called with prompt blocks: {}", prompt.len()),
         );
         let state = app_handle.state::<AcpClientState>();
         let guard = state.0.lock().unwrap();
         let client = guard.as_ref().ok_or("ACP client not started")?;
         let _ = append_log_line(&log_path, "[acp_prompt] calling client.prompt...");
-        client.prompt(&content, context).map_err(|e| {
+        client.prompt(prompt, context).map_err(|e| {
             let _ = append_log_line(&log_path, &format!("[acp_prompt] error: {}", e));
             e.to_string()
         })?;

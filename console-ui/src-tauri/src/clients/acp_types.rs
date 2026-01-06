@@ -223,7 +223,11 @@ pub type PromptContent = Vec<ContentBlock>;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text { text: String },
-    Image { data: String, media_type: String },
+    Image {
+        data: String,
+        #[serde(rename = "mime_type", alias = "media_type")]
+        mime_type: String,
+    },
 }
 
 impl ContentBlock {

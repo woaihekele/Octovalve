@@ -62,6 +62,10 @@ export interface ContextItem {
   [key: string]: unknown;
 }
 
+export type AcpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mime_type: string };
+
 export interface AcpEvent {
   type: string;
   payload: unknown;
@@ -145,8 +149,8 @@ export async function acpLoadSession(sessionId: string): Promise<AcpLoadSessionR
 /**
  * Send a prompt to the current session
  */
-export async function acpPrompt(content: string, context?: ContextItem[]): Promise<void> {
-  return invoke('acp_prompt', { content, context });
+export async function acpPrompt(prompt: AcpContentBlock[], context?: ContextItem[]): Promise<void> {
+  return invoke('acp_prompt', { prompt, context });
 }
 
 /**

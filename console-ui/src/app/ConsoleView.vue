@@ -22,6 +22,7 @@ import {
 import { useChatStore } from '../domain/chat';
 import { storeToRefs } from 'pinia';
 import type { AuthMethod } from '../domain/chat/services/acpService';
+import type { SendMessageOptions } from '../domain/chat/types';
 import { matchesShortcut } from '../shared/shortcuts';
 import ConsoleChatPane from '../ui/components/ConsoleChatPane.vue';
 import ConsoleLeftPane from '../ui/components/ConsoleLeftPane.vue';
@@ -130,6 +131,7 @@ const {
   isConnected: chatIsConnected,
   providerInitialized,
   provider: chatProvider,
+  providerSupportsImages,
 } = storeToRefs(chatStore);
 const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
@@ -191,21 +193,23 @@ async function initChatProvider() {
 // Call init after a short delay to let Tauri initialize
 setTimeout(initChatProvider, 500);
 
-async function handleChatSend(content: string) {
+async function handleChatSend(options: SendMessageOptions) {
   console.log('[handleChatSend] providerInitialized:', providerInitialized.value, 'provider:', chatStore.provider);
   if (providerInitialized.value) {
     try {
-      await chatStore.sendMessage(content);
+      await chatStore.sendMessage(options);
     } catch (e) {
       showNotification(t('chat.error', { error: String(e) }));
     }
   } else {
     // Fallback to simulated response
+    const fallbackContent = options.content ?? '';
     chatStore.addMessage({
       type: 'say',
       say: 'text',
       role: 'user',
-      content,
+      content: fallbackContent,
+      images: options.images?.map((img) => img.previewUrl),
       status: 'complete',
     });
 
@@ -220,7 +224,7 @@ async function handleChatSend(content: string) {
 
     chatStore.setStreaming(true);
 
-    const response = t('chat.fallbackResponse', { content });
+    const response = t('chat.fallbackResponse', { content: fallbackContent });
     for (let i = 0; i < response.length; i++) {
       chatStore.appendToMessage(assistantMsg.id, response[i]);
       await new Promise((r) => setTimeout(r, 15));
@@ -1070,6 +1074,7 @@ watch(
       :input-locked="chatInputLocked"
       :provider="chatProvider"
       :send-on-enter="settings.chat.sendOnEnter"
+      :supports-images="providerSupportsImages"
       :targets="targets"
       :is-history-open="isChatHistoryOpen"
       :openai-sessions="openaiSessions"

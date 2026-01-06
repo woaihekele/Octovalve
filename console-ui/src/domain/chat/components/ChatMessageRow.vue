@@ -50,6 +50,15 @@
             <ChatMarkdown :text="message.content" :streaming="false" :content-key="`chat-${message.id}`"/>
           </template>
         </div>
+        <div v-if="message.images?.length" class="chat-row__images">
+          <img
+            v-for="(img, index) in message.images"
+            :key="`${message.id}-img-${index}`"
+            :src="img"
+            class="chat-row__image"
+            alt="image"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -488,6 +497,21 @@ const assistantMarkdown = computed(() => {
       border-radius: 1px;
       animation: cursor-blink 0.8s ease-in-out infinite;
     }
+  }
+
+  &__images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  &__image {
+    max-width: 220px;
+    max-height: 180px;
+    border-radius: 8px;
+    border: 1px solid rgb(var(--color-border));
+    object-fit: cover;
   }
 
   // Smooth text appearance for streaming

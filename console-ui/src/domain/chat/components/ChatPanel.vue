@@ -70,6 +70,7 @@
         :disabled="!isConnected || inputLocked"
         :is-streaming="isStreaming"
         :provider="provider"
+        :supports-image="supportsImages"
         :send-on-enter="sendOnEnter"
         :targets="targets"
         @send="handleSend"
@@ -86,7 +87,7 @@ import { useI18n } from 'vue-i18n';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
 import ChatPlanCard from './ChatPlanCard.vue';
-import type { ChatMessage, PlanEntry } from '../types';
+import type { ChatMessage, PlanEntry, SendMessageOptions } from '../types';
 import { useStickToBottom } from '../composables/useStickToBottom';
 import type { TargetInfo } from '../../../shared/types';
 
@@ -104,6 +105,7 @@ interface Props {
   provider?: 'acp' | 'openai';
   sendOnEnter?: boolean;
   targets?: TargetInfo[];
+  supportsImages?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -115,10 +117,11 @@ const props = withDefaults(defineProps<Props>(), {
   sendOnEnter: false,
   planEntries: () => [],
   targets: () => [],
+  supportsImages: false,
 });
 
 const emit = defineEmits<{
-  send: [content: string];
+  send: [options: SendMessageOptions];
   cancel: [];
   'show-history': [];
   clear: [];
@@ -238,9 +241,9 @@ onBeforeUnmount(() => {
   }
 });
 
-function handleSend(content: string) {
+function handleSend(options: SendMessageOptions) {
   activateStickToBottom();
-  emit('send', content);
+  emit('send', options);
   inputValue.value = '';
 }
 

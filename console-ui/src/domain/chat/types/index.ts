@@ -35,6 +35,18 @@ export interface ToolCall {
   result?: string;
 }
 
+export interface ImageAttachment {
+  data: string;
+  mimeType: string;
+  previewUrl: string;
+  name?: string;
+  size?: number;
+}
+
+export type PromptBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string; previewUrl?: string };
+
 export type PlanEntryStatus = 'pending' | 'in_progress' | 'completed';
 export type PlanEntryPriority = 'low' | 'medium' | 'high';
 
@@ -89,9 +101,10 @@ export interface ChatState {
 
 export interface SendMessageOptions {
   content: string;
-  images?: string[];
+  images?: ImageAttachment[];
+  blocks?: PromptBlock[];
   files?: string[];
-  context?: Record<string, unknown>;
+  context?: Array<{ type: string; [key: string]: unknown }>;
 }
 
 export interface ChatConfig {

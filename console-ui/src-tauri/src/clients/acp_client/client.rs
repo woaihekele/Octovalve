@@ -340,7 +340,7 @@ impl AcpClient {
 
     /// Send a prompt to the current session (non-blocking).
     /// Content comes via notifications, completion comes via response.
-    pub fn prompt(&self, content: &str, context: Option<Vec<ContextItem>>) -> Result<(), AcpError> {
+    pub fn prompt(&self, prompt: Vec<ContentBlock>, context: Option<Vec<ContextItem>>) -> Result<(), AcpError> {
         let session_id = self
             .session_id
             .lock()
@@ -350,7 +350,7 @@ impl AcpClient {
 
         let params = PromptParams {
             session_id,
-            prompt: vec![ContentBlock::text(content)],
+            prompt,
             context,
         };
 

@@ -8,8 +8,11 @@ import type {
   PlanEntry,
   PlanEntryPriority,
   PlanEntryStatus,
+  ImageAttachment,
+  PromptBlock,
+  SendMessageOptions,
 } from '../types';
-import type { AuthMethod, AcpEvent, AgentCapabilities } from '../services/acpService';
+import type { AuthMethod, AcpEvent, AgentCapabilities, AcpContentBlock } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
 import { fetchTargets } from '../../../services/api';
@@ -46,6 +49,24 @@ export const useChatStore = defineStore('chat', () => {
   const acpCwd = ref<string | null>(null);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
+
+  const acpSupportsImages = computed(() => {
+    const promptCaps = acpCapabilities.value?.promptCapabilities as
+      | { image?: boolean }
+      | null
+      | undefined;
+    if (!promptCaps || typeof promptCaps !== 'object') {
+      return false;
+    }
+    return Boolean(promptCaps.image);
+  });
+
+  const providerSupportsImages = computed(() => {
+    if (provider.value === 'acp') {
+      return acpSupportsImages.value;
+    }
+    return false;
+  });
 
   let pendingAssistantContent = '';
   let pendingAssistantReasoning = '';
@@ -470,10 +491,17 @@ export const useChatStore = defineStore('chat', () => {
 
   function saveToStorage() {
     try {
+      const sanitizedSessions = sessions.value.map((session) => ({
+        ...session,
+        messages: session.messages.map((message) => ({
+          ...message,
+          images: undefined,
+        })),
+      }));
       localStorage.setItem(
         'octovalve-chat-sessions',
         JSON.stringify({
-          sessions: sessions.value,
+          sessions: sanitizedSessions,
           activeSessionId: activeSessionId.value,
         })
       );
@@ -678,7 +706,7 @@ export const useChatStore = defineStore('chat', () => {
     { flush: 'post' }
   );
 
-  async function sendAcpMessage(content: string, cwd?: string) {
+  async function sendAcpMessage(options: SendMessageOptions, cwd?: string) {
     if (!acpInitialized.value) {
       throw new Error('ACP not initialized');
     }
@@ -686,6 +714,13 @@ export const useChatStore = defineStore('chat', () => {
     const resolvedCwd = cwd ?? acpCwd.value ?? '.';
     await ensureAcpSessionLoaded(resolvedCwd);
 
+    const promptBlocks = buildPromptBlocks(options);
+    const acpPromptBlocks = toAcpPromptBlocks(promptBlocks);
+    if (acpPromptBlocks.length === 0) {
+      return;
+    }
+
+    const content = options.content ?? '';
     // Add user message
     addMessage({
       type: 'say',
@@ -693,6 +728,7 @@ export const useChatStore = defineStore('chat', () => {
       role: 'user',
       content,
       status: 'complete',
+      images: toDisplayImages(options.images),
     });
 
     // Add assistant placeholder
@@ -709,7 +745,7 @@ export const useChatStore = defineStore('chat', () => {
     setStreaming(true);
 
     try {
-      await acpService.prompt(content);
+      await acpService.prompt(acpPromptBlocks, options.context);
     } catch (e) {
       updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
       setStreaming(false);
@@ -1227,7 +1263,68 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function sendOpenaiMessage(content: string) {
+  function normalizeSendOptions(input: string | SendMessageOptions): SendMessageOptions {
+    if (typeof input === 'string') {
+      return { content: input };
+    }
+    return {
+      content: input.content ?? '',
+      images: input.images ?? [],
+      blocks: input.blocks,
+      files: input.files,
+      context: input.context,
+    };
+  }
+
+  function buildPromptBlocks(options: SendMessageOptions): PromptBlock[] {
+    if (options.blocks && options.blocks.length > 0) {
+      return options.blocks;
+    }
+    const blocks: PromptBlock[] = [];
+    const text = options.content?.trim();
+    if (text) {
+      blocks.push({ type: 'text', text });
+    }
+    if (options.images) {
+      for (const image of options.images) {
+        blocks.push({
+          type: 'image',
+          data: image.data,
+          mimeType: image.mimeType,
+          previewUrl: image.previewUrl,
+        });
+      }
+    }
+    return blocks;
+  }
+
+  function toAcpPromptBlocks(blocks: PromptBlock[]): AcpContentBlock[] {
+    return blocks
+      .map((block) => {
+        if (block.type === 'text') {
+          return { type: 'text', text: block.text } as const;
+        }
+        if (block.type === 'image') {
+          return {
+            type: 'image',
+            data: block.data,
+            mime_type: block.mimeType,
+          } as const;
+        }
+        return null;
+      })
+      .filter((block): block is AcpContentBlock => block !== null);
+  }
+
+  function toDisplayImages(images?: ImageAttachment[]): string[] | undefined {
+    if (!images || images.length === 0) {
+      return undefined;
+    }
+    return images.map((img) => img.previewUrl);
+  }
+
+  async function sendOpenaiMessage(options: SendMessageOptions) {
+    const content = options.content ?? '';
     if (!openaiInitialized.value) {
       throw new Error('OpenAI not initialized');
     }
@@ -1252,6 +1349,7 @@ export const useChatStore = defineStore('chat', () => {
       role: 'user',
       content,
       status: 'complete',
+      images: toDisplayImages(options.images),
     });
 
     // Add user message to OpenAI context
@@ -1535,11 +1633,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // Unified send message
-  async function sendMessage(content: string, cwd?: string) {
+  async function sendMessage(input: string | SendMessageOptions, cwd?: string) {
+    const options = normalizeSendOptions(input);
     if (provider.value === 'openai') {
-      return sendOpenaiMessage(content);
+      return sendOpenaiMessage(options);
     } else {
-      return sendAcpMessage(content, cwd);
+      return sendAcpMessage(options, cwd);
     }
   }
 
@@ -1577,6 +1676,7 @@ export const useChatStore = defineStore('chat', () => {
     // Provider
     provider,
     providerInitialized,
+    providerSupportsImages,
     sendMessage,
     // ACP
     acpInitialized,

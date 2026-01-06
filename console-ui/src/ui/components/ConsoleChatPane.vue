@@ -8,6 +8,7 @@
     :input-locked="inputLocked"
     :provider="provider"
     :send-on-enter="sendOnEnter"
+    :supports-images="supportsImages"
     :targets="targets"
     :title="$t('chat.title')"
     :greeting="$t('chat.greeting')"
@@ -32,7 +33,7 @@
 <script setup lang="ts">
 import { ChatPanel } from '../../domain/chat';
 import ChatHistoryModal from '../../domain/chat/components/ChatHistoryModal.vue';
-import type { ChatMessage, ChatSession, PlanEntry } from '../../domain/chat/types';
+import type { ChatMessage, ChatSession, PlanEntry, SendMessageOptions } from '../../domain/chat/types';
 import type { TargetInfo } from '../../shared/types';
 
 defineProps<{
@@ -45,13 +46,14 @@ defineProps<{
   provider: 'acp' | 'openai';
   sendOnEnter: boolean;
   targets: TargetInfo[];
+  supportsImages: boolean;
   isHistoryOpen: boolean;
   openaiSessions: ChatSession[];
   activeSessionId: string | null;
 }>();
 
 const emit = defineEmits<{
-  (e: 'send', content: string): void;
+  (e: 'send', options: SendMessageOptions): void;
   (e: 'cancel'): void;
   (e: 'show-history'): void;
   (e: 'clear'): void;

@@ -1,6 +1,12 @@
 use tauri::State;
 
-use crate::clients::acp_types::{AcpInitResponse, AcpSessionInfo, ContextItem, LoadSessionResult};
+use crate::clients::acp_types::{
+    AcpInitResponse,
+    AcpSessionInfo,
+    ContentBlock,
+    ContextItem,
+    LoadSessionResult,
+};
 use crate::services::acp;
 use crate::clients::AcpClientState;
 use crate::state::ProxyConfigState;
@@ -38,10 +44,10 @@ pub async fn acp_load_session(
 #[tauri::command]
 pub async fn acp_prompt(
     app: tauri::AppHandle,
-    content: String,
+    prompt: Vec<ContentBlock>,
     context: Option<Vec<ContextItem>>,
 ) -> Result<(), String> {
-    acp::acp_prompt(app, content, context).await
+    acp::acp_prompt(app, prompt, context).await
 }
 
 #[tauri::command]

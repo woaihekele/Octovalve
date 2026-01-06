@@ -6,7 +6,18 @@
         'chat-input__container--focused': isFocused,
         'chat-input__container--mention': mentionOpen,
       }"
+      @dragover.prevent="handleDragOver"
+      @drop.prevent="handleDrop"
     >
+      <input
+        v-if="supportsImage"
+        ref="fileInputRef"
+        type="file"
+        accept="image/*"
+        multiple
+        class="chat-input__file-input"
+        @change="handleFileSelect"
+      />
       <!-- Text area (native, borderless) -->
       <textarea
         ref="textareaRef"
@@ -23,7 +34,21 @@
         @blur="handleBlur"
         @click="handleClick"
         @input="handleInput"
+        @paste="handlePaste"
       />
+
+      <div v-if="attachments.length > 0" class="chat-input__attachments">
+        <div v-for="(attachment, index) in attachments" :key="attachment.previewUrl" class="chat-input__attachment">
+          <img :src="attachment.previewUrl" :alt="attachment.name || 'image'" class="chat-input__attachment-thumb" />
+          <button type="button" class="chat-input__attachment-remove" @click="removeAttachment(index)">
+            ×
+          </button>
+        </div>
+      </div>
+
+      <div v-if="attachmentError" class="chat-input__attachment-error">
+        {{ attachmentError }}
+      </div>
 
       <div v-if="mentionOpen" class="chat-input__mention scrollbar-chat">
         <div v-if="filteredTargets.length === 0" class="chat-input__mention-empty">
@@ -44,6 +69,18 @@
       <!-- Toolbar inside container -->
       <div class="chat-input__toolbar">
         <div class="chat-input__toolbar-left">
+          <n-button
+            v-if="supportsImage"
+            size="tiny"
+            text
+            class="chat-input__image-button"
+            :disabled="disabled || isStreaming"
+            @click="triggerFileSelect"
+          >
+            <template #icon>
+              <n-icon :component="ImageOutline" />
+            </template>
+          </n-button>
           <!-- Provider selector -->
           <n-select
             :value="provider"
@@ -100,9 +137,10 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { NButton, NIcon, NSelect } from 'naive-ui';
-import { StopOutline } from '@vicons/ionicons5';
+import { ImageOutline, StopOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import type { TargetInfo } from '../../../shared/types';
+import type { ImageAttachment, SendMessageOptions } from '../types';
 
 interface Props {
   modelValue: string;
@@ -112,6 +150,7 @@ interface Props {
   provider?: 'acp' | 'openai';
   sendOnEnter?: boolean;
   targets?: TargetInfo[];
+  supportsImage?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -120,11 +159,12 @@ const props = withDefaults(defineProps<Props>(), {
   provider: 'acp',
   sendOnEnter: false,
   targets: () => [],
+  supportsImage: false,
 });
 
 const emit = defineEmits<{
   'update:modelValue': [value: string];
-  send: [content: string];
+  send: [options: SendMessageOptions];
   cancel: [];
   'change-provider': [provider: 'acp' | 'openai'];
 }>();
@@ -139,6 +179,12 @@ const mentionQuery = ref('');
 const mentionRangeStart = ref(-1);
 const mentionRangeEnd = ref(-1);
 const activeIndex = ref(0);
+const attachments = ref<ImageAttachment[]>([]);
+const attachmentError = ref('');
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_COUNT = 3;
 
 const resolvedPlaceholder = computed(() => props.placeholder ?? t('chat.input.placeholder.default'));
 const mentionEmptyLabel = computed(() =>
@@ -169,7 +215,11 @@ const inputValue = computed({
 });
 
 const canSend = computed(() => {
-  return !props.disabled && !props.isStreaming && inputValue.value.trim().length > 0;
+  return (
+    !props.disabled &&
+    !props.isStreaming &&
+    (inputValue.value.trim().length > 0 || attachments.value.length > 0)
+  );
 });
 
 const targetNames = computed(() => {
@@ -217,6 +267,16 @@ watch(filteredTargets, (list) => {
     activeIndex.value = 0;
   }
 });
+
+watch(
+  () => props.supportsImage,
+  (supports) => {
+    if (!supports && attachments.value.length > 0) {
+      attachments.value = [];
+      attachmentError.value = '';
+    }
+  }
+);
 
 function closeMention() {
   mentionOpen.value = false;
@@ -377,8 +437,17 @@ function handleKeyUp(event: KeyboardEvent) {
 
 function handleSend() {
   if (!canSend.value) return;
-  emit('send', inputValue.value.trim());
+  const options: SendMessageOptions = {
+    content: inputValue.value.trim(),
+    images: attachments.value.slice(),
+  };
+  emit('send', options);
   inputValue.value = '';
+  attachments.value = [];
+  attachmentError.value = '';
+  if (fileInputRef.value) {
+    fileInputRef.value.value = '';
+  }
   closeMention();
   nextTick(autoResize);
 }
@@ -407,6 +476,116 @@ function handleFocus() {
 function handleBlur() {
   isFocused.value = false;
   closeMention();
+}
+
+function triggerFileSelect() {
+  if (!props.supportsImage || props.disabled || props.isStreaming) {
+    return;
+  }
+  fileInputRef.value?.click();
+}
+
+function handleFileSelect(event: Event) {
+  if (!props.supportsImage) {
+    return;
+  }
+  const input = event.target as HTMLInputElement | null;
+  const files = input?.files;
+  if (!files || files.length === 0) {
+    return;
+  }
+  void addFiles(Array.from(files));
+}
+
+function handlePaste(event: ClipboardEvent) {
+  if (!props.supportsImage || !event.clipboardData) {
+    return;
+  }
+  const files = Array.from(event.clipboardData.files || []);
+  if (files.length === 0) {
+    return;
+  }
+  event.preventDefault();
+  void addFiles(files);
+}
+
+function handleDragOver(event: DragEvent) {
+  if (!props.supportsImage) {
+    return;
+  }
+  event.dataTransfer?.setData('text/plain', '');
+}
+
+function handleDrop(event: DragEvent) {
+  if (!props.supportsImage) {
+    return;
+  }
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length === 0) {
+    return;
+  }
+  void addFiles(files);
+}
+
+function removeAttachment(index: number) {
+  attachments.value.splice(index, 1);
+}
+
+async function addFiles(files: File[]) {
+  attachmentError.value = '';
+  const remainingSlots = MAX_IMAGE_COUNT - attachments.value.length;
+  if (remainingSlots <= 0) {
+    attachmentError.value = `Max ${MAX_IMAGE_COUNT} images`;
+    return;
+  }
+
+  const candidates = files.filter((file) => file.type.startsWith('image/')).slice(0, remainingSlots);
+  if (candidates.length === 0) {
+    attachmentError.value = 'Only image files are supported';
+    return;
+  }
+
+  for (const file of candidates) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      attachmentError.value = `Image must be smaller than ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB`;
+      continue;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const parsed = parseDataUrl(dataUrl);
+      if (!parsed) {
+        attachmentError.value = 'Failed to read image';
+        continue;
+      }
+      attachments.value.push({
+        data: parsed.data,
+        mimeType: parsed.mimeType,
+        previewUrl: dataUrl,
+        name: file.name,
+        size: file.size,
+      });
+    } catch (err) {
+      console.warn('Failed to read image:', err);
+      attachmentError.value = 'Failed to read image';
+    }
+  }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function parseDataUrl(value: string): { mimeType: string; data: string } | null {
+  const match = value.match(/^data:(.*?);base64,(.*)$/);
+  if (!match) {
+    return null;
+  }
+  return { mimeType: match[1], data: match[2] };
 }
 
 function focus() {
@@ -469,6 +648,52 @@ defineExpose({ focus });
       opacity: 0.5;
       cursor: not-allowed;
     }
+  }
+
+  &__file-input {
+    display: none;
+  }
+
+  &__attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 12px 8px;
+  }
+
+  &__attachment {
+    position: relative;
+    width: 64px;
+    height: 64px;
+  }
+
+  &__attachment-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid rgb(var(--color-border));
+  }
+
+  &__attachment-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-border));
+    background: rgb(var(--color-panel));
+    color: rgb(var(--color-text));
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  &__attachment-error {
+    padding: 0 12px 6px;
+    font-size: 11px;
+    color: rgb(var(--color-danger));
   }
 
   &__mention {
@@ -537,6 +762,16 @@ defineExpose({ focus });
     min-width: 0;
     width: 28px;
     height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__image-button {
+    padding: 0;
+    min-width: 0;
+    width: 24px;
+    height: 24px;
     display: inline-flex;
     align-items: center;
     justify-content: center;

@@ -41,7 +41,7 @@ export function useChatService() {
       role: 'user',
       content: options.content,
       status: 'complete',
-      images: options.images,
+      images: options.images?.map((img) => img.previewUrl),
       files: options.files,
     });
 
