@@ -26,7 +26,7 @@
           {{ $t('chat.history.empty') }}
         </div>
 
-        <div v-else class="max-h-[50vh] overflow-auto rounded border border-border">
+        <div v-else class="max-h-[50vh] overflow-auto scrollbar-chat rounded border border-border">
           <div
             v-for="s in sortedSessions"
             :key="s.id"

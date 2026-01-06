@@ -78,6 +78,42 @@
   box-sizing: border-box;
 }
 
+.scrollbar-chat::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-chat::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-chat::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 4px;
+}
+
+.scrollbar-chat::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-text-muted));
+}
+
+.n-base-select-menu::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.n-base-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.n-base-select-menu::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 4px;
+}
+
+.n-base-select-menu::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-text-muted));
+}
+
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
@@ -95,6 +131,44 @@ body {
   background: rgb(var(--color-panel-muted));
   border: 1px solid rgb(var(--color-border));
   border-radius: 10px;
+}
+
+.chat-row__text pre::-webkit-scrollbar,
+.chat-row__text table::-webkit-scrollbar,
+.chat-message__text pre::-webkit-scrollbar,
+.chat-message__text table::-webkit-scrollbar,
+.reasoning-block pre::-webkit-scrollbar,
+.reasoning-block table::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.chat-row__text pre::-webkit-scrollbar-track,
+.chat-row__text table::-webkit-scrollbar-track,
+.chat-message__text pre::-webkit-scrollbar-track,
+.chat-message__text table::-webkit-scrollbar-track,
+.reasoning-block pre::-webkit-scrollbar-track,
+.reasoning-block table::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-row__text pre::-webkit-scrollbar-thumb,
+.chat-row__text table::-webkit-scrollbar-thumb,
+.chat-message__text pre::-webkit-scrollbar-thumb,
+.chat-message__text table::-webkit-scrollbar-thumb,
+.reasoning-block pre::-webkit-scrollbar-thumb,
+.reasoning-block table::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 4px;
+}
+
+.chat-row__text pre::-webkit-scrollbar-thumb:hover,
+.chat-row__text table::-webkit-scrollbar-thumb:hover,
+.chat-message__text pre::-webkit-scrollbar-thumb:hover,
+.chat-message__text table::-webkit-scrollbar-thumb:hover,
+.reasoning-block pre::-webkit-scrollbar-thumb:hover,
+.reasoning-block table::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-text-muted));
 }
 
 :root[data-theme='darcula'] .chat-row__text pre,

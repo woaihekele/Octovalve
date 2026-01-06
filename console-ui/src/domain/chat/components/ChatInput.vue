@@ -25,7 +25,7 @@
         @input="handleInput"
       />
 
-      <div v-if="mentionOpen" class="chat-input__mention">
+      <div v-if="mentionOpen" class="chat-input__mention scrollbar-chat">
         <div v-if="filteredTargets.length === 0" class="chat-input__mention-empty">
           {{ mentionEmptyLabel }}
         </div>

@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="flex-1 overflow-y-auto min-h-0">
+          <div class="flex-1 overflow-y-auto scrollbar-chat min-h-0">
             <div v-if="combinedList.length === 0" class="p-8 text-center text-foreground-muted text-sm">
               {{ $t('target.list.empty') }}
             </div>
@@ -697,7 +697,7 @@ onBeforeUnmount(() => {
               <div class="flex-1">
                 <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">{{ $t('target.detail.command') }}</h3>
                 <code
-                  class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border max-h-40 overflow-y-auto whitespace-pre-wrap break-words"
+                  class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border max-h-40 overflow-y-auto scrollbar-chat whitespace-pre-wrap break-words"
                 >
                   {{ selectedItem.raw_command }}
                 </code>
@@ -876,7 +876,7 @@ onBeforeUnmount(() => {
                   </svg>
                 </button>
               </div>
-              <div class="flex-1 overflow-y-auto p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
+              <div class="flex-1 overflow-y-auto scrollbar-chat p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
                 <span v-if="!isPendingSelected && !isRunningSelected">
                   {{ buildOutput(selectedItem as ResultSnapshot) || $t('target.output.empty') }}
                 </span>

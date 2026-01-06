@@ -154,7 +154,7 @@ const statusClass = computed(() => {
       </svg>
       {{ isExpanded ? $t('chat.tool.collapse') : $t('chat.tool.expand') }}
     </button>
-    <div v-if="isExpanded && canExpand" class="tool-details">
+    <div v-if="isExpanded && canExpand" class="tool-details scrollbar-chat">
       <div class="tool-detail">
         <div class="tool-detail__title">{{ $t('chat.tool.input') }}</div>
         <pre v-if="formattedArgs">{{ formattedArgs }}</pre>

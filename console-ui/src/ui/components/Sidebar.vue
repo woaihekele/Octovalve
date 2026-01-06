@@ -56,7 +56,7 @@ function statusClass(target: TargetInfo) {
       <h1 class="font-semibold text-lg tracking-tight">Octovalve</h1>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-2 space-y-1">
+    <div class="flex-1 overflow-y-auto scrollbar-chat p-2 space-y-1">
       <button
         v-for="target in props.targets"
         :key="target.name"
