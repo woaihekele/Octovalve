@@ -1,11 +1,38 @@
 use std::fs;
+use std::path::Path;
 use std::sync::Mutex;
 
 use tauri::Manager;
 
 use crate::services::logging::append_log_line;
-use crate::services::profiles::prepare_profiles;
+use crate::services::profiles::{octovalve_dir, prepare_profiles};
 use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
+
+const RUNTIME_AGENTS_TEMPLATE: &str = include_str!("../../assets/runtime/AGENTS.md");
+
+fn ensure_runtime_agents_file(app: &tauri::AppHandle, log_path: &Path) -> Result<(), String> {
+    let workspace_dir = octovalve_dir(app)?.join("workspace");
+    fs::create_dir_all(&workspace_dir).map_err(|err| err.to_string())?;
+    let agents_path = workspace_dir.join("AGENTS.md");
+    if agents_path.exists() {
+        if agents_path.is_file() {
+            return Ok(());
+        }
+        return Err(format!(
+            "AGENTS.md exists but is not a file: {}",
+            agents_path.display()
+        ));
+    }
+    fs::write(&agents_path, RUNTIME_AGENTS_TEMPLATE).map_err(|err| err.to_string())?;
+    let _ = append_log_line(
+        log_path,
+        &format!(
+            "[setup] wrote runtime AGENTS.md to {}",
+            agents_path.display()
+        ),
+    );
+    Ok(())
+}
 
 pub fn init(app: &mut tauri::App) -> Result<(), String> {
     let app_handle = app.handle();
@@ -21,6 +48,12 @@ pub fn init(app: &mut tauri::App) -> Result<(), String> {
         app_log: app_log.clone(),
     });
     let (profiles, proxy_status) = prepare_profiles(&app_handle, &app_log)?;
+    if let Err(err) = ensure_runtime_agents_file(&app_handle, &app_log) {
+        let _ = append_log_line(
+            &app_log,
+            &format!("[setup] failed to write runtime AGENTS.md: {}", err),
+        );
+    }
     app.manage(ProfilesState(Mutex::new(profiles)));
     app.manage(ProxyConfigState(Mutex::new(proxy_status.clone())));
     if proxy_status.present {
