@@ -317,8 +317,10 @@ const statusClass = computed(() => {
 
 /* Status variations */
 .tool-status-running {
-  border-color: rgb(var(--color-warning) / 0.6);
-  box-shadow: 0 0 0 1px rgb(var(--color-warning) / 0.4);
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgb(var(--color-warning) / 0.55),
+    0 0 12px rgb(var(--color-warning) / 0.25);
 }
 
 .tool-status-running .tool-status-dot {
@@ -332,8 +334,10 @@ const statusClass = computed(() => {
 }
 
 .tool-status-completed {
-  border-color: rgb(var(--color-success) / 0.6);
-  box-shadow: 0 0 0 1px rgb(var(--color-success) / 0.4);
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgb(var(--color-success) / 0.55),
+    0 0 12px rgb(var(--color-success) / 0.25);
 }
 
 .tool-status-completed .tool-status-dot {
@@ -346,13 +350,17 @@ const statusClass = computed(() => {
 }
 
 .tool-status-failed {
-  border-color: rgb(var(--color-danger) / 0.6);
-  box-shadow: 0 0 0 1px rgb(var(--color-danger) / 0.4);
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgb(var(--color-danger) / 0.55),
+    0 0 12px rgb(var(--color-danger) / 0.25);
 }
 
 .tool-status-pending {
-  border-color: rgb(var(--color-accent) / 0.6);
-  box-shadow: 0 0 0 1px rgb(var(--color-accent) / 0.4);
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgb(var(--color-accent) / 0.55),
+    0 0 12px rgb(var(--color-accent) / 0.25);
 }
 
 .tool-status-failed .tool-status-dot {
