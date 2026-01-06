@@ -97,6 +97,10 @@ export const messages = {
           sendOnEnter: '输入消息，Enter 发送',
           sendOnShortcut: '输入消息，{shortcut} 发送',
         },
+        mention: {
+          noTargets: '暂无可用目标',
+          noMatch: '未找到匹配目标',
+        },
         provider: {
           openai: 'OpenAI',
           acp: 'ACP',
@@ -537,6 +541,10 @@ export const messages = {
           default: 'Type a message...',
           sendOnEnter: 'Type a message, press Enter to send',
           sendOnShortcut: 'Type a message, press {shortcut} to send',
+        },
+        mention: {
+          noTargets: 'No targets available',
+          noMatch: 'No matching targets',
         },
         provider: {
           openai: 'OpenAI',

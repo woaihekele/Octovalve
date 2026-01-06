@@ -70,6 +70,7 @@
         :is-streaming="isStreaming"
         :provider="provider"
         :send-on-enter="sendOnEnter"
+        :targets="targets"
         @send="handleSend"
         @cancel="$emit('cancel')"
         @change-provider="$emit('change-provider', $event)"
@@ -85,6 +86,7 @@ import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
 import type { ChatMessage } from '../types';
 import { useStickToBottom } from '../composables/useStickToBottom';
+import type { TargetInfo } from '../../../shared/types';
 
 interface Props {
   isOpen: boolean;
@@ -98,6 +100,7 @@ interface Props {
   inputLocked?: boolean;
   provider?: 'acp' | 'openai';
   sendOnEnter?: boolean;
+  targets?: TargetInfo[];
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -107,6 +110,7 @@ const props = withDefaults(defineProps<Props>(), {
   inputLocked: false,
   provider: 'acp',
   sendOnEnter: false,
+  targets: () => [],
 });
 
 const emit = defineEmits<{

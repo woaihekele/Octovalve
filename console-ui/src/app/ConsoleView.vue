@@ -1068,6 +1068,7 @@ watch(
       :input-locked="chatInputLocked"
       :provider="chatProvider"
       :send-on-enter="settings.chat.sendOnEnter"
+      :targets="targets"
       :is-history-open="isChatHistoryOpen"
       :openai-sessions="openaiSessions"
       :active-session-id="chatStore.activeSessionId"
