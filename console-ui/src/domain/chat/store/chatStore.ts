@@ -1,6 +1,14 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
-import type { ChatSession, ChatMessage, ChatConfig, ToolCall } from '../types';
+import type {
+  ChatSession,
+  ChatMessage,
+  ChatConfig,
+  ToolCall,
+  PlanEntry,
+  PlanEntryPriority,
+  PlanEntryStatus,
+} from '../types';
 import type { AuthMethod, AcpEvent, AgentCapabilities } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
@@ -145,6 +153,7 @@ export const useChatStore = defineStore('chat', () => {
   );
 
   const messages = computed(() => activeSession.value?.messages ?? []);
+  const planEntries = computed(() => activeSession.value?.plan ?? []);
 
   const lastMessage = computed(() => messages.value.at(-1) ?? null);
 
@@ -422,6 +431,7 @@ export const useChatStore = defineStore('chat', () => {
   function clearMessages() {
     if (activeSession.value) {
       activeSession.value.messages = [];
+      activeSession.value.plan = undefined;
       activeSession.value.updatedAt = Date.now();
       scheduleSaveToStorage();
     }
@@ -787,6 +797,63 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function mapPlanStatus(status: unknown): PlanEntryStatus {
+    if (typeof status !== 'string') {
+      return 'pending';
+    }
+    switch (status) {
+      case 'pending':
+        return 'pending';
+      case 'in_progress':
+        return 'in_progress';
+      case 'completed':
+        return 'completed';
+      default:
+        return 'pending';
+    }
+  }
+
+  function mapPlanPriority(priority: unknown): PlanEntryPriority {
+    if (typeof priority !== 'string') {
+      return 'medium';
+    }
+    switch (priority) {
+      case 'low':
+        return 'low';
+      case 'high':
+        return 'high';
+      case 'medium':
+        return 'medium';
+      default:
+        return 'medium';
+    }
+  }
+
+  function normalizePlanEntries(value: unknown): PlanEntry[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const entries: PlanEntry[] = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+      const obj = entry as Record<string, unknown>;
+      const rawContent = obj.content ?? obj.step ?? obj.title;
+      const content =
+        typeof rawContent === 'string' ? rawContent.trim() : stringifyForDisplay(rawContent);
+      if (!content || !content.trim()) {
+        continue;
+      }
+      entries.push({
+        content: content.trim(),
+        status: mapPlanStatus(obj.status),
+        priority: mapPlanPriority(obj.priority),
+      });
+    }
+    return entries;
+  }
+
   function normalizeToolArguments(rawInput: unknown): Record<string, unknown> {
     if (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
       return rawInput as Record<string, unknown>;
@@ -931,6 +998,16 @@ export const useChatStore = defineStore('chat', () => {
           } else {
             updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
           }
+        }
+      } else if (sessionUpdate === 'plan') {
+        const rawEntries =
+          (update.entries as unknown) ??
+          ((update.plan as Record<string, unknown> | undefined)?.entries as unknown);
+        const entries = normalizePlanEntries(rawEntries);
+        if (activeSession.value) {
+          activeSession.value.plan = entries;
+          activeSession.value.updatedAt = Date.now();
+          scheduleSaveToStorage();
         }
       } else if (sessionUpdate === 'task_complete') {
         flushPending();
@@ -1477,6 +1554,7 @@ export const useChatStore = defineStore('chat', () => {
     // Getters
     activeSession,
     messages,
+    planEntries,
     lastMessage,
     canSend,
     // Actions

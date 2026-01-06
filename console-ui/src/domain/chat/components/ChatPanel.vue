@@ -47,6 +47,7 @@
 
       <div class="chat-panel__messages" ref="messagesRef" @scroll="handleScroll">
         <div ref="contentRef" class="chat-panel__messages-content">
+          <ChatPlanCard v-if="planEntries.length > 0" :entries="planEntries" />
           <div v-if="messages.length === 0" class="chat-panel__welcome">
             <p>{{ $t('chat.welcome') }}</p>
           </div>
@@ -84,7 +85,8 @@ import { onBeforeUnmount, ref, watch, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
-import type { ChatMessage } from '../types';
+import ChatPlanCard from './ChatPlanCard.vue';
+import type { ChatMessage, PlanEntry } from '../types';
 import { useStickToBottom } from '../composables/useStickToBottom';
 import type { TargetInfo } from '../../../shared/types';
 
@@ -95,6 +97,7 @@ interface Props {
   placeholder?: string;
   width?: number;
   messages: ChatMessage[];
+  planEntries?: PlanEntry[];
   isStreaming?: boolean;
   isConnected?: boolean;
   inputLocked?: boolean;
@@ -110,6 +113,7 @@ const props = withDefaults(defineProps<Props>(), {
   inputLocked: false,
   provider: 'acp',
   sendOnEnter: false,
+  planEntries: () => [],
   targets: () => [],
 });
 

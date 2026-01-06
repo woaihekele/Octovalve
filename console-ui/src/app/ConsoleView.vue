@@ -125,6 +125,7 @@ const {
 const chatStore = useChatStore();
 const {
   messages: chatMessages,
+  planEntries: chatPlanEntries,
   isStreaming: chatIsStreaming,
   isConnected: chatIsConnected,
   providerInitialized,
@@ -1063,6 +1064,7 @@ watch(
     <ConsoleChatPane
       :is-chat-open="isChatOpen"
       :messages="chatMessages"
+      :plan-entries="chatPlanEntries"
       :is-streaming="chatIsStreaming"
       :is-connected="chatIsConnected"
       :input-locked="chatInputLocked"

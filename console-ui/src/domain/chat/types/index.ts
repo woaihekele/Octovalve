@@ -35,6 +35,15 @@ export interface ToolCall {
   result?: string;
 }
 
+export type PlanEntryStatus = 'pending' | 'in_progress' | 'completed';
+export type PlanEntryPriority = 'low' | 'medium' | 'high';
+
+export interface PlanEntry {
+  content: string;
+  status: PlanEntryStatus;
+  priority: PlanEntryPriority;
+}
+
 export interface ChatMessage {
   id: string;
   ts: number;
@@ -67,6 +76,7 @@ export interface ChatSession {
   totalTokens: number;
   status: 'idle' | 'running' | 'paused';
   acpSessionId?: string | null;
+  plan?: PlanEntry[];
 }
 
 export interface ChatState {

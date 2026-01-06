@@ -2,6 +2,7 @@
   <ChatPanel
     :is-open="isChatOpen"
     :messages="messages"
+    :plan-entries="planEntries"
     :is-streaming="isStreaming"
     :is-connected="isConnected"
     :input-locked="inputLocked"
@@ -31,12 +32,13 @@
 <script setup lang="ts">
 import { ChatPanel } from '../../domain/chat';
 import ChatHistoryModal from '../../domain/chat/components/ChatHistoryModal.vue';
-import type { ChatMessage, ChatSession } from '../../domain/chat/types';
+import type { ChatMessage, ChatSession, PlanEntry } from '../../domain/chat/types';
 import type { TargetInfo } from '../../shared/types';
 
 defineProps<{
   isChatOpen: boolean;
   messages: ChatMessage[];
+  planEntries: PlanEntry[];
   isStreaming: boolean;
   isConnected: boolean;
   inputLocked: boolean;

@@ -166,6 +166,15 @@ export const messages = {
           userStop: '用户停止',
         },
       },
+      plan: {
+        title: '计划',
+        count: '共 {count} 项',
+        status: {
+          pending: '待执行',
+          inProgress: '进行中',
+          completed: '已完成',
+        },
+      },
       response: {
         stopped: '回答已停止',
       },
