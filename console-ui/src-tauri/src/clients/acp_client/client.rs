@@ -122,7 +122,7 @@ impl AcpClient {
                 &log_path,
                 &format!(
                     "[ACP reader] received line: {}",
-                    &line[..line.len().min(200)]
+                    Self::truncate_log_line(&line, 200)
                 ),
             );
 
@@ -196,6 +196,10 @@ impl AcpClient {
         for (_, sender) in pending_guard.drain() {
             let _ = sender.send(Err(AcpError(format!("ACP reader exited: {}", reason))));
         }
+    }
+
+    fn truncate_log_line(value: &str, max_chars: usize) -> String {
+        value.chars().take(max_chars).collect()
     }
 
     /// Handle incoming notifications from codex-acp.
