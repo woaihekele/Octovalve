@@ -1,10 +1,15 @@
+use std::fs;
+use std::path::Path;
+
 use tauri::State;
 
 use crate::clients::openai_client::{ChatMessage, OpenAiClient, OpenAiClientState, OpenAiConfig, Tool};
 use crate::services::logging::append_log_line;
+use crate::services::profiles::octovalve_dir;
 use crate::state::AppLogState;
 
 pub async fn openai_init(
+    app: tauri::AppHandle,
     state: State<'_, OpenAiClientState>,
     log_state: State<'_, AppLogState>,
     config: OpenAiConfig,
@@ -66,9 +71,11 @@ pub async fn openai_init(
         ),
     );
     let mut guard = state.0.lock().await;
+    let runtime_system_prompt = load_runtime_agents_prompt(&app, &log_state.app_log);
     *guard = Some(std::sync::Arc::new(OpenAiClient::new(
         config,
         log_state.app_log.clone(),
+        runtime_system_prompt,
     )));
     Ok(())
 }
@@ -79,6 +86,72 @@ fn env_flag(key: &str) -> String {
         Ok(value) => format!("set(len={})", value.len()),
         Err(_) => "unset".to_string(),
     }
+}
+
+fn load_runtime_agents_prompt(app: &tauri::AppHandle, log_path: &Path) -> Option<String> {
+    let base_dir = match octovalve_dir(app) {
+        Ok(dir) => dir,
+        Err(err) => {
+            let _ = append_log_line(
+                log_path,
+                &format!("[openai_init] runtime AGENTS path error: {}", err),
+            );
+            return None;
+        }
+    };
+    let agents_path = base_dir.join("workspace").join("AGENTS.md");
+    if !agents_path.exists() {
+        let _ = append_log_line(
+            log_path,
+            &format!(
+                "[openai_init] runtime AGENTS missing at {}",
+                agents_path.display()
+            ),
+        );
+        return None;
+    }
+    if !agents_path.is_file() {
+        let _ = append_log_line(
+            log_path,
+            &format!(
+                "[openai_init] runtime AGENTS path is not file: {}",
+                agents_path.display()
+            ),
+        );
+        return None;
+    }
+    let contents = match fs::read_to_string(&agents_path) {
+        Ok(contents) => contents,
+        Err(err) => {
+            let _ = append_log_line(
+                log_path,
+                &format!(
+                    "[openai_init] runtime AGENTS read failed: {}",
+                    err
+                ),
+            );
+            return None;
+        }
+    };
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        let _ = append_log_line(
+            log_path,
+            &format!(
+                "[openai_init] runtime AGENTS empty at {}",
+                agents_path.display()
+            ),
+        );
+        return None;
+    }
+    let _ = append_log_line(
+        log_path,
+        &format!(
+            "[openai_init] runtime AGENTS loaded len={}",
+            trimmed.len()
+        ),
+    );
+    Some(trimmed.to_string())
 }
 
 pub async fn openai_add_message(

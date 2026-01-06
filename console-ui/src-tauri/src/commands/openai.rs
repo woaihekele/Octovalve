@@ -7,11 +7,12 @@ use crate::state::AppLogState;
 
 #[tauri::command]
 pub async fn openai_init(
+    app: tauri::AppHandle,
     state: State<'_, OpenAiClientState>,
     log_state: State<'_, AppLogState>,
     config: OpenAiConfig,
 ) -> Result<(), String> {
-    openai::openai_init(state, log_state, config).await
+    openai::openai_init(app, state, log_state, config).await
 }
 
 #[tauri::command]

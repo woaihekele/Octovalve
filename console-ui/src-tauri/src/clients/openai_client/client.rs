@@ -22,10 +22,15 @@ pub struct OpenAiClient {
     tools: Arc<Mutex<Vec<Tool>>>,
     cancel_tx: watch::Sender<u64>,
     log_path: PathBuf,
+    runtime_system_prompt: Option<String>,
 }
 
 impl OpenAiClient {
-    pub fn new(config: OpenAiConfig, log_path: PathBuf) -> Self {
+    pub fn new(
+        config: OpenAiConfig,
+        log_path: PathBuf,
+        runtime_system_prompt: Option<String>,
+    ) -> Self {
         let (cancel_tx, _cancel_rx) = watch::channel(0u64);
         let http_client = match build_http_client() {
             Ok(client) => {
@@ -53,6 +58,7 @@ impl OpenAiClient {
             tools: Arc::new(Mutex::new(Vec::new())),
             cancel_tx,
             log_path,
+            runtime_system_prompt,
         }
     }
 
@@ -85,6 +91,7 @@ impl OpenAiClient {
         let start_seq = *cancel_rx.borrow();
 
         let messages = self.messages.lock().await.clone();
+        let messages = self.inject_runtime_system_prompt(messages);
         let tools = self.tools.lock().await.clone();
 
         let url = join_base_path(&self.config.base_url, &self.config.chat_path).map_err(|err| {
@@ -249,6 +256,31 @@ impl OpenAiClient {
             }
         }
         Ok(())
+    }
+
+    fn inject_runtime_system_prompt(&self, mut messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
+        let Some(prompt) = self.runtime_system_prompt.as_ref() else {
+            return messages;
+        };
+        let trimmed = prompt.trim();
+        if trimmed.is_empty() {
+            return messages;
+        }
+        let already_present = messages.first().map_or(false, |message| {
+            message.role == "system" && message.content.trim() == trimmed
+        });
+        if !already_present {
+            messages.insert(
+                0,
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: trimmed.to_string(),
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            );
+        }
+        messages
     }
 
     async fn handle_sse_data(
