@@ -620,6 +620,15 @@ export const messages = {
           userStop: 'Stopped by user',
         },
       },
+      plan: {
+        title: 'Plan',
+        count: '{count} tasks',
+        status: {
+          pending: 'Pending',
+          inProgress: 'In progress',
+          completed: 'Completed',
+        },
+      },
       response: {
         stopped: 'Response stopped',
       },
