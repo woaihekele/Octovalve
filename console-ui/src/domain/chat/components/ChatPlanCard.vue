@@ -138,7 +138,7 @@ function toggleOpen() {
 
 .chat-plan__item {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 8px;
   font-size: 13px;
   color: rgb(var(--color-text));
@@ -162,6 +162,7 @@ function toggleOpen() {
   min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.5;
 }
 
 .chat-plan__content--completed {
@@ -176,6 +177,7 @@ function toggleOpen() {
   gap: 4px;
   font-size: 11px;
   color: rgb(var(--color-text-muted));
+  line-height: 1.5;
 }
 
 .chat-plan__status::before {
