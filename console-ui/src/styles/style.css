@@ -25,9 +25,9 @@
 
 :root[data-theme='darcula'] {
   color-scheme: dark;
-  --color-bg: 43 43 43;
-  --color-panel: 60 63 65;
-  --color-panel-muted: 53 55 57;
+  --color-bg: 35 35 35;
+  --color-panel: 52 55 57;
+  --color-panel-muted: 46 48 50;
   --color-border: 85 85 85;
   --color-text: 200 200 200;
   --color-text-muted: 160 160 160;
@@ -43,8 +43,8 @@
 :root[data-theme='one-dark-pro'] {
   color-scheme: dark;
   --color-bg: 40 44 52;
-  --color-panel: 44 49 58;
-  --color-panel-muted: 53 59 70;
+  --color-panel: 38 42 50;
+  --color-panel-muted: 42 47 56;
   --color-border: 62 68 81;
   --color-text: 171 178 191;
   --color-text-muted: 127 132 142;
@@ -99,14 +99,14 @@ body {
 
 :root[data-theme='darcula'] .chat-row__text pre,
 :root[data-theme='darcula'] .reasoning-block pre {
-  background: #2b2b2b;
-  border-color: #555555;
+  background: #242424;
+  border-color: #4a4a4a;
 }
 
 :root[data-theme='one-dark-pro'] .chat-row__text pre,
 :root[data-theme='one-dark-pro'] .reasoning-block pre {
-  background: #21252b;
-  border-color: #3e4451;
+  background: #1f2329;
+  border-color: #353a45;
 }
 
 .chat-row__text pre code,
@@ -121,13 +121,13 @@ body {
 }
 
 :root[data-theme='darcula'] .chat-row__text code {
-  background: #2b2b2b;
-  border-color: #555555;
+  background: #242424;
+  border-color: #4a4a4a;
 }
 
 :root[data-theme='one-dark-pro'] .chat-row__text code {
-  background: #21252b;
-  border-color: #3e4451;
+  background: #1f2329;
+  border-color: #353a45;
 }
 
 .hljs-comment,

@@ -154,10 +154,10 @@ const GITHUB_LIGHT_THEME: ITheme = {
 };
 
 const DARCULA_THEME: ITheme = {
-  background: '#2B2B2B',
+  background: '#242424',
   foreground: '#A9B7C6',
   cursor: '#A9B7C6',
-  cursorAccent: '#2B2B2B',
+  cursorAccent: '#242424',
   selectionBackground: 'rgba(104, 151, 187, 0.35)',
   selectionInactiveBackground: 'rgba(104, 151, 187, 0.22)',
   selectionForeground: '#A9B7C6',
@@ -207,10 +207,10 @@ const GITHUB_DARK_THEME: ITheme = {
 };
 
 const ONE_DARK_PRO_THEME: ITheme = {
-  background: '#282c34',
+  background: '#1f2329',
   foreground: '#abb2bf',
   cursor: '#528bff',
-  cursorAccent: '#282c34',
+  cursorAccent: '#1f2329',
   selectionBackground: 'rgba(82, 139, 255, 0.35)',
   selectionInactiveBackground: 'rgba(82, 139, 255, 0.22)',
   selectionForeground: '#abb2bf',
