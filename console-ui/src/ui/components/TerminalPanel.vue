@@ -154,10 +154,10 @@ const GITHUB_LIGHT_THEME: ITheme = {
 };
 
 const DARCULA_THEME: ITheme = {
-  background: '#242424',
+  background: '#232323',
   foreground: '#A9B7C6',
   cursor: '#A9B7C6',
-  cursorAccent: '#242424',
+  cursorAccent: '#232323',
   selectionBackground: 'rgba(104, 151, 187, 0.35)',
   selectionInactiveBackground: 'rgba(104, 151, 187, 0.22)',
   selectionForeground: '#A9B7C6',
