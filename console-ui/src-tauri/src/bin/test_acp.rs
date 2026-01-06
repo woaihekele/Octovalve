@@ -7,7 +7,7 @@ use serde::Deserialize;
 use tauri::{Listener, Manager};
 
 use octovalve_console::clients::acp_client::AcpClient;
-use octovalve_console::clients::acp_types::SessionUpdate;
+use octovalve_console::clients::acp_types::{ContentBlock, SessionUpdate};
 
 #[derive(Debug, Deserialize)]
 struct AcpEventPayload {
@@ -16,11 +16,12 @@ struct AcpEventPayload {
     payload: serde_json::Value,
 }
 
-fn parse_args() -> (PathBuf, String, Option<String>) {
+fn parse_args() -> (PathBuf, String, Option<String>, Option<String>) {
     let mut args = std::env::args().skip(1);
     let mut codex_acp_path: Option<PathBuf> = None;
     let mut cwd: Option<String> = None;
     let mut auth_method: Option<String> = None;
+    let mut image_path: Option<String> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--codex-acp-path" => {
@@ -31,6 +32,9 @@ fn parse_args() -> (PathBuf, String, Option<String>) {
             }
             "--auth-method" => {
                 auth_method = args.next();
+            }
+            "--image" => {
+                image_path = args.next();
             }
             _ => {}
         }
@@ -44,11 +48,11 @@ fn parse_args() -> (PathBuf, String, Option<String>) {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| "/".to_string())
     });
-    (codex_acp_path, cwd, auth_method)
+    (codex_acp_path, cwd, auth_method, image_path)
 }
 
 fn main() -> Result<(), String> {
-    let (codex_acp_path, cwd, auth_method) = parse_args();
+    let (codex_acp_path, cwd, auth_method, image_arg) = parse_args();
     eprintln!("codex_acp_path={}", codex_acp_path.display());
     eprintln!("cwd={}", cwd);
 
@@ -110,8 +114,25 @@ fn main() -> Result<(), String> {
         .map_err(|e| format!("new_session failed: {}", e))?;
     eprintln!("session_id={}", session.session_id);
 
+    let image_path = resolve_image_path(image_arg)
+        .ok_or_else(|| "image path not found (use --image or ACP_IMAGE_PATH)".to_string())?;
+    let image_bytes = fs::read(&image_path)
+        .map_err(|e| format!("read image failed: {} ({})", image_path.display(), e))?;
+    let image_base64 = base64_encode(&image_bytes);
+    let mime_type = infer_mime_type(&image_path);
+
+    let prompt_blocks = vec![
+        ContentBlock::Text {
+            text: "请描述这张图里是什么内容。".to_string(),
+        },
+        ContentBlock::Image {
+            data: image_base64,
+            mime_type,
+        },
+    ];
+
     client
-        .prompt("查看当前有哪些工具", None)
+        .prompt(prompt_blocks, None)
         .map_err(|e| format!("prompt failed: {}", e))?;
 
     let mut full_text = String::new();
@@ -204,4 +225,80 @@ fn main() -> Result<(), String> {
 
     client.stop();
     Ok(())
+}
+
+fn resolve_image_path(cli_value: Option<String>) -> Option<PathBuf> {
+    if let Some(value) = cli_value {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+    if let Ok(value) = std::env::var("ACP_IMAGE_PATH") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+    let local = PathBuf::from("SCR-20260106-qdmo.png");
+    if local.exists() {
+        return Some(local);
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let doc = PathBuf::from(home).join("Documents").join("SCR-20260106-qdmo.png");
+        if doc.exists() {
+            return Some(doc);
+        }
+    }
+    None
+}
+
+fn infer_mime_type(path: &PathBuf) -> String {
+    let ext = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+
+        let idx0 = b0 >> 2;
+        let idx1 = ((b0 & 0x03) << 4) | (b1 >> 4);
+        let idx2 = ((b1 & 0x0f) << 2) | (b2 >> 6);
+        let idx3 = b2 & 0x3f;
+
+        out.push(TABLE[idx0 as usize] as char);
+        out.push(TABLE[idx1 as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[idx2 as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[idx3 as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }

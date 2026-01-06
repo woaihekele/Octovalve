@@ -225,7 +225,7 @@ pub enum ContentBlock {
     Text { text: String },
     Image {
         data: String,
-        #[serde(rename = "mime_type", alias = "media_type")]
+        #[serde(rename = "mimeType", alias = "mime_type", alias = "media_type")]
         mime_type: String,
     },
 }
