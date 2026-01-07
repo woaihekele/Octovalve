@@ -102,12 +102,12 @@ export const messages = {
           noMatch: '未找到匹配目标',
         },
         provider: {
-          openai: 'OpenAI',
+          openai: 'API',
           acp: 'ACP',
         },
       },
       provider: {
-        openaiLabel: 'OpenAI',
+        openaiLabel: 'API',
         acpLabel: 'ACP',
       },
       providerSwitch: {
@@ -560,12 +560,12 @@ export const messages = {
           noMatch: 'No matching targets',
         },
         provider: {
-          openai: 'OpenAI',
+          openai: 'API',
           acp: 'ACP',
         },
       },
       provider: {
-        openaiLabel: 'OpenAI',
+        openaiLabel: 'API',
         acpLabel: 'ACP',
       },
       providerSwitch: {
