@@ -331,7 +331,10 @@ async fn send_request(addr: &str, request: &CommandRequest) -> anyhow::Result<Co
     for attempt in 0..3 {
         match TcpStream::connect(addr).await {
             Ok(stream) => {
-                let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+                let codec = LengthDelimitedCodec::builder()
+                    .max_frame_length(protocol::framing::MAX_FRAME_LENGTH)
+                    .new_codec();
+                let mut framed = Framed::new(stream, codec);
                 let payload = serde_json::to_vec(request)?;
                 framed.send(Bytes::from(payload)).await?;
 

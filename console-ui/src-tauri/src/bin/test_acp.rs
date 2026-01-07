@@ -81,8 +81,14 @@ fn main() -> Result<(), String> {
         }
     });
 
-    let mut client = AcpClient::start(&codex_acp_path, app_handle.clone(), app_log, Vec::new(), Vec::new())
-        .map_err(|e| format!("start failed: {}", e))?;
+    let mut client = AcpClient::start(
+        &codex_acp_path,
+        app_handle.clone(),
+        app_log,
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|e| format!("start failed: {}", e))?;
     let init = client
         .initialize()
         .map_err(|e| format!("initialize failed: {}", e))?;
@@ -251,7 +257,9 @@ fn resolve_image_path(cli_value: Option<String>) -> Option<PathBuf> {
         return Some(local);
     }
     if let Ok(home) = std::env::var("HOME") {
-        let doc = PathBuf::from(home).join("Documents").join("SCR-20260106-qdmo.png");
+        let doc = PathBuf::from(home)
+            .join("Documents")
+            .join("SCR-20260106-qdmo.png");
         if doc.exists() {
             return Some(doc);
         }

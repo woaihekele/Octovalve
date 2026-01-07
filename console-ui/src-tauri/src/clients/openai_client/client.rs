@@ -11,9 +11,7 @@ use tokio::sync::{watch, Mutex};
 use crate::services::http_utils::join_base_path;
 use crate::services::logging::append_log_line;
 
-use super::types::{
-    ChatMessage, ChatStreamEvent, FunctionCall, OpenAiConfig, Tool, ToolCall,
-};
+use super::types::{ChatMessage, ChatStreamEvent, FunctionCall, OpenAiConfig, Tool, ToolCall};
 
 pub struct OpenAiClient {
     config: OpenAiConfig,

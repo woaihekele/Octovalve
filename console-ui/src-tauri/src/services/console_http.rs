@@ -93,9 +93,7 @@ async fn console_http_request_with_timeout(
         .header("Connection", "close")
         .timeout(io_timeout);
     if let Some(body) = body {
-        request = request
-            .header(CONTENT_TYPE, "application/json")
-            .body(body);
+        request = request.header(CONTENT_TYPE, "application/json").body(body);
     }
     let response = match request.send().await {
         Ok(response) => response,

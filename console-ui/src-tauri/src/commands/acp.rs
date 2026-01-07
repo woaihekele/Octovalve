@@ -1,14 +1,10 @@
 use tauri::State;
 
 use crate::clients::acp_types::{
-    AcpInitResponse,
-    AcpSessionInfo,
-    ContentBlock,
-    ContextItem,
-    LoadSessionResult,
+    AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, LoadSessionResult,
 };
-use crate::services::acp;
 use crate::clients::AcpClientState;
+use crate::services::acp;
 use crate::state::ProxyConfigState;
 
 #[tauri::command]

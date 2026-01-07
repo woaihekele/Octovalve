@@ -2,6 +2,7 @@ mod actions;
 mod index;
 mod lifecycle;
 mod paths;
+mod proxy_config;
 
 pub use actions::{
     create_profile, delete_profile, read_profile_broker_config, read_profile_proxy_config,
@@ -17,3 +18,4 @@ pub use paths::{
     profile_proxy_path, profiles_dir, profiles_index_path, resolve_config_path,
     resolve_profile_path,
 };
+pub(crate) use proxy_config::sync_proxy_config_runtime_ports;

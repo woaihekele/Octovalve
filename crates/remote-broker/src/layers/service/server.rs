@@ -114,7 +114,10 @@ async fn handle_connection_tui(
 ) -> anyhow::Result<()> {
     tracing::info!(event = "data.conn.open", peer = %addr);
     let _ = server_tx.send(ServerEvent::ConnectionOpened).await;
-    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    let codec = LengthDelimitedCodec::builder()
+        .max_frame_length(protocol::framing::MAX_FRAME_LENGTH)
+        .new_codec();
+    let mut framed = Framed::new(stream, codec);
     while let Some(frame) = framed.next().await {
         let bytes = frame.context("frame read")?;
         let request: CommandRequest = match serde_json::from_slice(&bytes) {
@@ -201,7 +204,10 @@ async fn handle_connection_auto(
     output_dir: Arc<PathBuf>,
 ) -> anyhow::Result<()> {
     tracing::info!(event = "data.conn.open", peer = %addr);
-    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    let codec = LengthDelimitedCodec::builder()
+        .max_frame_length(protocol::framing::MAX_FRAME_LENGTH)
+        .new_codec();
+    let mut framed = Framed::new(stream, codec);
     while let Some(frame) = framed.next().await {
         let bytes = frame.context("frame read")?;
         let request: CommandRequest = match serde_json::from_slice(&bytes) {

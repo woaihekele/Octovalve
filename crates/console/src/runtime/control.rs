@@ -60,7 +60,10 @@ pub(crate) async fn connect_control(
     let stream = TcpStream::connect(addr)
         .await
         .with_context(|| format!("failed to connect control addr {addr}"))?;
-    Ok(Framed::new(stream, LengthDelimitedCodec::new()))
+    let codec = LengthDelimitedCodec::builder()
+        .max_frame_length(protocol::framing::MAX_FRAME_LENGTH)
+        .new_codec();
+    Ok(Framed::new(stream, codec))
 }
 
 pub(crate) async fn send_request(

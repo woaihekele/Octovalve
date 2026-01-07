@@ -5,11 +5,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::clients::acp_client::{self, AcpClient, AcpClientState};
 use crate::clients::acp_types::{
-    AcpInitResponse,
-    AcpSessionInfo,
-    ContentBlock,
-    ContextItem,
-    LoadSessionResult,
+    AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, LoadSessionResult,
 };
 use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::console_sidecar::build_console_path;
@@ -153,7 +149,10 @@ pub async fn acp_start(
     let proxy_status = proxy_state.0.lock().unwrap().clone();
     let proxy_config_path = PathBuf::from(proxy_status.path);
     let proxy_bin = resolve_octovalve_proxy_bin().map_err(|e| {
-        let _ = append_log_line(&log_path, &format!("[acp_start] proxy resolve error: {}", e));
+        let _ = append_log_line(
+            &log_path,
+            &format!("[acp_start] proxy resolve error: {}", e),
+        );
         e
     })?;
     let mcp_servers = build_mcp_servers(&proxy_bin, &proxy_config_path);
@@ -178,8 +177,13 @@ pub async fn acp_start(
             &log_path_clone,
             "[acp_start] spawn_blocking: calling AcpClient::start",
         );
-        let client =
-            AcpClient::start(&codex_acp_path, app_clone, log_path_clone.clone(), acp_args, mcp_servers)?;
+        let client = AcpClient::start(
+            &codex_acp_path,
+            app_clone,
+            log_path_clone.clone(),
+            acp_args,
+            mcp_servers,
+        )?;
         let _ = append_log_line(
             &log_path_clone,
             "[acp_start] spawn_blocking: client started, calling initialize",
@@ -253,7 +257,10 @@ pub async fn acp_new_session(app: AppHandle, cwd: String) -> Result<AcpSessionIn
     .map_err(|e| e.to_string())?
 }
 
-pub async fn acp_load_session(app: AppHandle, session_id: String) -> Result<LoadSessionResult, String> {
+pub async fn acp_load_session(
+    app: AppHandle,
+    session_id: String,
+) -> Result<LoadSessionResult, String> {
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_handle.state::<AcpClientState>();

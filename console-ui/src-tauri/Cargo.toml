@@ -23,6 +23,7 @@ shlex = "1"
 tauri = { version = "=2.9.5", features = ["macos-private-api", "devtools"] }
 tauri-plugin-shell = "=2.3.3"
 toml = "0.8"
+toml_edit = "0.22"
 tokio = { version = "1.38", features = ["rt-multi-thread", "macros", "time", "process"] }
 tokio-tungstenite = "0.23"
 urlencoding = "2.1"

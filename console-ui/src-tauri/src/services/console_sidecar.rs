@@ -13,7 +13,9 @@ use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use crate::paths::sidecar_path;
 use crate::services::config::{ensure_file, DEFAULT_BROKER_CONFIG};
 use crate::services::logging::append_log_line;
-use crate::services::profiles::{current_profile_entry, resolve_broker_config_path};
+use crate::services::profiles::{
+    current_profile_entry, resolve_broker_config_path, sync_proxy_config_runtime_ports,
+};
 use crate::state::{ConsoleSidecar, ConsoleSidecarState, ProfilesState};
 
 fn format_command_output(line: &[u8]) -> String {
@@ -32,6 +34,7 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
             Ok(profile) => {
                 let listen_port = normalize_port(profile.remote_listen_port, 19307);
                 let control_port = normalize_port(profile.remote_control_port, 19308);
+                sync_proxy_config_runtime_ports(proxy_config, listen_port, control_port)?;
                 (
                     build_remote_dir(&profile.remote_dir_alias),
                     format!("127.0.0.1:{listen_port}"),

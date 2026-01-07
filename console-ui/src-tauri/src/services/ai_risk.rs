@@ -40,7 +40,11 @@ pub async fn ai_risk_assess(request: AiRiskRequest) -> Result<AiRiskResponse, St
     let content = value
         .pointer("/choices/0/message/content")
         .and_then(|val| val.as_str())
-        .or_else(|| value.pointer("/choices/0/text").and_then(|val| val.as_str()))
+        .or_else(|| {
+            value
+                .pointer("/choices/0/text")
+                .and_then(|val| val.as_str())
+        })
         .unwrap_or("")
         .trim();
     if content.is_empty() {

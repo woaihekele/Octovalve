@@ -75,7 +75,10 @@ async fn handle_control_connection(
     if let Some(peer) = peer {
         tracing::info!(event = "control.conn.start", peer = %peer);
     }
-    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    let codec = LengthDelimitedCodec::builder()
+        .max_frame_length(protocol::framing::MAX_FRAME_LENGTH)
+        .new_codec();
+    let mut framed = Framed::new(stream, codec);
     let mut subscribed = false;
     loop {
         tokio::select! {

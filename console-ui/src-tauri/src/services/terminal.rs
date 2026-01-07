@@ -47,7 +47,13 @@ pub async fn terminal_open(
     let cols = cols.max(1);
     let rows = rows.max(1);
     let term = term
-        .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        .and_then(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        })
         .unwrap_or_else(|| DEFAULT_TERM.to_string());
     let url = console_terminal_url(&name, cols, rows, &term);
     let (stream, _) = tokio_tungstenite::connect_async(url)
@@ -175,7 +181,10 @@ pub fn terminal_resize(
     )
 }
 
-pub fn terminal_close(session_id: String, sessions: State<'_, TerminalSessions>) -> Result<(), String> {
+pub fn terminal_close(
+    session_id: String,
+    sessions: State<'_, TerminalSessions>,
+) -> Result<(), String> {
     let message = json!({ "type": "close" }).to_string();
     let mut guard = sessions.0.lock().unwrap();
     if let Some(session) = guard.remove(&session_id) {

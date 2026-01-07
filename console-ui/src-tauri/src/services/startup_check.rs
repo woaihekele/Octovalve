@@ -8,7 +8,9 @@ use tauri::{AppHandle, Manager};
 use protocol::config::ProxyConfig;
 
 use crate::services::config::DEFAULT_BROKER_CONFIG;
-use crate::services::profiles::{current_profile_entry, profile_broker_path, resolve_broker_config_path};
+use crate::services::profiles::{
+    current_profile_entry, profile_broker_path, resolve_broker_config_path,
+};
 use crate::types::{ProfilesFile, ProxyConfigStatus, StartupCheckResult};
 
 const DEFAULT_BIND_HOST: &str = "127.0.0.1";
@@ -84,7 +86,11 @@ pub fn validate_startup_config(
             }
             Err(err) => errors.push(format_toml_error("本地配置", &proxy_path, &raw, err)),
         },
-        Err(err) => errors.push(format!("读取本地配置失败：{} ({})", proxy_path.display(), err)),
+        Err(err) => errors.push(format!(
+            "读取本地配置失败：{} ({})",
+            proxy_path.display(),
+            err
+        )),
     }
 
     if let Err(err) = validate_broker_config(&broker_path) {
@@ -173,7 +179,9 @@ fn validate_proxy_config(config: &ProxyConfig) -> Vec<String> {
             }
         }
         if target.ssh.is_some() && target.local_port.is_none() {
-            errors.push(format!("target {name} 缺少 local_port（ssh 模式必须填写）。"));
+            errors.push(format!(
+                "target {name} 缺少 local_port（ssh 模式必须填写）。"
+            ));
         }
         if target.ssh.is_some() {
             let control_local_port = control_local_port(defaults, target);

@@ -3,12 +3,20 @@ pub mod window_events;
 
 pub fn run() {
     tauri::Builder::default()
-        .manage(crate::state::ConsoleSidecarState(std::sync::Mutex::new(None)))
-        .manage(crate::state::ConsoleStreamState(std::sync::Mutex::new(false)))
-        .manage(crate::state::TerminalSessions(std::sync::Mutex::new(std::collections::HashMap::new())))
+        .manage(crate::state::ConsoleSidecarState(std::sync::Mutex::new(
+            None,
+        )))
+        .manage(crate::state::ConsoleStreamState(std::sync::Mutex::new(
+            false,
+        )))
+        .manage(crate::state::TerminalSessions(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
         .manage(crate::clients::AcpClientState::default())
         .manage(crate::clients::McpClientState::default())
-        .manage(crate::clients::OpenAiClientState(tokio::sync::Mutex::new(None)))
+        .manage(crate::clients::OpenAiClientState(tokio::sync::Mutex::new(
+            None,
+        )))
         .invoke_handler(tauri::generate_handler![
             crate::commands::profiles::list_profiles,
             crate::commands::profiles::create_profile,

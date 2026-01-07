@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 pub mod config;
 pub mod control;
+pub mod framing;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommandStage {

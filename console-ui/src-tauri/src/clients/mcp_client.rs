@@ -42,7 +42,8 @@ impl McpClientState {
                 if let Some(old) = guard.take() {
                     old.shutdown().await;
                 }
-                let client = Arc::new(McpClient::start(proxy_config_path, DEFAULT_CLIENT_ID).await?);
+                let client =
+                    Arc::new(McpClient::start(proxy_config_path, DEFAULT_CLIENT_ID).await?);
                 *guard = Some(Arc::clone(&client));
                 client
             } else {

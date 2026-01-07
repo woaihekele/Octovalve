@@ -7,7 +7,9 @@ use crate::services::config::{
     ensure_file, write_config_file, DEFAULT_BROKER_CONFIG, DEFAULT_PROXY_EXAMPLE,
 };
 use crate::services::logging::append_log_line;
-use crate::types::{ProfileRecord, ProfilesFile, ProxyConfigOverrides, ProxyConfigStatus, ResolvedBrokerConfig};
+use crate::types::{
+    ProfileRecord, ProfilesFile, ProxyConfigOverrides, ProxyConfigStatus, ResolvedBrokerConfig,
+};
 
 use super::index::{current_profile_entry, load_profiles_file, write_profiles_file};
 use super::paths::{

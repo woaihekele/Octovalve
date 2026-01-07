@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use tauri::{Manager, State};
 
-use crate::services::config::{read_config_file, write_config_file, DEFAULT_BROKER_CONFIG, DEFAULT_PROXY_EXAMPLE};
+use crate::services::config::{
+    read_config_file, write_config_file, DEFAULT_BROKER_CONFIG, DEFAULT_PROXY_EXAMPLE,
+};
 use crate::services::profiles::resolve_broker_config_path;
 use crate::state::{ProfilesState, ProxyConfigState};
 use crate::types::ConfigFilePayload;

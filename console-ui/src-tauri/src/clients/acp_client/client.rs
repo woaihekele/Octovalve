@@ -79,7 +79,13 @@ impl AcpClient {
         let log_path_clone = log_path.clone();
         let stdin_clone = stdin.clone();
         let reader_handle = std::thread::spawn(move || {
-            Self::read_loop(stdout, stdin_clone, pending_clone, app_handle_clone, log_path_clone);
+            Self::read_loop(
+                stdout,
+                stdin_clone,
+                pending_clone,
+                app_handle_clone,
+                log_path_clone,
+            );
         });
         Ok(Self {
             process,
@@ -202,10 +208,7 @@ impl AcpClient {
                                 if let Err(e) = app_handle.emit("acp-event", &event) {
                                     log_line(
                                         &log_path,
-                                        &format!(
-                                            "[ACP] Failed to emit completion event: {}",
-                                            e
-                                        ),
+                                        &format!("[ACP] Failed to emit completion event: {}", e),
                                     );
                                 }
                             }
@@ -217,7 +220,10 @@ impl AcpClient {
         let reason = exit_reason.unwrap_or_else(|| "stdout closed".to_string());
         log_line(
             &log_path,
-            &format!("[ACP reader] exiting; notifying pending requests: {}", reason),
+            &format!(
+                "[ACP reader] exiting; notifying pending requests: {}",
+                reason
+            ),
         );
         let mut pending_guard = pending.lock().unwrap();
         for (_, sender) in pending_guard.drain() {
@@ -367,7 +373,11 @@ impl AcpClient {
 
     /// Send a prompt to the current session (non-blocking).
     /// Content comes via notifications, completion comes via response.
-    pub fn prompt(&self, prompt: Vec<ContentBlock>, context: Option<Vec<ContextItem>>) -> Result<(), AcpError> {
+    pub fn prompt(
+        &self,
+        prompt: Vec<ContentBlock>,
+        context: Option<Vec<ContextItem>>,
+    ) -> Result<(), AcpError> {
         let session_id = self
             .session_id
             .lock()
@@ -446,7 +456,10 @@ fn pick_permission_option(params: &Option<Value>) -> Option<String> {
         if fallback.is_none() {
             fallback = option_id.clone();
         }
-        let kind = option.get("kind").and_then(|value| value.as_str()).unwrap_or("");
+        let kind = option
+            .get("kind")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         if matches!(kind, "allow_once" | "allow_always") {
             return option_id;
         }

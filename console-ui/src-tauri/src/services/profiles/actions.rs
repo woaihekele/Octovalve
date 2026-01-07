@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
 
 use crate::services::config::{
-    ensure_file, read_config_file, write_config_file, DEFAULT_BROKER_CONFIG,
-    DEFAULT_PROXY_EXAMPLE,
+    ensure_file, read_config_file, write_config_file, DEFAULT_BROKER_CONFIG, DEFAULT_PROXY_EXAMPLE,
 };
 use crate::state::{ProfilesState, ProxyConfigState};
 use crate::types::{ProfileRecord, ProfileRuntimeSettings};
@@ -13,10 +12,11 @@ use crate::types::{ProfileRecord, ProfileRuntimeSettings};
 use super::index::{
     current_profile_entry, profile_entry_by_name, validate_profile_name, write_profiles_file,
 };
+use super::lifecycle::sync_legacy_proxy_config;
 use super::paths::{
     profile_broker_path, profile_dir_for, profile_proxy_path, profiles_dir, profiles_index_path,
 };
-use super::lifecycle::sync_legacy_proxy_config;
+use super::proxy_config::sync_proxy_config_runtime_ports;
 
 fn remove_profile_files(profile: &ProfileRecord, profiles_base: &Path) {
     let proxy_path = Path::new(&profile.proxy_path);
@@ -223,10 +223,23 @@ pub fn write_profile_runtime_settings(
         .iter_mut()
         .find(|profile| profile.name == name)
         .ok_or_else(|| format!("未找到环境 {}", name))?;
+    let listen_port = if settings.remote_listen_port == 0 {
+        19307
+    } else {
+        settings.remote_listen_port
+    };
+    let control_port = if settings.remote_control_port == 0 {
+        19308
+    } else {
+        settings.remote_control_port
+    };
     profile.remote_dir_alias = settings.remote_dir_alias.trim().to_string();
-    profile.remote_listen_port = settings.remote_listen_port;
-    profile.remote_control_port = settings.remote_control_port;
+    profile.remote_listen_port = listen_port;
+    profile.remote_control_port = control_port;
+    let proxy_path = profile.proxy_path.clone();
     write_profiles_file(&index_path, &profiles)?;
     *profiles_state.0.lock().unwrap() = profiles;
+
+    sync_proxy_config_runtime_ports(Path::new(&proxy_path), listen_port, control_port)?;
     Ok(())
 }

@@ -3,7 +3,9 @@ use std::path::Path;
 
 use tauri::State;
 
-use crate::clients::openai_client::{ChatMessage, OpenAiClient, OpenAiClientState, OpenAiConfig, Tool};
+use crate::clients::openai_client::{
+    ChatMessage, OpenAiClient, OpenAiClientState, OpenAiConfig, Tool,
+};
 use crate::services::logging::append_log_line;
 use crate::services::profiles::octovalve_dir;
 use crate::state::AppLogState;
@@ -125,10 +127,7 @@ fn load_runtime_agents_prompt(app: &tauri::AppHandle, log_path: &Path) -> Option
         Err(err) => {
             let _ = append_log_line(
                 log_path,
-                &format!(
-                    "[openai_init] runtime AGENTS read failed: {}",
-                    err
-                ),
+                &format!("[openai_init] runtime AGENTS read failed: {}", err),
             );
             return None;
         }
@@ -146,10 +145,7 @@ fn load_runtime_agents_prompt(app: &tauri::AppHandle, log_path: &Path) -> Option
     }
     let _ = append_log_line(
         log_path,
-        &format!(
-            "[openai_init] runtime AGENTS loaded len={}",
-            trimmed.len()
-        ),
+        &format!("[openai_init] runtime AGENTS loaded len={}", trimmed.len()),
     );
     Some(trimmed.to_string())
 }

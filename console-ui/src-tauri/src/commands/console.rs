@@ -9,9 +9,9 @@ use crate::services::console_http::{
     console_get, console_post, console_post_with_timeout, HTTP_RELOAD_TIMEOUT,
 };
 use crate::services::console_sidecar::{start_console, stop_console};
-use crate::services::startup_check;
 use crate::services::console_ws::start_console_stream as start_console_stream_service;
 use crate::services::logging::append_log_line;
+use crate::services::startup_check;
 use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
 use crate::types::{LogChunk, StartupCheckResult};
 
