@@ -119,11 +119,7 @@ impl ConsoleState {
                 .status
                 .get(&target.name)
                 .unwrap_or(&TargetStatus::Down),
-            pending_count: *self
-                .session
-                .pending_count
-                .get(&target.name)
-                .unwrap_or(&0),
+            pending_count: *self.session.pending_count.get(&target.name).unwrap_or(&0),
             last_seen: self.connection.last_seen.get(&target.name).map(format_time),
             last_error: self.connection.last_error.get(&target.name).cloned(),
             control_addr: target
@@ -183,45 +179,45 @@ impl ConsoleState {
     pub(crate) fn apply_event(&mut self, name: &str, event: ServiceEvent) {
         match event {
             ServiceEvent::QueueUpdated(queue) => {
-                let entry =
-                    self.session
-                        .snapshots
-                        .entry(name.to_string())
-                        .or_insert_with(|| ServiceSnapshot {
-                            queue: Vec::new(),
-                            running: Vec::new(),
-                            history: Vec::new(),
-                            last_result: None,
-                        });
+                let entry = self
+                    .session
+                    .snapshots
+                    .entry(name.to_string())
+                    .or_insert_with(|| ServiceSnapshot {
+                        queue: Vec::new(),
+                        running: Vec::new(),
+                        history: Vec::new(),
+                        last_result: None,
+                    });
                 entry.queue = queue;
                 self.session
                     .pending_count
                     .insert(name.to_string(), entry.queue.len());
             }
             ServiceEvent::RunningUpdated(running) => {
-                let entry =
-                    self.session
-                        .snapshots
-                        .entry(name.to_string())
-                        .or_insert_with(|| ServiceSnapshot {
-                            queue: Vec::new(),
-                            running: Vec::new(),
-                            history: Vec::new(),
-                            last_result: None,
-                        });
+                let entry = self
+                    .session
+                    .snapshots
+                    .entry(name.to_string())
+                    .or_insert_with(|| ServiceSnapshot {
+                        queue: Vec::new(),
+                        running: Vec::new(),
+                        history: Vec::new(),
+                        last_result: None,
+                    });
                 entry.running = running;
             }
             ServiceEvent::ResultUpdated(result) => {
-                let entry =
-                    self.session
-                        .snapshots
-                        .entry(name.to_string())
-                        .or_insert_with(|| ServiceSnapshot {
-                            queue: Vec::new(),
-                            running: Vec::new(),
-                            history: Vec::new(),
-                            last_result: None,
-                        });
+                let entry = self
+                    .session
+                    .snapshots
+                    .entry(name.to_string())
+                    .or_insert_with(|| ServiceSnapshot {
+                        queue: Vec::new(),
+                        running: Vec::new(),
+                        history: Vec::new(),
+                        last_result: None,
+                    });
                 entry.last_result = Some(result.clone());
                 entry.history.insert(0, result);
                 if entry.history.len() > HISTORY_LIMIT {

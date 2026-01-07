@@ -397,6 +397,16 @@ export const messages = {
         deleteFailed: '删除环境失败：{error}',
         selectFirst: '请先选择环境。',
         loadFailed: '读取环境配置失败：{error}',
+        remote: {
+          title: '远端启动参数',
+          help: '用于 console 启动远端 broker 的参数。',
+          aliasLabel: '远端目录别名',
+          aliasPlaceholder: '例如 q（对应 ~/.octovalve_q）',
+          dirPreview: '远端目录：{path}',
+          listenPortLabel: '远端监听端口',
+          controlPortLabel: '远端控制端口',
+          portHint: '修改端口后请同步更新本地配置中的 remote_addr/control_remote_addr。',
+        },
       },
       config: {
         loading: '正在加载配置...',
@@ -857,6 +867,16 @@ export const messages = {
         deleteFailed: 'Delete failed: {error}',
         selectFirst: 'Please select a profile first.',
         loadFailed: 'Failed to load profile: {error}',
+        remote: {
+          title: 'Remote Broker Args',
+          help: 'Used to start the remote broker from console.',
+          aliasLabel: 'Remote Dir Alias',
+          aliasPlaceholder: 'e.g. q (maps to ~/.octovalve_q)',
+          dirPreview: 'Remote dir: {path}',
+          listenPortLabel: 'Remote Listen Port',
+          controlPortLabel: 'Remote Control Port',
+          portHint: 'Update remote_addr/control_remote_addr in local-proxy-config.toml after changing ports.',
+        },
       },
       config: {
         loading: 'Loading config...',

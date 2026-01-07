@@ -17,6 +17,12 @@ export interface ProfilesStatus {
   profiles: ProfileSummary[];
 }
 
+export interface ProfileRuntimeSettings {
+  remote_dir_alias: string;
+  remote_listen_port: number;
+  remote_control_port: number;
+}
+
 export interface TargetInfo {
   name: string;
   hostname?: string | null;

@@ -1,10 +1,10 @@
 pub(crate) mod app;
-pub(crate) mod terminal;
-pub(crate) mod theme;
 mod format;
 mod input;
 mod render;
+pub(crate) mod terminal;
 mod text;
+pub(crate) mod theme;
 
 pub(crate) use app::AppState;
 pub(crate) use input::handle_key_event;

@@ -13,7 +13,7 @@ use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use crate::paths::sidecar_path;
 use crate::services::config::{ensure_file, DEFAULT_BROKER_CONFIG};
 use crate::services::logging::append_log_line;
-use crate::services::profiles::resolve_broker_config_path;
+use crate::services::profiles::{current_profile_entry, resolve_broker_config_path};
 use crate::state::{ConsoleSidecar, ConsoleSidecarState, ProfilesState};
 
 fn format_command_output(line: &[u8]) -> String {
@@ -27,6 +27,29 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
 
     let profiles = app.state::<ProfilesState>().0.lock().unwrap().clone();
+    let (remote_dir, remote_listen_addr, remote_control_addr) =
+        match current_profile_entry(&profiles) {
+            Ok(profile) => {
+                let listen_port = normalize_port(profile.remote_listen_port, 19307);
+                let control_port = normalize_port(profile.remote_control_port, 19308);
+                (
+                    build_remote_dir(&profile.remote_dir_alias),
+                    format!("127.0.0.1:{listen_port}"),
+                    format!("127.0.0.1:{control_port}"),
+                )
+            }
+            Err(err) => {
+                let _ = append_log_line(
+                    app_log,
+                    &format!("failed to resolve profile runtime settings: {err}"),
+                );
+                (
+                    "~/.octovalve".to_string(),
+                    "127.0.0.1:19307".to_string(),
+                    "127.0.0.1:19308".to_string(),
+                )
+            }
+        };
     let resolved_broker =
         resolve_broker_config_path(app, proxy_config, &config_dir, Some(&profiles))?;
     let broker_config = resolved_broker.path;
@@ -60,6 +83,12 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     let mut console_args = vec![
         "--config".to_string(),
         proxy_config.to_string_lossy().to_string(),
+        "--remote-dir".to_string(),
+        remote_dir,
+        "--remote-listen-addr".to_string(),
+        remote_listen_addr,
+        "--remote-control-addr".to_string(),
+        remote_control_addr,
         "--broker-bin".to_string(),
         broker_bin.to_string_lossy().to_string(),
         "--broker-config".to_string(),
@@ -180,5 +209,22 @@ pub fn build_console_path() -> String {
         "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string()
     } else {
         format!("/usr/local/bin:/opt/homebrew/bin:{base}")
+    }
+}
+
+fn build_remote_dir(alias: &str) -> String {
+    let trimmed = alias.trim();
+    if trimmed.is_empty() {
+        "~/.octovalve".to_string()
+    } else {
+        format!("~/.octovalve_{trimmed}")
+    }
+}
+
+fn normalize_port(port: u16, fallback: u16) -> u16 {
+    if port == 0 {
+        fallback
+    } else {
+        port
     }
 }

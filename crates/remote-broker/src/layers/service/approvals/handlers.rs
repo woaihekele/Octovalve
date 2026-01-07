@@ -13,7 +13,9 @@ use crate::layers::policy::summary::request_summary;
 use crate::layers::policy::whitelist::Whitelist;
 use crate::layers::service::events::{PendingRequest, ServerEvent, ServiceCommand, ServiceEvent};
 
-use super::snapshots::{build_queue_snapshots, result_snapshot_from_response, running_snapshot_from_pending};
+use super::snapshots::{
+    build_queue_snapshots, result_snapshot_from_response, running_snapshot_from_pending,
+};
 use super::state::ServiceState;
 
 pub(crate) async fn handle_server_event(
@@ -163,18 +165,16 @@ fn start_execution(
             id = %pending.request.id,
             command = %request_summary(&pending.request),
         );
-        let response =
-            execute_request(
-                &pending.request,
-                &whitelist,
-                &limits,
-                &output_dir,
-                cancel_token,
-            )
-            .await;
+        let response = execute_request(
+            &pending.request,
+            &whitelist,
+            &limits,
+            &output_dir,
+            cancel_token,
+        )
+        .await;
         let finished_at = SystemTime::now();
-        let result_snapshot =
-            result_snapshot_from_response(&pending, &response, finished_at);
+        let result_snapshot = result_snapshot_from_response(&pending, &response, finished_at);
         let _ = pending.respond_to.send(response);
         let _ = result_tx.send(result_snapshot).await;
     });

@@ -25,14 +25,16 @@ import {
   readConsoleLog,
   readProfileBrokerConfig,
   readProfileProxyConfig,
+  readProfileRuntimeSettings,
   reloadRemoteBrokers,
   restartConsole,
   selectProfile,
   writeProfileBrokerConfig,
   writeProfileProxyConfig,
+  writeProfileRuntimeSettings,
 } from '../../services/api';
 import { loadSettings } from '../../services/settings';
-import type { AppSettings, ConfigFilePayload, ProfileSummary, ThemeMode } from '../../shared/types';
+import type { AppSettings, ConfigFilePayload, ProfileRuntimeSettings, ProfileSummary, ThemeMode } from '../../shared/types';
 import { type ResolvedTheme } from '../../shared/theme';
 import { APPLY_THEME_MODE } from '../../app/appContext';
 import { AiInspectionSettings, ChatProviderSettings, ConfigCenterSettings, GeneralSettings, ShortcutsSettings } from './settings';
@@ -71,6 +73,16 @@ function cloneSettings(source: AppSettings): AppSettings {
   };
 }
 
+const DEFAULT_RUNTIME_SETTINGS: ProfileRuntimeSettings = {
+  remote_dir_alias: '',
+  remote_listen_port: 19307,
+  remote_control_port: 19308,
+};
+
+function cloneRuntimeSettings(source: ProfileRuntimeSettings): ProfileRuntimeSettings {
+  return { ...source };
+}
+
 const localSettings = ref<AppSettings>(cloneSettings(props.settings));
 const activeTab = ref<'general' | 'shortcuts' | 'chat' | 'ai' | 'config'>('general');
 const initialTheme = ref<ThemeMode>(props.settings.theme);
@@ -96,6 +108,9 @@ const proxyOriginal = ref('');
 const brokerOriginal = ref('');
 const proxyApplied = ref<string | null>(null);
 const brokerApplied = ref<string | null>(null);
+const runtimeSettings = ref<ProfileRuntimeSettings>(cloneRuntimeSettings(DEFAULT_RUNTIME_SETTINGS));
+const runtimeOriginal = ref<ProfileRuntimeSettings>(cloneRuntimeSettings(DEFAULT_RUNTIME_SETTINGS));
+const runtimeApplied = ref<ProfileRuntimeSettings | null>(null);
 const configLoaded = ref(false);
 const logModalOpen = ref(false);
 const logInProgress = ref(false);
@@ -145,6 +160,13 @@ const hasOpen = computed(() => props.isOpen);
 const isConfigTab = computed(() => activeTab.value === 'config');
 const proxyDirty = computed(() => proxyConfigText.value !== proxyOriginal.value);
 const brokerDirty = computed(() => brokerConfigText.value !== brokerOriginal.value);
+const runtimeDirty = computed(() => {
+  return (
+    runtimeSettings.value.remote_dir_alias !== runtimeOriginal.value.remote_dir_alias ||
+    runtimeSettings.value.remote_listen_port !== runtimeOriginal.value.remote_listen_port ||
+    runtimeSettings.value.remote_control_port !== runtimeOriginal.value.remote_control_port
+  );
+});
 const profileOptions = computed<SelectOption[]>(() =>
   profiles.value.map((profile) => ({ value: profile.name, label: profile.name }))
 );
@@ -288,6 +310,17 @@ function showConfigMessage(message: string, type: 'success' | 'error' | 'warning
     duration: 4000,
     type,
   });
+}
+
+function runtimeSettingsEqual(a: ProfileRuntimeSettings | null, b: ProfileRuntimeSettings | null) {
+  if (!a || !b) {
+    return false;
+  }
+  return (
+    a.remote_dir_alias === b.remote_dir_alias &&
+    a.remote_listen_port === b.remote_listen_port &&
+    a.remote_control_port === b.remote_control_port
+  );
 }
 
 function resetLogState() {
@@ -501,9 +534,10 @@ async function loadProfiles(syncSelection = true) {
 }
 
 async function loadConfigFiles(profileName: string, syncApplied = false) {
-  const [proxy, broker] = await Promise.all([
+  const [proxy, broker, runtime] = await Promise.all([
     readProfileProxyConfig(profileName),
     readProfileBrokerConfig(profileName),
+    readProfileRuntimeSettings(profileName),
   ]);
   proxyConfig.value = proxy;
   brokerConfig.value = broker;
@@ -511,9 +545,12 @@ async function loadConfigFiles(profileName: string, syncApplied = false) {
   brokerConfigText.value = broker.content;
   proxyOriginal.value = proxy.content;
   brokerOriginal.value = broker.content;
+  runtimeSettings.value = cloneRuntimeSettings(runtime);
+  runtimeOriginal.value = cloneRuntimeSettings(runtime);
   if (syncApplied) {
     proxyApplied.value = proxy.content;
     brokerApplied.value = broker.content;
+    runtimeApplied.value = cloneRuntimeSettings(runtime);
   }
 }
 
@@ -539,7 +576,7 @@ function requestProfileChange(value: string | null) {
   if (!value || configBusy.value) {
     return;
   }
-  if (proxyDirty.value || brokerDirty.value) {
+  if (proxyDirty.value || brokerDirty.value || runtimeDirty.value) {
     pendingProfile.value = value;
     switchProfileOpen.value = true;
     return;
@@ -579,7 +616,7 @@ function confirmProfileSwitch() {
 }
 
 function openCreateProfile() {
-  if (proxyDirty.value || brokerDirty.value) {
+  if (proxyDirty.value || brokerDirty.value || runtimeDirty.value) {
     showConfigMessage(t('settings.profile.createBlocked'), 'warning');
     return;
   }
@@ -641,7 +678,7 @@ function requestRefreshConfig() {
   if (configBusy.value || configLoading.value) {
     return;
   }
-  if (proxyDirty.value || brokerDirty.value) {
+  if (proxyDirty.value || brokerDirty.value || runtimeDirty.value) {
     refreshConfirmOpen.value = true;
     return;
   }
@@ -683,7 +720,7 @@ async function saveConfigFiles() {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
-  if (!proxyDirty.value && !brokerDirty.value) {
+  if (!proxyDirty.value && !brokerDirty.value && !runtimeDirty.value) {
     showConfigMessage(t('settings.config.noChanges'), 'info');
     return;
   }
@@ -696,9 +733,13 @@ async function saveConfigFiles() {
     if (brokerDirty.value) {
       tasks.push(writeProfileBrokerConfig(profileName, brokerConfigText.value));
     }
+    if (runtimeDirty.value) {
+      tasks.push(writeProfileRuntimeSettings(profileName, runtimeSettings.value));
+    }
     await Promise.all(tasks);
     proxyOriginal.value = proxyConfigText.value;
     brokerOriginal.value = brokerConfigText.value;
+    runtimeOriginal.value = cloneRuntimeSettings(runtimeSettings.value);
     showConfigMessage(t('settings.config.saved'));
   } catch (err) {
     showConfigMessage(t('settings.config.saveFailed', { error: String(err) }), 'error');
@@ -715,7 +756,7 @@ function requestApplyConfig() {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
-  if (proxyDirty.value || brokerDirty.value) {
+  if (proxyDirty.value || brokerDirty.value || runtimeDirty.value) {
     showConfigMessage(t('settings.config.applyBlocked'), 'warning');
     return;
   }
@@ -747,14 +788,16 @@ async function applyConfig() {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
-  if (proxyDirty.value || brokerDirty.value) {
+  if (proxyDirty.value || brokerDirty.value || runtimeDirty.value) {
     showConfigMessage(t('settings.config.applyBlocked'), 'warning');
     return;
   }
   const switching = profileName !== activeProfile.value;
   const proxyChanged = proxyApplied.value !== null && proxyApplied.value !== proxyConfigText.value;
   const brokerChanged = brokerApplied.value !== null && brokerApplied.value !== brokerConfigText.value;
-  const shouldRestartConsole = switching || proxyChanged;
+  const runtimeChanged =
+    runtimeApplied.value !== null && !runtimeSettingsEqual(runtimeApplied.value, runtimeSettings.value);
+  const shouldRestartConsole = switching || proxyChanged || runtimeChanged;
   const shouldReloadRemoteBrokers = brokerChanged;
   configBusy.value = true;
   try {
@@ -770,6 +813,7 @@ async function applyConfig() {
           : t('settings.apply.localApplied');
       await restartConsoleWithLog(message);
       proxyApplied.value = proxyConfigText.value;
+      runtimeApplied.value = cloneRuntimeSettings(runtimeSettings.value);
     }
     if (shouldReloadRemoteBrokers) {
       const message = switching
@@ -860,6 +904,9 @@ watch(
       brokerOriginal.value = '';
       proxyApplied.value = null;
       brokerApplied.value = null;
+      runtimeSettings.value = cloneRuntimeSettings(DEFAULT_RUNTIME_SETTINGS);
+      runtimeOriginal.value = cloneRuntimeSettings(DEFAULT_RUNTIME_SETTINGS);
+      runtimeApplied.value = null;
       logHasOutput.value = false;
       logOffset.value = 0;
       activeTab.value = 'general';
@@ -978,6 +1025,9 @@ watch(
                 v-model:broker-config-text="brokerConfigText"
                 :proxy-dirty="proxyDirty"
                 :broker-dirty="brokerDirty"
+                v-model:remote-dir-alias="runtimeSettings.remote_dir_alias"
+                v-model:remote-listen-port="runtimeSettings.remote_listen_port"
+                v-model:remote-control-port="runtimeSettings.remote_control_port"
                 :active-profile="activeProfile"
                 :resolved-theme="props.resolvedTheme"
                 @request-profile-change="requestProfileChange"

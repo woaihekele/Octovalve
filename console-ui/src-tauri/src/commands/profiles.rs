@@ -2,7 +2,7 @@ use tauri::{Manager, State};
 
 use crate::services::profiles;
 use crate::state::{ProfilesState, ProxyConfigState};
-use crate::types::{ProfilesStatus, ProxyConfigStatus};
+use crate::types::{ProfileRuntimeSettings, ProfilesStatus, ProxyConfigStatus};
 
 #[tauri::command]
 pub fn get_proxy_config_status(state: State<ProxyConfigState>) -> ProxyConfigStatus {
@@ -109,6 +109,37 @@ pub async fn write_profile_broker_config(
         let state_handle = app_handle.clone();
         let profiles_state = state_handle.state::<ProfilesState>();
         profiles::write_profile_broker_config(name, content, app_handle, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn read_profile_runtime_settings(
+    name: String,
+    app: tauri::AppHandle,
+) -> Result<ProfileRuntimeSettings, String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::read_profile_runtime_settings(name, profiles_state)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn write_profile_runtime_settings(
+    name: String,
+    settings: ProfileRuntimeSettings,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_handle = app_handle.clone();
+        let profiles_state = state_handle.state::<ProfilesState>();
+        profiles::write_profile_runtime_settings(name, settings, app_handle, profiles_state)
     })
     .await
     .map_err(|err| err.to_string())?

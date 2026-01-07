@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::sync::mpsc as std_mpsc;
 use std::thread;
+use system_utils::ssh::askpass_env;
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
 use tracing::{info, warn};
-use system_utils::ssh::askpass_env;
 
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;

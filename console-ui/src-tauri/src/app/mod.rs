@@ -18,6 +18,8 @@ pub fn run() {
             crate::commands::profiles::write_profile_proxy_config,
             crate::commands::profiles::read_profile_broker_config,
             crate::commands::profiles::write_profile_broker_config,
+            crate::commands::profiles::read_profile_runtime_settings,
+            crate::commands::profiles::write_profile_runtime_settings,
             crate::commands::profiles::get_proxy_config_status,
             crate::commands::config::read_proxy_config,
             crate::commands::config::write_proxy_config,

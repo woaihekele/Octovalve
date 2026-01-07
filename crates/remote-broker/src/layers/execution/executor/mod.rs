@@ -1,5 +1,5 @@
-mod pipeline;
 mod output;
+mod pipeline;
 mod process;
 mod shell;
 mod stream;

@@ -5,7 +5,8 @@ mod paths;
 
 pub use actions::{
     create_profile, delete_profile, read_profile_broker_config, read_profile_proxy_config,
-    select_profile, write_profile_broker_config, write_profile_proxy_config,
+    read_profile_runtime_settings, select_profile, write_profile_broker_config,
+    write_profile_proxy_config, write_profile_runtime_settings,
 };
 pub use index::{
     current_profile_entry, profile_entry_by_name, profiles_status, validate_profile_name,

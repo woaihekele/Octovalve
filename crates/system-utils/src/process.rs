@@ -21,10 +21,7 @@ pub async fn run_command_with_timeout(
         Err(_) => {
             let _ = child.kill().await;
             let _ = child.wait().await;
-            anyhow::bail!(
-                "{label} timed out after {}s",
-                command_timeout.as_secs()
-            )
+            anyhow::bail!("{label} timed out after {}s", command_timeout.as_secs())
         }
     };
     let mut stdout = Vec::new();

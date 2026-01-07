@@ -5,6 +5,7 @@ import type {
   AiRiskApiResponse,
   ConfigFilePayload,
   ConsoleEvent,
+  ProfileRuntimeSettings,
   ProfilesStatus,
   ServiceSnapshot,
   TargetInfo,
@@ -207,6 +208,20 @@ export async function writeProfileBrokerConfig(name: string, content: string) {
     throw new Error(t('api.tauriOnly.profiles'));
   }
   await invoke('write_profile_broker_config', { name, content });
+}
+
+export async function readProfileRuntimeSettings(name: string): Promise<ProfileRuntimeSettings> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.profiles'));
+  }
+  return invoke<ProfileRuntimeSettings>('read_profile_runtime_settings', { name });
+}
+
+export async function writeProfileRuntimeSettings(name: string, settings: ProfileRuntimeSettings) {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.profiles'));
+  }
+  await invoke('write_profile_runtime_settings', { name, settings });
 }
 
 export async function openConsoleStream(

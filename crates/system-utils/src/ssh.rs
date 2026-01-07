@@ -8,7 +8,10 @@ pub fn askpass_env(password: &str) -> anyhow::Result<Vec<(String, String)>> {
     let script = ensure_askpass_script()?;
     Ok(vec![
         ("OCTOVALVE_SSH_PASS".to_string(), password.to_string()),
-        ("SSH_ASKPASS".to_string(), script.to_string_lossy().to_string()),
+        (
+            "SSH_ASKPASS".to_string(),
+            script.to_string_lossy().to_string(),
+        ),
         ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
         ("DISPLAY".to_string(), "1".to_string()),
     ])

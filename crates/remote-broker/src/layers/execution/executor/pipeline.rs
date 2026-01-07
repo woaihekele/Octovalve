@@ -10,9 +10,9 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+use super::output::build_execution_outcome;
 use super::process::{apply_process_group, terminate_children};
 use super::stream::read_stream_capture;
-use super::output::build_execution_outcome;
 use super::ExecutionOutcome;
 
 pub(super) async fn execute_pipeline(

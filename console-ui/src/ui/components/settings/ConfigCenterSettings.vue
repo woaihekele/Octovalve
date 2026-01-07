@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NButton, NSelect, NSpin } from 'naive-ui';
+import { NButton, NInput, NInputNumber, NSelect, NSpin } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import MonacoEditor from '../MonacoEditor.vue';
@@ -21,6 +21,9 @@ const props = defineProps<{
   brokerConfigText: string;
   proxyDirty: boolean;
   brokerDirty: boolean;
+  remoteDirAlias: string;
+  remoteListenPort: number;
+  remoteControlPort: number;
   activeProfile: string | null;
   resolvedTheme: ResolvedTheme;
 }>();
@@ -35,6 +38,9 @@ const emit = defineEmits<{
   (e: 'apply'): void;
   (e: 'update:proxyConfigText', value: string): void;
   (e: 'update:brokerConfigText', value: string): void;
+  (e: 'update:remoteDirAlias', value: string): void;
+  (e: 'update:remoteListenPort', value: number): void;
+  (e: 'update:remoteControlPort', value: number): void;
 }>();
 
 const { t } = useI18n();
@@ -47,6 +53,34 @@ const proxyConfigModel = computed({
 const brokerConfigModel = computed({
   get: () => props.brokerConfigText,
   set: (value: string) => emit('update:brokerConfigText', value),
+});
+
+const remoteDirAliasModel = computed({
+  get: () => props.remoteDirAlias,
+  set: (value: string) => emit('update:remoteDirAlias', value),
+});
+
+const remoteListenPortModel = computed({
+  get: () => props.remoteListenPort,
+  set: (value: number | null) => {
+    if (value !== null) {
+      emit('update:remoteListenPort', value);
+    }
+  },
+});
+
+const remoteControlPortModel = computed({
+  get: () => props.remoteControlPort,
+  set: (value: number | null) => {
+    if (value !== null) {
+      emit('update:remoteControlPort', value);
+    }
+  },
+});
+
+const remoteDirPreview = computed(() => {
+  const suffix = props.remoteDirAlias.trim();
+  return suffix ? `~/.octovalve_${suffix}` : '~/.octovalve';
 });
 
 const statusText = computed(() => {
@@ -96,6 +130,50 @@ const statusText = computed(() => {
             {{ $t('common.delete') }}
           </NButton>
         </div>
+      </div>
+
+      <div class="rounded-lg border border-border/50 bg-panel-muted/50 p-3 text-sm">
+        <div class="font-medium">{{ $t('settings.profile.remote.title') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.help') }}</div>
+        <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div class="flex flex-col gap-1">
+            <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.aliasLabel') }}</div>
+            <NInput
+              v-model:value="remoteDirAliasModel"
+              size="small"
+              :placeholder="$t('settings.profile.remote.aliasPlaceholder')"
+              :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+            />
+            <div class="text-[11px] text-foreground-muted">
+              {{ $t('settings.profile.remote.dirPreview', { path: remoteDirPreview }) }}
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.listenPortLabel') }}</div>
+            <NInputNumber
+              v-model:value="remoteListenPortModel"
+              size="small"
+              :min="1"
+              :max="65535"
+              :precision="0"
+              :show-button="false"
+              :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+            />
+          </div>
+          <div class="flex flex-col gap-1">
+            <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.controlPortLabel') }}</div>
+            <NInputNumber
+              v-model:value="remoteControlPortModel"
+              size="small"
+              :min="1"
+              :max="65535"
+              :precision="0"
+              :show-button="false"
+              :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+            />
+          </div>
+        </div>
+        <div class="mt-2 text-xs text-foreground-muted">{{ $t('settings.profile.remote.portHint') }}</div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">

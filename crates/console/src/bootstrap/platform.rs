@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use crate::tunnel::TargetRuntime;
 
-use super::{BootstrapConfig, UnsupportedRemotePlatform};
 use super::ssh::run_ssh_capture;
 use super::utils::join_remote;
+use super::{BootstrapConfig, UnsupportedRemotePlatform};
 
 pub(crate) async fn resolve_remote_path(
     target: &TargetRuntime,

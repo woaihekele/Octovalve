@@ -262,14 +262,8 @@ async fn run_target_worker(
                     let error = err.to_string();
                     let use_grace = !tracker.snapshot_received
                         && in_connect_grace(ever_snapshot, connect_grace_started);
-                    handle_connect_failure(
-                        &runtime.name,
-                        error,
-                        use_grace,
-                        &state,
-                        &event_tx,
-                    )
-                    .await;
+                    handle_connect_failure(&runtime.name, error, use_grace, &state, &event_tx)
+                        .await;
                     warn!(target = %runtime.name, error = %err, "control session ended");
                     if !tracker.snapshot_received {
                         warn!(

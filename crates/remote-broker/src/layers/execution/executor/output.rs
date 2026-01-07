@@ -12,7 +12,11 @@ pub(super) fn build_execution_outcome(
     for (bytes, truncated) in stderr_chunks {
         append_output(&mut stderr, &bytes, truncated);
     }
-    let stderr = if stderr.is_empty() { None } else { Some(stderr) };
+    let stderr = if stderr.is_empty() {
+        None
+    } else {
+        Some(stderr)
+    };
     let result = ExecutionResult {
         exit_code,
         stdout,
