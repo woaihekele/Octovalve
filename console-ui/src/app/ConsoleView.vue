@@ -45,6 +45,9 @@ locale.value = settings.value.language;
 const isSettingsOpen = ref(false);
 const isChatOpen = ref(false);
 const isFileDragging = ref(false);
+let dragIdleTimer: number | null = null;
+let lastFileDragAt = 0;
+const DRAG_IDLE_TIMEOUT = 200;
 const notification = ref<{ message: string; count?: number; target?: string } | null>(null);
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
@@ -186,6 +189,25 @@ function showFileDropHint() {
 
 function clearFileDropHint() {
   isFileDragging.value = false;
+  if (dragIdleTimer !== null) {
+    window.clearTimeout(dragIdleTimer);
+    dragIdleTimer = null;
+  }
+}
+
+function markFileDragActive() {
+  lastFileDragAt = Date.now();
+  if (dragIdleTimer !== null) {
+    window.clearTimeout(dragIdleTimer);
+  }
+  dragIdleTimer = window.setTimeout(() => {
+    if (!isFileDragging.value) {
+      return;
+    }
+    if (Date.now() - lastFileDragAt >= DRAG_IDLE_TIMEOUT) {
+      clearFileDropHint();
+    }
+  }, DRAG_IDLE_TIMEOUT);
 }
 
 function isDragLeavingWindow(event: DragEvent) {
@@ -202,6 +224,7 @@ function handleFileDragEnter(event: DragEvent) {
     return;
   }
   showFileDropHint();
+  markFileDragActive();
 }
 
 function handleFileDragOver(event: DragEvent) {
@@ -209,6 +232,7 @@ function handleFileDragOver(event: DragEvent) {
     return;
   }
   showFileDropHint();
+  markFileDragActive();
 }
 
 function handleFileDragLeave(event: DragEvent) {
@@ -1003,6 +1027,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('dragleave', handleFileDragLeave, true);
   window.removeEventListener('drop', handleFileDrop, true);
   window.removeEventListener('dragend', handleFileDragEnd, true);
+  if (dragIdleTimer !== null) {
+    window.clearTimeout(dragIdleTimer);
+    dragIdleTimer = null;
+  }
 });
 
 watch(selectedTargetName, (value) => {
