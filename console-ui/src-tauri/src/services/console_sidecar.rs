@@ -29,16 +29,19 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     fs::create_dir_all(&config_dir).map_err(|err| err.to_string())?;
 
     let profiles = app.state::<ProfilesState>().0.lock().unwrap().clone();
-    let (remote_dir, remote_listen_addr, remote_control_addr) =
+    let (remote_dir, remote_listen_addr, remote_control_addr, remote_audit_dir) =
         match current_profile_entry(&profiles) {
             Ok(profile) => {
                 let listen_port = normalize_port(profile.remote_listen_port, 19307);
                 let control_port = normalize_port(profile.remote_control_port, 19308);
                 sync_proxy_config_runtime_ports(proxy_config, listen_port, control_port)?;
+                let remote_dir = build_remote_dir(&profile.remote_dir_alias);
+                let remote_audit_dir = format!("{remote_dir}/logs");
                 (
-                    build_remote_dir(&profile.remote_dir_alias),
+                    remote_dir,
                     format!("127.0.0.1:{listen_port}"),
                     format!("127.0.0.1:{control_port}"),
+                    remote_audit_dir,
                 )
             }
             Err(err) => {
@@ -50,6 +53,7 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
                     "~/.octovalve".to_string(),
                     "127.0.0.1:19307".to_string(),
                     "127.0.0.1:19308".to_string(),
+                    "~/.octovalve/logs".to_string(),
                 )
             }
         };
@@ -92,6 +96,8 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
         remote_listen_addr,
         "--remote-control-addr".to_string(),
         remote_control_addr,
+        "--remote-audit-dir".to_string(),
+        remote_audit_dir,
         "--broker-bin".to_string(),
         broker_bin.to_string_lossy().to_string(),
         "--broker-config".to_string(),

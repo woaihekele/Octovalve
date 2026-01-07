@@ -115,7 +115,53 @@ pub(crate) async fn bootstrap_remote_broker(
         run_ssh_capture(target, &check_cmd)
     })
     .await?;
-    if check_output.trim() != "running" {
+
+    let mut start_remote = check_output.trim() != "running";
+    if !start_remote {
+        let inspect_cmd = format!(
+            "pid=$(pgrep -f {} | head -n 1 || true); if [ -n \"$pid\" ] && [ -r \"/proc/$pid/cmdline\" ]; then tr '\\\\0' ' ' < \"/proc/$pid/cmdline\"; else ps -p \"$pid\" -o args= 2>/dev/null || true; fi",
+            shell_escape(&pgrep_pattern)
+        );
+        let cmdline = run_bootstrap_step(target, "inspect_remote_broker", || {
+            run_ssh_capture(target, &inspect_cmd)
+        })
+        .await
+        .unwrap_or_default();
+
+        let expected_args = [
+            format!("--listen-addr {}", bootstrap.remote_listen_addr),
+            format!("--control-addr {}", bootstrap.remote_control_addr),
+            format!("--config {}", remote_config),
+            format!("--audit-dir {}", remote_audit_dir),
+        ];
+        let mut needs_restart = cmdline.is_empty();
+        if !needs_restart {
+            needs_restart = expected_args.iter().any(|needle| !cmdline.contains(needle));
+        }
+        if needs_restart {
+            info!(
+                event = "bootstrap.remote_broker.restart",
+                target = %target.name,
+                cmdline = %cmdline,
+                audit_dir = %remote_audit_dir,
+                config = %remote_config,
+                "remote broker running with stale args; restarting"
+            );
+            run_bootstrap_step(target, "stop_remote_broker", || {
+                stop_remote_broker(target, bootstrap)
+            })
+            .await?;
+            start_remote = true;
+        } else {
+            info!(
+                event = "bootstrap.skip_start",
+                target = %target.name,
+                "remote broker already running"
+            );
+        }
+    }
+
+    if start_remote {
         let start_cmd = format!(
             "setsid {} --listen-addr {} --control-addr {} --headless --config {} --audit-dir {} --log-to-stderr </dev/null >> {} 2>&1 &",
             shell_escape(&remote_bin),
@@ -129,12 +175,6 @@ pub(crate) async fn bootstrap_remote_broker(
             run_ssh(target, &start_cmd)
         })
         .await?;
-    } else {
-        info!(
-            event = "bootstrap.skip_start",
-            target = %target.name,
-            "remote broker already running"
-        );
     }
     info!(event = "bootstrap.ready", target = %target.name, "remote broker ready");
 
