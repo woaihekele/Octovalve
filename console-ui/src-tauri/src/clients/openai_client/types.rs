@@ -16,9 +16,30 @@ fn default_chat_path() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ChatMessageContent {
+    Text(String),
+    Parts(Vec<ChatMessageContentPart>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatMessageContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ChatMessageImageUrl },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessageImageUrl {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    pub content: ChatMessageContent,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]

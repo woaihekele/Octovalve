@@ -8,9 +8,21 @@ export interface OpenAiConfig {
   chatPath?: string;
 }
 
+export type OpenAiContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image_url';
+      image_url: {
+        url: string;
+        detail?: 'auto' | 'low' | 'high';
+      };
+    };
+
+export type OpenAiMessageContent = string | OpenAiContentPart[];
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
+  content: OpenAiMessageContent;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 }

@@ -15,7 +15,7 @@ import type {
 } from '../types';
 import type { AuthMethod, AcpEvent, AgentCapabilities, AcpContentBlock } from '../services/acpService';
 import { acpService } from '../services/acpService';
-import { openaiService, type OpenAiConfig, type ChatStreamEvent } from '../services/openaiService';
+import { openaiService, type OpenAiConfig, type ChatStreamEvent, type OpenAiContentPart } from '../services/openaiService';
 import { fetchTargets } from '../../../services/api';
 import type { TargetInfo } from '../../../shared/types';
 import { i18n } from '../../../i18n';
@@ -67,7 +67,7 @@ export const useChatStore = defineStore('chat', () => {
     if (provider.value === 'acp') {
       return acpSupportsImages.value;
     }
-    return false;
+    return true;
   });
 
   let pendingAssistantContent = '';
@@ -597,6 +597,21 @@ export const useChatStore = defineStore('chat', () => {
               };
             });
             await openaiService.addMessage({ role: 'assistant', content, tool_calls });
+          } else if (msg.role === 'user') {
+            const parts: OpenAiContentPart[] = [];
+            if (content) {
+              parts.push({ type: 'text', text: content });
+            }
+            if (Array.isArray(msg.images)) {
+              for (const url of msg.images) {
+                if (typeof url === 'string' && url.trim()) {
+                  parts.push({ type: 'image_url', image_url: { url } });
+                }
+              }
+            }
+            if (parts.length > 0) {
+              await openaiService.addMessage({ role: 'user', content: parts });
+            }
           } else if (content) {
             await openaiService.addMessage({ role: msg.role, content });
           }
@@ -1327,6 +1342,21 @@ export const useChatStore = defineStore('chat', () => {
       .filter((block): block is AcpContentBlock => block !== null);
   }
 
+  function toOpenAiContentParts(blocks: PromptBlock[]): OpenAiContentPart[] {
+    return blocks
+      .map((block) => {
+        if (block.type === 'text') {
+          return { type: 'text', text: block.text } as const;
+        }
+        if (block.type === 'image') {
+          const url = block.previewUrl ?? `data:${block.mimeType};base64,${block.data}`;
+          return { type: 'image_url', image_url: { url } } as const;
+        }
+        return null;
+      })
+      .filter((part): part is OpenAiContentPart => part !== null);
+  }
+
   function toDisplayImages(images?: ImageAttachment[]): string[] | undefined {
     if (!images || images.length === 0) {
       return undefined;
@@ -1357,12 +1387,13 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendOpenaiMessage(options: SendMessageOptions) {
     const content = options.content ?? '';
-    const promptText = buildTextPrompt(options);
     if (!openaiInitialized.value) {
       throw new Error('OpenAI not initialized');
     }
 
-    if (!promptText.trim()) {
+    const blocks = buildPromptBlocks(options);
+    const openaiContent = toOpenAiContentParts(blocks);
+    if (openaiContent.length === 0) {
       return;
     }
 
@@ -1388,7 +1419,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Add user message to OpenAI context
     await enqueueOpenaiContextOp(async () => {
-      await openaiService.addMessage({ role: 'user', content: promptText });
+      await openaiService.addMessage({ role: 'user', content: openaiContent });
     });
 
     await openaiContextQueue;

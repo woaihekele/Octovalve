@@ -11,7 +11,10 @@ use tokio::sync::{watch, Mutex};
 use crate::services::http_utils::join_base_path;
 use crate::services::logging::append_log_line;
 
-use super::types::{ChatMessage, ChatStreamEvent, FunctionCall, OpenAiConfig, Tool, ToolCall};
+use super::types::{
+    ChatMessage, ChatMessageContent, ChatMessageContentPart, ChatStreamEvent, FunctionCall,
+    OpenAiConfig, Tool, ToolCall,
+};
 
 pub struct OpenAiClient {
     config: OpenAiConfig,
@@ -104,11 +107,25 @@ impl OpenAiClient {
             tools.len()
         ));
         for (idx, msg) in messages.iter().enumerate() {
-            let content_len = msg.content.len();
+            let (content_kind, content_parts, content_len) = match &msg.content {
+                ChatMessageContent::Text(text) => ("text", 0usize, text.len()),
+                ChatMessageContent::Parts(parts) => {
+                    let mut total_len = 0usize;
+                    for part in parts {
+                        match part {
+                            ChatMessageContentPart::Text { text } => total_len += text.len(),
+                            ChatMessageContentPart::ImageUrl { image_url } => {
+                                total_len += image_url.url.len()
+                            }
+                        }
+                    }
+                    ("parts", parts.len(), total_len)
+                }
+            };
             let tool_calls_len = msg.tool_calls.as_ref().map(|v| v.len()).unwrap_or(0);
             self.log_line(&format!(
-                "[openai_send] msg[{}] role={} content_len={} tool_calls={}",
-                idx, msg.role, content_len, tool_calls_len
+                "[openai_send] msg[{}] role={} content_kind={} content_parts={} content_len={} tool_calls={}",
+                idx, msg.role, content_kind, content_parts, content_len, tool_calls_len
             ));
         }
 
@@ -265,14 +282,20 @@ impl OpenAiClient {
             return messages;
         }
         let already_present = messages.first().map_or(false, |message| {
-            message.role == "system" && message.content.trim() == trimmed
+            if message.role != "system" {
+                return false;
+            }
+            match &message.content {
+                ChatMessageContent::Text(content) => content.trim() == trimmed,
+                ChatMessageContent::Parts(_) => false,
+            }
         });
         if !already_present {
             messages.insert(
                 0,
                 ChatMessage {
                     role: "system".to_string(),
-                    content: trimmed.to_string(),
+                    content: ChatMessageContent::Text(trimmed.to_string()),
                     tool_calls: None,
                     tool_call_id: None,
                 },
@@ -396,7 +419,7 @@ impl OpenAiClient {
         let mut msgs = self.messages.lock().await;
         msgs.push(ChatMessage {
             role: "assistant".to_string(),
-            content: full_content.to_string(),
+            content: ChatMessageContent::Text(full_content.to_string()),
             tool_calls: if tool_calls.is_empty() {
                 None
             } else {
