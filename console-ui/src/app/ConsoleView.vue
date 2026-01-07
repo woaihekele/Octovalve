@@ -1033,11 +1033,13 @@ function refreshAiRisk(payload: { target: string; id: string }) {
   void refreshSnapshot(payload.target);
 }
 
-function handleSettingsSave(value: AppSettings) {
+function handleSettingsSave(value: AppSettings, close = true) {
   const previousSettings = settings.value;
   settings.value = value;
-  isSettingsOpen.value = false;
-  clearSettingsPreview();
+  if (close) {
+    isSettingsOpen.value = false;
+    clearSettingsPreview();
+  }
   void refreshChatProviderFromSettings(previousSettings, value);
   void refreshQuickProfiles();
 }

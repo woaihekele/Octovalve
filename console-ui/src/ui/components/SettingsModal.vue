@@ -49,7 +49,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'save', settings: AppSettings): void;
+  (e: 'save', settings: AppSettings, close?: boolean): void;
   (e: 'preview', key: 'language' | 'uiScale' | 'terminalScale', value: unknown): void;
 }>();
 
@@ -286,8 +286,9 @@ function triggerConfigHighlight() {
   }, 4000);
 }
 
-function save() {
-  emit('save', cloneSettings(localSettings.value));
+function save(close?: boolean | MouseEvent) {
+  const shouldClose = typeof close === 'boolean' ? close : true;
+  emit('save', cloneSettings(localSettings.value), shouldClose);
 }
 
 function updateSetting(key: keyof AppSettings, value: unknown) {
@@ -715,6 +716,9 @@ async function saveConfigFiles() {
   if (configBusy.value || configLoading.value) {
     return;
   }
+
+  save(false);
+
   const profileName = selectedProfile.value;
   if (!profileName) {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
@@ -752,6 +756,9 @@ function requestApplyConfig() {
   if (configBusy.value || configLoading.value) {
     return;
   }
+
+  save(false);
+
   if (!selectedProfile.value) {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;

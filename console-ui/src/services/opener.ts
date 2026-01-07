@@ -49,18 +49,32 @@ export function ensureExternalLinkInterceptor(): void {
     return;
   }
 
+  const resolveEventElement = (target: EventTarget | null): Element | null => {
+    if (!target) {
+      return null;
+    }
+    if (target instanceof Element) {
+      return target;
+    }
+    if (target instanceof Node) {
+      return target.parentElement;
+    }
+    return null;
+  };
+
   const handler = (event: MouseEvent) => {
     if (event.defaultPrevented) {
       return;
     }
-    if (!(event.target instanceof Element)) {
+    const element = resolveEventElement(event.target);
+    if (!element) {
       return;
     }
-    const anchor = event.target.closest('a');
+    const anchor = element.closest('a');
     if (!(anchor instanceof HTMLAnchorElement)) {
       return;
     }
-    const href = anchor.getAttribute('href');
+    const href = anchor.getAttribute('href') || anchor.href;
     if (!href || !isAllowedExternalUrl(href)) {
       return;
     }
@@ -74,4 +88,3 @@ export function ensureExternalLinkInterceptor(): void {
   state.installed = true;
   state.uninstall = () => document.removeEventListener('click', handler, true);
 }
-
