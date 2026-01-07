@@ -45,7 +45,6 @@ locale.value = settings.value.language;
 const isSettingsOpen = ref(false);
 const isChatOpen = ref(false);
 const isFileDragging = ref(false);
-const fileDragDepth = ref(0);
 const notification = ref<{ message: string; count?: number; target?: string } | null>(null);
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
@@ -139,7 +138,7 @@ const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
 const chatInputLocked = computed(() => providerSwitching.value);
-const showChatDropHint = computed(() => isFileDragging.value && isChatOpen.value);
+const showChatDropHint = computed(() => isFileDragging.value);
 const pendingProviderLabel = computed(() => {
   if (pendingProvider.value === 'acp') {
     return t('chat.provider.acpLabel');
@@ -187,14 +186,21 @@ function showFileDropHint() {
 
 function clearFileDropHint() {
   isFileDragging.value = false;
-  fileDragDepth.value = 0;
+}
+
+function isDragLeavingWindow(event: DragEvent) {
+  if (event.relatedTarget !== null) {
+    return false;
+  }
+  const x = event.clientX;
+  const y = event.clientY;
+  return x <= 0 || y <= 0 || x >= window.innerWidth || y >= window.innerHeight;
 }
 
 function handleFileDragEnter(event: DragEvent) {
   if (!isFileDragEvent(event)) {
     return;
   }
-  fileDragDepth.value += 1;
   showFileDropHint();
 }
 
@@ -202,25 +208,15 @@ function handleFileDragOver(event: DragEvent) {
   if (!isFileDragEvent(event)) {
     return;
   }
-  if (fileDragDepth.value === 0) {
-    fileDragDepth.value = 1;
-  }
   showFileDropHint();
 }
 
 function handleFileDragLeave(event: DragEvent) {
-  if (event.relatedTarget === null) {
-    const target = event.target as HTMLElement | null;
-    if (target === document.documentElement || target === document.body) {
-      clearFileDropHint();
-      return;
-    }
+  if (!isFileDragEvent(event)) {
+    return;
   }
-  if (fileDragDepth.value > 0) {
-    fileDragDepth.value = Math.max(0, fileDragDepth.value - 1);
-  }
-  if (fileDragDepth.value === 0) {
-    isFileDragging.value = false;
+  if (isDragLeavingWindow(event)) {
+    clearFileDropHint();
   }
 }
 
@@ -1117,7 +1113,6 @@ watch(
       class="fixed top-0 left-0 right-0 h-7 z-[4000] pointer-events-auto"
       data-tauri-drag-region
     ></div>
-    <div v-show="isFileDragging" class="file-drop-overlay"></div>
     <ConsoleLeftPane
       ref="leftPaneRef"
       :targets="targets"
@@ -1208,13 +1203,3 @@ watch(
 
   </div>
 </template>
-
-<style scoped lang="scss">
-.file-drop-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.18);
-  z-index: 1500;
-  pointer-events: none;
-}
-</style>

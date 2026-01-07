@@ -13,15 +13,15 @@
       class="chat-panel__resizer"
       @mousedown.prevent="startResize"
     ></div>
+    <div v-if="showDropHint" class="chat-panel__drop-overlay">
+      <div class="chat-panel__drop-hint">{{ $t('chat.dropHint') }}</div>
+    </div>
     <div
       class="chat-panel__content"
       @dragenter.prevent="handlePanelDragOver"
       @dragover.prevent="handlePanelDragOver"
       @drop.prevent="handlePanelDrop"
     >
-      <div v-if="showDropHint" class="chat-panel__drop-hint">
-        {{ $t('chat.dropHint') }}
-      </div>
       <div class="chat-panel__header">
         <div class="chat-panel__header-left">
           <div class="chat-panel__header-info">
@@ -340,6 +340,17 @@ watch(
     box-shadow: inset 0 0 0 1px rgba(var(--color-accent), 0.35);
   }
 
+  &__drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   &__resizer {
     position: absolute;
     left: 0;
@@ -374,18 +385,15 @@ watch(
   }
 
   &__drop-hint {
-    position: absolute;
-    top: 10px;
-    left: 12px;
-    right: 12px;
-    z-index: 3;
-    padding: 6px 10px;
+    padding: 10px 16px;
     border-radius: 8px;
-    border: 1px solid rgb(var(--color-border));
-    background: rgb(var(--color-panel-muted));
+    border: 1px solid rgba(var(--color-accent), 0.6);
+    background: rgb(var(--color-panel));
     color: rgb(var(--color-text));
-    font-size: 12px;
+    font-size: 15px;
     text-align: center;
+    font-weight: 600;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.35);
     pointer-events: none;
   }
 
