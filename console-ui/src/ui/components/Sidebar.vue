@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { NSelect, type SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import type { TargetInfo } from '../../shared/types';
+import type { ProfileSummary, TargetInfo } from '../../shared/types';
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 
@@ -9,14 +11,23 @@ const props = defineProps<{
   selectedTargetName: string | null;
   pendingTotal: number;
   connectionState: ConnectionState;
+  profiles: ProfileSummary[];
+  activeProfile: string | null;
+  profilesEnabled: boolean;
+  profileLoading?: boolean;
+  profileSwitching?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'select', name: string): void;
   (e: 'open-settings'): void;
+  (e: 'switch-profile', name: string): void;
 }>();
 
 const { t } = useI18n();
+const profileOptions = computed<SelectOption[]>(() =>
+  props.profiles.map((profile) => ({ label: profile.name, value: profile.name }))
+);
 
 function resolveStatus(target: TargetInfo) {
   if (target.status === 'ready') {
@@ -94,9 +105,21 @@ function statusClass(target: TargetInfo) {
       </button>
     </div>
 
-    <div class="p-4 border-t border-border flex items-center justify-between text-xs text-foreground-muted">
+    <div class="p-4 border-t border-border flex items-center gap-2 text-xs text-foreground-muted">
+      <n-select
+        v-if="profilesEnabled"
+        :value="activeProfile"
+        :options="profileOptions"
+        size="small"
+        :consistent-menu-width="false"
+        :loading="profileLoading"
+        :disabled="profileLoading || profileSwitching || profileOptions.length === 0"
+        :placeholder="$t('settings.profile.placeholder')"
+        class="sidebar__profile-select"
+        @update:value="(value) => emit('switch-profile', value as string)"
+      />
       <button
-        class="p-2 rounded-full border border-border text-foreground-muted hover:text-foreground hover:border-accent/40 transition-colors"
+        class="ml-auto p-2 rounded-full border border-border text-foreground-muted hover:text-foreground hover:border-accent/40 transition-colors"
         @click="emit('open-settings')"
         :aria-label="$t('settings.title')"
         :title="$t('settings.title')"
@@ -111,3 +134,19 @@ function statusClass(target: TargetInfo) {
     </div>
   </aside>
 </template>
+
+<style scoped>
+.sidebar__profile-select {
+  width: 150px;
+}
+
+.sidebar__profile-select :deep(.n-base-selection) {
+  --n-height: 28px;
+  --n-font-size: 12px;
+  --n-border: 1px solid rgb(var(--color-border));
+  --n-border-hover: 1px solid rgba(var(--color-accent), 0.5);
+  --n-border-active: 1px solid rgb(var(--color-accent));
+  --n-border-focus: 1px solid rgb(var(--color-accent));
+  --n-box-shadow-focus: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+</style>

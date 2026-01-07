@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NButton, NCard, NModal, NSelect } from 'naive-ui';
+import { NButton, NCard, NModal, NSelect, NSpin } from 'naive-ui';
+import { Terminal, type ITheme } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import { isTauri } from '@tauri-apps/api/core';
 import {
   approveCommand,
@@ -13,6 +16,7 @@ import {
   listProfiles,
   logUiEvent,
   openConsoleStream,
+  readConsoleLog,
   restartConsole,
   selectProfile,
   validateStartupConfig,
@@ -42,6 +46,7 @@ const selectedTargetName = ref<string | null>(null);
 const settings = ref(loadSettings());
 const { locale, t } = useI18n({ useScope: 'global' });
 locale.value = settings.value.language;
+const tauriAvailable = isTauri();
 const isSettingsOpen = ref(false);
 const isChatOpen = ref(false);
 const isFileDragging = ref(false);
@@ -70,6 +75,10 @@ const previewLanguage = ref<AppLanguage | null>(null);
 const previewUiScale = ref<number | null>(null);
 const previewTerminalScale = ref<number | null>(null);
 const STARTUP_SESSION_KEY = 'octovalve.startup.completed';
+const quickProfiles = ref<ProfileSummary[]>([]);
+const quickProfileCurrent = ref<string | null>(null);
+const quickProfileLoading = ref(false);
+const quickProfileSwitching = ref(false);
 type ConsoleLeftPaneExpose = {
   focusActiveTerminal: () => void;
   blurActiveTerminal: () => void;
@@ -151,6 +160,25 @@ const pendingProviderLabel = computed(() => {
   }
   return t('common.unknown');
 });
+const switchLogOpen = ref(false);
+const switchLogInProgress = ref(false);
+const switchLogStatusMessage = ref('');
+const switchLogHasOutput = ref(false);
+const switchLogOffset = ref(0);
+const switchLogTerminalRef = ref<HTMLDivElement | null>(null);
+const SWITCH_LOG_BASE_FONT_SIZE = 12;
+let switchLogPollTimer: number | null = null;
+let switchLogTerminal: Terminal | null = null;
+let switchLogFitAddon: FitAddon | null = null;
+let switchLogResizeObserver: ResizeObserver | null = null;
+const switchLogTitle = computed(() => t('settings.log.title.console'));
+const switchLogFooterText = computed(() =>
+  switchLogInProgress.value
+    ? t('settings.log.footer.console.pending')
+    : t('settings.log.footer.console.done')
+);
+const quickProfileConfirmOpen = ref(false);
+const pendingQuickProfile = ref<string | null>(null);
 
 function isAcpAuthTimeout(err: unknown) {
   const message = String(err).toLowerCase();
@@ -253,6 +281,235 @@ function handleFileDrop(event: DragEvent) {
     return;
   }
   clearFileDropHint();
+}
+
+function resetSwitchLogState() {
+  switchLogHasOutput.value = false;
+  switchLogOffset.value = 0;
+  switchLogStatusMessage.value = '';
+  switchLogTerminal?.reset();
+}
+
+function resolveRgbVar(name: string, fallback: string) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return `rgb(${fallback})`;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = raw || fallback;
+  if (value.startsWith('rgb')) {
+    return value;
+  }
+  const normalized = value.replace(/\s+/g, ', ');
+  return `rgb(${normalized})`;
+}
+
+function resolveRgbaVar(name: string, fallback: string, alpha: number) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return `rgba(${fallback.replace(/\s+/g, ', ')}, ${alpha})`;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = raw || fallback;
+  if (value.startsWith('rgb')) {
+    const match = value.match(/rgba?\(([^)]+)\)/);
+    if (match) {
+      return `rgba(${match[1]}, ${alpha})`;
+    }
+    return `rgba(${fallback.replace(/\s+/g, ', ')}, ${alpha})`;
+  }
+  const normalized = value.replace(/\s+/g, ', ');
+  return `rgba(${normalized}, ${alpha})`;
+}
+
+function resolveSwitchLogTheme(): ITheme {
+  return {
+    background: resolveRgbVar('--color-panel-muted', '30 41 59'),
+    foreground: resolveRgbVar('--color-text', '226 232 240'),
+    cursor: resolveRgbVar('--color-accent', '99 102 241'),
+    selectionBackground: resolveRgbaVar('--color-accent', '99 102 241', 0.35),
+  };
+}
+
+function resolveSwitchLogFontSize() {
+  return SWITCH_LOG_BASE_FONT_SIZE * (settings.value.terminalScale || 1);
+}
+
+function ensureSwitchLogTerminal() {
+  if (switchLogTerminal || !switchLogTerminalRef.value) {
+    return;
+  }
+  switchLogTerminal = new Terminal({
+    disableStdin: true,
+    convertEol: true,
+    fontSize: resolveSwitchLogFontSize(),
+    fontFamily: 'Menlo, Monaco, \"Courier New\", monospace',
+    theme: resolveSwitchLogTheme(),
+    scrollback: 2000,
+  });
+  switchLogFitAddon = new FitAddon();
+  switchLogTerminal.loadAddon(switchLogFitAddon);
+  switchLogTerminal.open(switchLogTerminalRef.value);
+  switchLogFitAddon.fit();
+  switchLogResizeObserver = new ResizeObserver(() => {
+    switchLogFitAddon?.fit();
+  });
+  switchLogResizeObserver.observe(switchLogTerminalRef.value);
+}
+
+function applySwitchLogTheme() {
+  if (!switchLogTerminal) {
+    return;
+  }
+  switchLogTerminal.options.theme = resolveSwitchLogTheme();
+  if (switchLogTerminal.rows > 0) {
+    switchLogTerminal.refresh(0, switchLogTerminal.rows - 1);
+  }
+}
+
+function applySwitchLogScale() {
+  if (!switchLogTerminal) {
+    return;
+  }
+  switchLogTerminal.options.fontSize = resolveSwitchLogFontSize();
+  switchLogFitAddon?.fit();
+  if (switchLogTerminal.rows > 0) {
+    switchLogTerminal.refresh(0, switchLogTerminal.rows - 1);
+  }
+}
+
+async function pollSwitchLog() {
+  try {
+    const chunk = await readConsoleLog(switchLogOffset.value, 4096);
+    if (chunk.content) {
+      switchLogTerminal?.write(chunk.content);
+      switchLogHasOutput.value = true;
+    }
+    switchLogOffset.value = chunk.nextOffset;
+  } catch {
+    // ignore polling errors
+  }
+}
+
+async function startSwitchLogPolling() {
+  resetSwitchLogState();
+  switchLogInProgress.value = true;
+  switchLogOpen.value = true;
+  await nextTick();
+  ensureSwitchLogTerminal();
+  applySwitchLogTheme();
+  switchLogFitAddon?.fit();
+  try {
+    const chunk = await readConsoleLog(0, 0);
+    switchLogOffset.value = chunk.nextOffset;
+  } catch {
+    switchLogOffset.value = 0;
+  }
+  await pollSwitchLog();
+  if (switchLogPollTimer !== null) {
+    return;
+  }
+  switchLogPollTimer = window.setInterval(() => {
+    void pollSwitchLog();
+  }, 800);
+}
+
+function stopSwitchLogPolling() {
+  if (switchLogPollTimer !== null) {
+    window.clearInterval(switchLogPollTimer);
+    switchLogPollTimer = null;
+  }
+  switchLogInProgress.value = false;
+}
+
+function disposeSwitchLogTerminal() {
+  if (switchLogResizeObserver) {
+    switchLogResizeObserver.disconnect();
+    switchLogResizeObserver = null;
+  }
+  switchLogFitAddon = null;
+  switchLogTerminal?.dispose();
+  switchLogTerminal = null;
+}
+
+function closeSwitchLogModal() {
+  if (switchLogInProgress.value) {
+    return;
+  }
+  switchLogOpen.value = false;
+}
+
+async function refreshQuickProfiles() {
+  if (!tauriAvailable) {
+    return;
+  }
+  quickProfileLoading.value = true;
+  try {
+    const data = await listProfiles();
+    quickProfiles.value = data.profiles;
+    quickProfileCurrent.value = data.current;
+  } catch (err) {
+    const message = t('settings.profile.loadFailed', { error: String(err) });
+    showNotification(message);
+    reportUiError('load profiles failed', err);
+  } finally {
+    quickProfileLoading.value = false;
+  }
+}
+
+async function handleQuickProfileSwitch(profileName: string) {
+  if (!tauriAvailable) {
+    return;
+  }
+  if (quickProfileSwitching.value) {
+    return;
+  }
+  const current = quickProfileCurrent.value;
+  if (!profileName || profileName === current) {
+    return;
+  }
+  quickProfileSwitching.value = true;
+  booting.value = true;
+  hasConnected.value = false;
+  connectionState.value = 'connecting';
+  try {
+    await startSwitchLogPolling();
+    switchLogStatusMessage.value = t('settings.log.status.console.pending');
+    await selectProfile(profileName);
+    await restartConsole();
+    switchLogStatusMessage.value = t('settings.log.status.console.done');
+    showNotification(t('settings.apply.switchProfile', { name: profileName }));
+    quickProfileCurrent.value = profileName;
+    await startConsoleSession();
+  } catch (err) {
+    const message = t('settings.log.status.console.failed', { error: String(err) });
+    switchLogStatusMessage.value = message;
+    showNotification(message);
+    quickProfileCurrent.value = current;
+  } finally {
+    stopSwitchLogPolling();
+    quickProfileSwitching.value = false;
+  }
+}
+
+function requestQuickProfileSwitch(profileName: string) {
+  if (!profileName || profileName === quickProfileCurrent.value || quickProfileSwitching.value) {
+    return;
+  }
+  pendingQuickProfile.value = profileName;
+  quickProfileConfirmOpen.value = true;
+}
+
+function cancelQuickProfileSwitch() {
+  quickProfileConfirmOpen.value = false;
+  pendingQuickProfile.value = null;
+}
+
+function confirmQuickProfileSwitch() {
+  const target = pendingQuickProfile.value;
+  quickProfileConfirmOpen.value = false;
+  pendingQuickProfile.value = null;
+  if (target) {
+    void handleQuickProfileSwitch(target);
+  }
 }
 
 // Initialize chat provider based on settings
@@ -782,6 +1039,7 @@ function handleSettingsSave(value: AppSettings) {
   isSettingsOpen.value = false;
   clearSettingsPreview();
   void refreshChatProviderFromSettings(previousSettings, value);
+  void refreshQuickProfiles();
 }
 
 function handleSettingsPreview(
@@ -811,6 +1069,7 @@ function clearSettingsPreview() {
 function handleSettingsClose() {
   isSettingsOpen.value = false;
   clearSettingsPreview();
+  void refreshQuickProfiles();
 }
 
 function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
@@ -992,12 +1251,13 @@ onMounted(async () => {
   window.addEventListener('dragleave', handleFileDragLeave, true);
   window.addEventListener('drop', handleFileDrop, true);
   window.addEventListener('dragend', handleFileDragEnd, true);
-  if (isTauri()) {
+  if (tauriAvailable) {
     if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(STARTUP_SESSION_KEY) === '1') {
       await resumeConsoleSession();
     } else {
       await loadStartupProfiles();
     }
+    await refreshQuickProfiles();
     return;
   }
   try {
@@ -1027,6 +1287,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('dragleave', handleFileDragLeave, true);
   window.removeEventListener('drop', handleFileDrop, true);
   window.removeEventListener('dragend', handleFileDragEnd, true);
+  stopSwitchLogPolling();
+  disposeSwitchLogTerminal();
   if (dragIdleTimer !== null) {
     window.clearTimeout(dragIdleTimer);
     dragIdleTimer = null;
@@ -1096,6 +1358,20 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  () => resolvedTheme.value,
+  () => {
+    applySwitchLogTheme();
+  }
+);
+
+watch(
+  () => settings.value.terminalScale,
+  () => {
+    applySwitchLogScale();
+  }
+);
 </script>
 
 <template>
@@ -1147,6 +1423,11 @@ watch(
       :selected-target-name="selectedTargetName"
       :pending-total="pendingTotal"
       :connection-state="connectionState"
+      :profiles="quickProfiles"
+      :active-profile="quickProfileCurrent"
+      :profiles-enabled="tauriAvailable"
+      :profile-loading="quickProfileLoading"
+      :profile-switching="quickProfileSwitching"
       :selected-target="selectedTarget"
       :selected-snapshot="selectedSnapshot"
       :settings="settings"
@@ -1163,6 +1444,7 @@ watch(
       :resolved-theme="resolvedTheme"
       @select-target="selectedTargetName = $event"
       @open-settings="isSettingsOpen = true"
+      @switch-profile="requestQuickProfileSwitch"
       @toggle-chat="isChatOpen = !isChatOpen"
       @approve="approve"
       @deny="deny"
@@ -1223,6 +1505,52 @@ watch(
           <n-button :disabled="providerSwitching" @click="cancelProviderSwitch">{{ $t('common.cancel') }}</n-button>
           <n-button type="primary" :disabled="providerSwitching" @click="confirmProviderSwitch">
             {{ $t('chat.providerSwitch.confirm') }}
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="quickProfileConfirmOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[24rem]" :bordered="true">
+      <template #header>{{ $t('settings.profile.quickSwitchTitle') }}</template>
+      <div class="text-sm text-foreground-muted">
+        {{ $t('settings.profile.quickSwitchHint', { name: pendingQuickProfile }) }}
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="cancelQuickProfileSwitch">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" @click="confirmQuickProfileSwitch">
+            {{ $t('settings.profile.quickSwitchConfirm') }}
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="switchLogOpen" :mask-closable="false" :close-on-esc="false">
+    <n-card size="small" class="w-[36rem]" :bordered="true">
+      <template #header>{{ switchLogTitle }}</template>
+      <div class="text-sm text-foreground-muted">
+        {{ switchLogStatusMessage || $t('settings.log.preparing') }}
+      </div>
+      <div class="relative mt-3 h-64 overflow-hidden rounded border border-border bg-panel-muted">
+        <div ref="switchLogTerminalRef" class="h-full w-full" />
+        <div
+          v-if="!switchLogHasOutput"
+          class="absolute inset-0 flex items-center justify-center text-xs text-foreground-muted pointer-events-none"
+        >
+          {{ $t('settings.log.empty') }}
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2 text-xs text-foreground-muted">
+            <n-spin v-if="switchLogInProgress" size="small" />
+            <span>{{ switchLogFooterText }}</span>
+          </div>
+          <n-button type="primary" :disabled="switchLogInProgress" @click="closeSwitchLogModal">
+            {{ $t('common.done') }}
           </n-button>
         </div>
       </template>

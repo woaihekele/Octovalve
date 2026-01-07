@@ -4,8 +4,14 @@
     :selected-target-name="selectedTargetName"
     :pending-total="pendingTotal"
     :connection-state="connectionState"
+    :profiles="profiles"
+    :active-profile="activeProfile"
+    :profiles-enabled="profilesEnabled"
+    :profile-loading="profileLoading"
+    :profile-switching="profileSwitching"
     @select="emit('select-target', $event)"
     @open-settings="emit('open-settings')"
+    @switch-profile="emit('switch-profile', $event)"
   />
 
   <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden">
@@ -126,7 +132,7 @@
 import type { ComponentPublicInstance } from 'vue';
 import { NTabPane, NTabs } from 'naive-ui';
 import type { ResolvedTheme } from '../../shared/theme';
-import type { AiRiskEntry, AppSettings, ServiceSnapshot, TargetInfo } from '../../shared/types';
+import type { AiRiskEntry, AppSettings, ProfileSummary, ServiceSnapshot, TargetInfo } from '../../shared/types';
 import Sidebar from './Sidebar.vue';
 import TargetView from './TargetView.vue';
 import TerminalPanel from './TerminalPanel.vue';
@@ -150,6 +156,11 @@ const props = defineProps<{
   selectedTargetName: string | null;
   pendingTotal: number;
   connectionState: 'connected' | 'connecting' | 'disconnected';
+  profiles: ProfileSummary[];
+  activeProfile: string | null;
+  profilesEnabled: boolean;
+  profileLoading: boolean;
+  profileSwitching: boolean;
   selectedTarget: TargetInfo | null;
   selectedSnapshot: ServiceSnapshot | null;
   settings: AppSettings;
@@ -228,6 +239,7 @@ defineExpose({
 const emit = defineEmits<{
   (e: 'select-target', value: string): void;
   (e: 'open-settings'): void;
+  (e: 'switch-profile', value: string): void;
   (e: 'toggle-chat'): void;
   (e: 'approve', id: string): void;
   (e: 'deny', id: string): void;
