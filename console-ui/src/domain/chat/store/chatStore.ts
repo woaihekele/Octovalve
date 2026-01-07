@@ -21,6 +21,7 @@ import type { TargetInfo } from '../../../shared/types';
 import { i18n } from '../../../i18n';
 
 const t = i18n.global.t;
+const TOOL_CALL_CONCURRENCY_LIMIT = 10;
 
 export type ChatProvider = 'acp' | 'openai';
 
@@ -1463,7 +1464,7 @@ export const useChatStore = defineStore('chat', () => {
           id: tc.id,
           name: tc.function?.name || 'Unknown Tool',
           arguments: args,
-          status: 'running',
+          status: 'pending',
         });
       }
 
@@ -1526,50 +1527,77 @@ export const useChatStore = defineStore('chat', () => {
     setStreaming(true);
     const toolSignal = beginOpenaiToolRun();
     const cancelWait = toolCancelPromise(toolSignal);
+    const results = new Map<string, string>();
+    const queue = toolCalls.slice();
+    const workerCount = Math.min(TOOL_CALL_CONCURRENCY_LIMIT, queue.length);
+
+    const runWorker = async () => {
+      while (queue.length > 0) {
+        if (toolSignal.aborted) {
+          return;
+        }
+        const tc = queue.shift();
+        if (!tc) {
+          return;
+        }
+        if (isToolCallCancelled(messageId, tc.id)) {
+          continue;
+        }
+        const name = tc.function?.name || '';
+        if (!name) {
+          const text = 'Missing tool name';
+          updateToolCall(messageId, tc.id, { status: 'failed', result: text });
+          results.set(tc.id, text);
+          continue;
+        }
+
+        let args: Record<string, unknown> = {};
+        const rawArgs = tc.function?.arguments ?? '';
+        if (rawArgs && rawArgs.trim()) {
+          try {
+            args = JSON.parse(rawArgs) as Record<string, unknown>;
+          } catch {
+            args = { __raw: rawArgs };
+          }
+        }
+
+        updateToolCall(messageId, tc.id, { status: 'running' });
+        const callPromise = openaiService
+          .mcpCallTool(name, args)
+          .then((result) => ({ ok: true as const, result }))
+          .catch((error) => ({ ok: false as const, error }));
+        const outcome = await Promise.race([callPromise, cancelWait]);
+        if (outcome === 'cancelled' || toolSignal.aborted || isToolCallCancelled(messageId, tc.id)) {
+          continue;
+        }
+        if (!outcome.ok) {
+          const text = `Tool call failed: ${String(outcome.error)}`;
+          updateToolCall(messageId, tc.id, { status: 'failed', result: text });
+          results.set(tc.id, text);
+          continue;
+        }
+
+        const text = extractToolResultText(outcome.result);
+        updateToolCall(messageId, tc.id, { status: 'completed', result: text });
+        results.set(tc.id, text);
+      }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+    if (toolSignal.aborted) {
+      setStreaming(false);
+      return;
+    }
 
     for (const tc of toolCalls) {
-      if (toolSignal.aborted || isToolCallCancelled(messageId, tc.id)) {
-        break;
-      }
-      const name = tc.function?.name || '';
-      if (!name) {
-        updateToolCall(messageId, tc.id, { status: 'failed', result: 'Missing tool name' });
+      if (isToolCallCancelled(messageId, tc.id)) {
         continue;
       }
-
-      let args: Record<string, unknown> = {};
-      const rawArgs = tc.function?.arguments ?? '';
-      if (rawArgs && rawArgs.trim()) {
-        try {
-          args = JSON.parse(rawArgs) as Record<string, unknown>;
-        } catch {
-          args = { __raw: rawArgs };
-        }
-      }
-
-      const callPromise = openaiService
-        .mcpCallTool(name, args)
-        .then((result) => ({ ok: true as const, result }))
-        .catch((error) => ({ ok: false as const, error }));
-      const outcome = await Promise.race([callPromise, cancelWait]);
-      if (outcome === 'cancelled' || toolSignal.aborted || isToolCallCancelled(messageId, tc.id)) {
-        break;
-      }
-      if (!outcome.ok) {
-        const text = `Tool call failed: ${String(outcome.error)}`;
-        updateToolCall(messageId, tc.id, { status: 'failed', result: text });
-        await enqueueOpenaiContextOp(async () => {
-          await openaiService.addMessage({
-            role: 'tool',
-            content: text,
-            tool_call_id: tc.id,
-          });
-        });
+      const text = results.get(tc.id);
+      if (!text) {
         continue;
       }
-
-      const text = extractToolResultText(outcome.result);
-      updateToolCall(messageId, tc.id, { status: 'completed', result: text });
       await enqueueOpenaiContextOp(async () => {
         await openaiService.addMessage({
           role: 'tool',
@@ -1577,11 +1605,6 @@ export const useChatStore = defineStore('chat', () => {
           tool_call_id: tc.id,
         });
       });
-    }
-
-    if (toolSignal.aborted) {
-      setStreaming(false);
-      return;
     }
 
     await openaiContextQueue;

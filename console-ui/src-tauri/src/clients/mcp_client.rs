@@ -9,6 +9,7 @@ use rmcp::{
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
@@ -16,7 +17,7 @@ use crate::paths::resolve_octovalve_proxy_bin;
 
 const DEFAULT_CLIENT_ID: &str = "octovalve-console-openai";
 
-pub struct McpClientState(pub Mutex<Option<McpClient>>);
+pub struct McpClientState(pub Mutex<Option<Arc<McpClient>>>);
 
 impl Default for McpClientState {
     fn default() -> Self {
@@ -31,23 +32,26 @@ impl McpClientState {
         tool_name: &str,
         arguments: Value,
     ) -> Result<Value, String> {
-        let mut guard = self.0.lock().await;
-        let needs_restart = match guard.as_ref() {
-            Some(client) => !client.is_usable_for(proxy_config_path),
-            None => true,
-        };
-        if needs_restart {
-            if let Some(old) = guard.take() {
-                drop(guard);
-                old.shutdown().await;
-                guard = self.0.lock().await;
+        let client = {
+            let mut guard = self.0.lock().await;
+            let needs_restart = match guard.as_ref() {
+                Some(client) => !client.is_usable_for(proxy_config_path),
+                None => true,
+            };
+            if needs_restart {
+                if let Some(old) = guard.take() {
+                    old.shutdown().await;
+                }
+                let client = Arc::new(McpClient::start(proxy_config_path, DEFAULT_CLIENT_ID).await?);
+                *guard = Some(Arc::clone(&client));
+                client
+            } else {
+                guard
+                    .as_ref()
+                    .ok_or_else(|| "mcp client unavailable".to_string())?
+                    .clone()
             }
-            let client = McpClient::start(proxy_config_path, DEFAULT_CLIENT_ID).await?;
-            *guard = Some(client);
-        }
-        let client = guard
-            .as_ref()
-            .ok_or_else(|| "mcp client unavailable".to_string())?;
+        };
         let result = client.call_tool(tool_name, arguments).await?;
         serde_json::to_value(&result).map_err(|err| err.to_string())
     }
@@ -117,8 +121,8 @@ impl McpClient {
             .map_err(format_service_error)
     }
 
-    pub async fn shutdown(self) {
-        let _ = self.service.cancel().await;
+    pub async fn shutdown(&self) {
+        self.service.cancellation_token().cancel();
     }
 }
 

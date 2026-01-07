@@ -124,6 +124,7 @@ export interface AiRiskApiResponse {
 export interface AiSettings {
   enabled: boolean;
   autoApproveLowRisk: boolean;
+  useChatModel: boolean;
   provider: 'openai';
   baseUrl: string;
   chatPath: string;

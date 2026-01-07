@@ -20,6 +20,8 @@ const aiProviderOptions = computed<SelectOption[]>(() => [
   { value: 'openai', label: t('settings.ai.provider.openai') },
 ]);
 
+const modelConfigDisabled = computed(() => props.settings.useChatModel);
+
 function updateField<K extends keyof AppSettings['ai']>(field: K, value: AppSettings['ai'][K]) {
   emit('update', { ...props.settings, [field]: value });
 }
@@ -68,6 +70,20 @@ function resetPrompt() {
       <div class="space-y-3">
         <div class="ai-field">
           <div>
+            <div class="text-sm font-medium">{{ $t('settings.ai.useChatModel') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.ai.useChatModelHelp') }}</div>
+          </div>
+          <div class="ai-control ai-control--switch">
+            <NSwitch
+              :value="props.settings.useChatModel"
+              size="small"
+              @update:value="(v) => updateField('useChatModel', v)"
+            />
+          </div>
+        </div>
+
+        <div class="ai-field">
+          <div>
             <div class="text-sm font-medium">{{ $t('settings.ai.provider.label') }}</div>
             <div class="text-xs text-foreground-muted">{{ $t('settings.ai.provider.help') }}</div>
           </div>
@@ -77,6 +93,7 @@ function resetPrompt() {
               :options="aiProviderOptions"
               size="small"
               class="w-full"
+              :disabled="modelConfigDisabled"
               @update:value="(v) => updateField('provider', v as AppSettings['ai']['provider'])"
             />
           </div>
@@ -88,7 +105,13 @@ function resetPrompt() {
             <div class="text-xs text-foreground-muted">{{ $t('settings.ai.baseUrlHelp') }}</div>
           </div>
           <div class="ai-control">
-            <NInput :value="props.settings.baseUrl" size="small" class="w-full" @update:value="(v) => updateField('baseUrl', v)" />
+            <NInput
+              :value="props.settings.baseUrl"
+              size="small"
+              class="w-full"
+              :disabled="modelConfigDisabled"
+              @update:value="(v) => updateField('baseUrl', v)"
+            />
           </div>
         </div>
 
@@ -98,7 +121,13 @@ function resetPrompt() {
             <div class="text-xs text-foreground-muted">{{ $t('settings.ai.chatPathHelp') }}</div>
           </div>
           <div class="ai-control">
-            <NInput :value="props.settings.chatPath" size="small" class="w-full" @update:value="(v) => updateField('chatPath', v)" />
+            <NInput
+              :value="props.settings.chatPath"
+              size="small"
+              class="w-full"
+              :disabled="modelConfigDisabled"
+              @update:value="(v) => updateField('chatPath', v)"
+            />
           </div>
         </div>
 
@@ -108,7 +137,13 @@ function resetPrompt() {
             <div class="text-xs text-foreground-muted">{{ $t('settings.ai.modelHelp') }}</div>
           </div>
           <div class="ai-control">
-            <NInput :value="props.settings.model" size="small" class="w-full" @update:value="(v) => updateField('model', v)" />
+            <NInput
+              :value="props.settings.model"
+              size="small"
+              class="w-full"
+              :disabled="modelConfigDisabled"
+              @update:value="(v) => updateField('model', v)"
+            />
           </div>
         </div>
 
@@ -123,6 +158,7 @@ function resetPrompt() {
               size="small"
               class="w-full"
               type="password"
+              :disabled="modelConfigDisabled"
               @update:value="(v) => updateField('apiKey', v)"
             />
           </div>
@@ -140,6 +176,7 @@ function resetPrompt() {
               class="w-full"
               :min="1000"
               :max="60000"
+              :disabled="modelConfigDisabled"
               @update:value="updateTimeout"
             />
           </div>
@@ -157,6 +194,7 @@ function resetPrompt() {
               class="w-full"
               :min="1"
               :max="10"
+              :disabled="modelConfigDisabled"
               @update:value="updateMaxConcurrency"
             />
           </div>

@@ -46,6 +46,7 @@ export function getDefaultAiPrompt(language: AppLanguage): string {
 const BASE_AI_SETTINGS: Omit<AiSettings, 'prompt'> = {
   enabled: false,
   autoApproveLowRisk: false,
+  useChatModel: false,
   provider: 'openai',
   baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
   chatPath: '/chat/completions',
@@ -184,6 +185,7 @@ export function loadSettings(): AppSettings {
     const normalizedAi: AiSettings = {
       enabled: Boolean(parsedAi.enabled),
       autoApproveLowRisk: normalizeBool(parsedAi.autoApproveLowRisk, defaultAiSettings.autoApproveLowRisk),
+      useChatModel: normalizeBool(parsedAi.useChatModel, defaultAiSettings.useChatModel),
       provider: normalizeAiProvider(parsedAi.provider),
       baseUrl: normalizeText(parsedAi.baseUrl, defaultAiSettings.baseUrl),
       chatPath: normalizeText(parsedAi.chatPath, defaultAiSettings.chatPath),

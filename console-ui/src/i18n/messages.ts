@@ -305,6 +305,8 @@ export const messages = {
         enableHelp: '对所有 Pending 命令进行风险评估',
         autoApproveLowRisk: '低风险自动批准',
         autoApproveLowRiskHelp: '风险为 low 时自动调用批准',
+        useChatModel: '沿用聊天模型',
+        useChatModelHelp: '使用聊天配置中的 OpenAI 模型与 API Key',
         provider: {
           label: 'Provider',
           help: '兼容 OpenAI 的接口',
@@ -763,6 +765,8 @@ export const messages = {
         enableHelp: 'Assess risk for pending commands',
         autoApproveLowRisk: 'Auto-approve Low Risk',
         autoApproveLowRiskHelp: 'Auto-approve when risk is low',
+        useChatModel: 'Use Chat Model',
+        useChatModelHelp: 'Reuse the chat OpenAI config for AI inspection',
         provider: {
           label: 'Provider',
           help: 'OpenAI-compatible API',

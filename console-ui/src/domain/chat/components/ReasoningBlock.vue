@@ -163,6 +163,34 @@ const { addChunk: addPreviewChunk, reset: resetPreviewStream } = useSmoothStream
 });
 
 watch(
+  () => props.show,
+  (visible) => {
+    if (!visible) {
+      return;
+    }
+
+    const raw = normalizePreviewText(props.previewText || '');
+    resetPreviewStream(raw);
+    previousPreviewRaw.value = raw;
+  }
+);
+
+const previewLines = computed(() => {
+  const text = displayedPreviewText.value || '';
+  if (!text) return [];
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  return lines;
+});
+
+const showPreview = computed(() => {
+  return !props.show && (props.previewActive ?? true) && previewLines.value.length > 0;
+});
+
+watch(
   () => ({
     text: props.previewText || '',
     streaming: Boolean(props.streaming),
@@ -202,34 +230,6 @@ watch(
   },
   { immediate: true }
 );
-
-watch(
-  () => props.show,
-  (visible) => {
-    if (!visible) {
-      return;
-    }
-
-    const raw = normalizePreviewText(props.previewText || '');
-    resetPreviewStream(raw);
-    previousPreviewRaw.value = raw;
-  }
-);
-
-const previewLines = computed(() => {
-  const text = displayedPreviewText.value || '';
-  if (!text) return [];
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  while (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop();
-  }
-  return lines;
-});
-
-const showPreview = computed(() => {
-  return !props.show && (props.previewActive ?? true) && previewLines.value.length > 0;
-});
 
 watch(
   () => displayedPreviewText.value,

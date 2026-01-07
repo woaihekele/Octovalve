@@ -114,6 +114,23 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
     return request.pipeline.map((stage) => stage.argv.join(' ')).join(' | ');
   }
 
+  function resolveAiModelConfig() {
+    if (settings.value.ai.useChatModel) {
+      return {
+        baseUrl: settings.value.chat.openai.baseUrl,
+        chatPath: settings.value.chat.openai.chatPath,
+        model: settings.value.chat.openai.model,
+        apiKey: settings.value.chat.openai.apiKey,
+      };
+    }
+    return {
+      baseUrl: settings.value.ai.baseUrl,
+      chatPath: settings.value.ai.chatPath,
+      model: settings.value.ai.model,
+      apiKey: settings.value.ai.apiKey,
+    };
+  }
+
   function buildAiPrompt(template: string, targetName: string, request: RequestSnapshot) {
     const replacements: Record<string, string> = {
       target: targetName,
@@ -144,7 +161,8 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
     if (aiQueuedKeys.has(key) || aiInFlightKeys.has(key)) {
       return;
     }
-    if (!settings.value.ai.apiKey.trim()) {
+    const { apiKey } = resolveAiModelConfig();
+    if (!apiKey.trim()) {
       if (!existing || existing.status !== 'done') {
         setAiRisk(key, { status: 'error', error: t('aiRisk.error.noApiKey'), updatedAt: Date.now() });
       }
@@ -203,17 +221,18 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
   async function runAiTask(task: AiTask) {
     const key = buildAiKey(task.target, task.request.id);
     const now = Date.now();
-    if (!settings.value.ai.apiKey.trim()) {
+    const { apiKey, baseUrl, chatPath, model } = resolveAiModelConfig();
+    if (!apiKey.trim()) {
       setAiRisk(key, { status: 'error', error: t('aiRisk.error.noApiKey'), updatedAt: now });
       return;
     }
     try {
       const prompt = buildAiPrompt(settings.value.ai.prompt, task.target, task.request);
       const response = await aiRiskAssess({
-        base_url: settings.value.ai.baseUrl,
-        chat_path: settings.value.ai.chatPath,
-        model: settings.value.ai.model,
-        api_key: settings.value.ai.apiKey,
+        base_url: baseUrl,
+        chat_path: chatPath,
+        model,
+        api_key: apiKey,
         prompt,
         timeout_ms: settings.value.ai.timeoutMs,
       });
@@ -252,7 +271,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
       const existing = aiRiskMap.value[key];
       if (
         !existing ||
-        (existing.status === 'error' && existing.error?.includes('API Key') && settings.value.ai.apiKey.trim())
+        (existing.status === 'error' && existing.error?.includes('API Key') && resolveAiModelConfig().apiKey.trim())
       ) {
         enqueueAiTask(targetName, item);
       }
