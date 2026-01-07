@@ -36,10 +36,19 @@ export interface ToolCall {
 }
 
 export interface ImageAttachment {
+  kind: 'image';
   data: string;
   mimeType: string;
   previewUrl: string;
   name?: string;
+  size?: number;
+}
+
+export interface TextAttachment {
+  kind: 'text';
+  name: string;
+  mimeType: string;
+  content: string;
   size?: number;
 }
 
@@ -103,7 +112,7 @@ export interface SendMessageOptions {
   content: string;
   images?: ImageAttachment[];
   blocks?: PromptBlock[];
-  files?: string[];
+  files?: TextAttachment[];
   context?: Array<{ type: string; [key: string]: unknown }>;
 }
 

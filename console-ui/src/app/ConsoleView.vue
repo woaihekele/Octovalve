@@ -44,6 +44,8 @@ const { locale, t } = useI18n({ useScope: 'global' });
 locale.value = settings.value.language;
 const isSettingsOpen = ref(false);
 const isChatOpen = ref(false);
+const isFileDragging = ref(false);
+const fileDragDepth = ref(0);
 const notification = ref<{ message: string; count?: number; target?: string } | null>(null);
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
@@ -137,6 +139,7 @@ const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
 const chatInputLocked = computed(() => providerSwitching.value);
+const showChatDropHint = computed(() => isFileDragging.value && isChatOpen.value);
 const pendingProviderLabel = computed(() => {
   if (pendingProvider.value === 'acp') {
     return t('chat.provider.acpLabel');
@@ -157,6 +160,79 @@ function formatAcpAuthError(err: unknown) {
     return t('chat.authTimeout');
   }
   return t('chat.authFailed', { error: String(err) });
+}
+
+function isFileDragEvent(event: DragEvent) {
+  const items = event.dataTransfer?.items;
+  if (items) {
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file') {
+        return true;
+      }
+    }
+  }
+  const types = event.dataTransfer?.types;
+  if (!types) {
+    return false;
+  }
+  return Array.from(types).some((type) => type === 'Files' || type === 'public.file-url');
+}
+
+function showFileDropHint() {
+  if (!isChatOpen.value) {
+    isChatOpen.value = true;
+  }
+  isFileDragging.value = true;
+}
+
+function clearFileDropHint() {
+  isFileDragging.value = false;
+  fileDragDepth.value = 0;
+}
+
+function handleFileDragEnter(event: DragEvent) {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  fileDragDepth.value += 1;
+  showFileDropHint();
+}
+
+function handleFileDragOver(event: DragEvent) {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  if (fileDragDepth.value === 0) {
+    fileDragDepth.value = 1;
+  }
+  showFileDropHint();
+}
+
+function handleFileDragLeave(event: DragEvent) {
+  if (event.relatedTarget === null) {
+    const target = event.target as HTMLElement | null;
+    if (target === document.documentElement || target === document.body) {
+      clearFileDropHint();
+      return;
+    }
+  }
+  if (fileDragDepth.value > 0) {
+    fileDragDepth.value = Math.max(0, fileDragDepth.value - 1);
+  }
+  if (fileDragDepth.value === 0) {
+    isFileDragging.value = false;
+  }
+}
+
+function handleFileDragEnd() {
+  clearFileDropHint();
+}
+
+function handleFileDrop(event: DragEvent) {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  clearFileDropHint();
 }
 
 // Initialize chat provider based on settings
@@ -210,6 +286,7 @@ async function handleChatSend(options: SendMessageOptions) {
       role: 'user',
       content: fallbackContent,
       images: options.images?.map((img) => img.previewUrl),
+      files: options.files?.map((file) => file.name),
       status: 'complete',
     });
 
@@ -890,6 +967,11 @@ function handleGlobalKey(event: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleGlobalKey);
+  window.addEventListener('dragenter', handleFileDragEnter, true);
+  window.addEventListener('dragover', handleFileDragOver, true);
+  window.addEventListener('dragleave', handleFileDragLeave, true);
+  window.addEventListener('drop', handleFileDrop, true);
+  window.addEventListener('dragend', handleFileDragEnd, true);
   if (isTauri()) {
     if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(STARTUP_SESSION_KEY) === '1') {
       await resumeConsoleSession();
@@ -920,6 +1002,11 @@ onBeforeUnmount(() => {
     streamHandle.close();
   }
   window.removeEventListener('keydown', handleGlobalKey);
+  window.removeEventListener('dragenter', handleFileDragEnter, true);
+  window.removeEventListener('dragover', handleFileDragOver, true);
+  window.removeEventListener('dragleave', handleFileDragLeave, true);
+  window.removeEventListener('drop', handleFileDrop, true);
+  window.removeEventListener('dragend', handleFileDragEnd, true);
 });
 
 watch(selectedTargetName, (value) => {
@@ -1030,7 +1117,7 @@ watch(
       class="fixed top-0 left-0 right-0 h-7 z-[4000] pointer-events-auto"
       data-tauri-drag-region
     ></div>
-
+    <div v-show="isFileDragging" class="file-drop-overlay"></div>
     <ConsoleLeftPane
       ref="leftPaneRef"
       :targets="targets"
@@ -1067,6 +1154,7 @@ watch(
 
     <ConsoleChatPane
       :is-chat-open="isChatOpen"
+      :show-drop-hint="showChatDropHint"
       :messages="chatMessages"
       :plan-entries="chatPlanEntries"
       :is-streaming="chatIsStreaming"
@@ -1120,3 +1208,13 @@ watch(
 
   </div>
 </template>
+
+<style scoped lang="scss">
+.file-drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 1500;
+  pointer-events: none;
+}
+</style>

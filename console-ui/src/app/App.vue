@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide } from 'vue';
+import { computed, onBeforeUnmount, onMounted, provide } from 'vue';
 import { NConfigProvider, NNotificationProvider, darkTheme } from 'naive-ui';
 import ConsoleView from './ConsoleView.vue';
 import { useThemeMode } from '../composables/useThemeMode';
@@ -72,6 +72,46 @@ const naiveThemeOverrides = computed(() => {
       cardGapSmall: '4px',
     },
   };
+});
+
+const fileDropListenerOptions = { capture: true };
+
+function isFileDrag(event: DragEvent) {
+  const items = event.dataTransfer?.items;
+  if (items) {
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file') {
+        return true;
+      }
+    }
+  }
+  const types = event.dataTransfer?.types;
+  if (!types) {
+    return false;
+  }
+  return Array.from(types).includes('Files');
+}
+
+function handleGlobalDragOver(event: DragEvent) {
+  if (isFileDrag(event)) {
+    event.preventDefault();
+  }
+}
+
+function handleGlobalDrop(event: DragEvent) {
+  if (isFileDrag(event)) {
+    event.preventDefault();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('dragover', handleGlobalDragOver, fileDropListenerOptions);
+  window.addEventListener('drop', handleGlobalDrop, fileDropListenerOptions);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('dragover', handleGlobalDragOver, fileDropListenerOptions);
+  window.removeEventListener('drop', handleGlobalDrop, fileDropListenerOptions);
 });
 </script>
 

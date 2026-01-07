@@ -1,7 +1,11 @@
 <template>
   <div
     class="chat-panel"
-    :class="{ 'chat-panel--open': isOpen, 'chat-panel--resizing': isResizing }"
+    :class="{
+      'chat-panel--open': isOpen,
+      'chat-panel--resizing': isResizing,
+      'chat-panel--drop-active': showDropHint,
+    }"
     :style="panelStyle"
   >
     <div
@@ -9,7 +13,15 @@
       class="chat-panel__resizer"
       @mousedown.prevent="startResize"
     ></div>
-    <div class="chat-panel__content">
+    <div
+      class="chat-panel__content"
+      @dragenter.prevent="handlePanelDragOver"
+      @dragover.prevent="handlePanelDragOver"
+      @drop.prevent="handlePanelDrop"
+    >
+      <div v-if="showDropHint" class="chat-panel__drop-hint">
+        {{ $t('chat.dropHint') }}
+      </div>
       <div class="chat-panel__header">
         <div class="chat-panel__header-left">
           <div class="chat-panel__header-info">
@@ -65,6 +77,7 @@
       </div>
 
       <ChatInput
+        ref="inputRef"
         v-model="inputValue"
         :placeholder="resolvedPlaceholder"
         :disabled="!isConnected || inputLocked"
@@ -106,6 +119,7 @@ interface Props {
   sendOnEnter?: boolean;
   targets?: TargetInfo[];
   supportsImages?: boolean;
+  showDropHint?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -118,6 +132,7 @@ const props = withDefaults(defineProps<Props>(), {
   planEntries: () => [],
   targets: () => [],
   supportsImages: false,
+  showDropHint: false,
 });
 
 const emit = defineEmits<{
@@ -222,6 +237,11 @@ const inputValue = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
 const scrollAnchor = ref<HTMLElement | null>(null);
+type ChatInputExpose = {
+  addExternalFiles: (files: File[]) => void;
+  focus: () => void;
+};
+const inputRef = ref<ChatInputExpose | null>(null);
 
 const { stickToBottom, scrollToBottom, handleScroll, activateStickToBottom } = useStickToBottom(
   messagesRef,
@@ -232,6 +252,31 @@ function handleToggleThinking(opened: boolean) {
   if (opened && stickToBottom.value) {
     void scrollToBottom({ force: true, behavior: 'smooth' });
   }
+}
+
+function canAcceptDrop() {
+  return props.isOpen && props.isConnected && !props.inputLocked && !props.isStreaming;
+}
+
+function handlePanelDragOver(event: DragEvent) {
+  if (!canAcceptDrop()) {
+    return;
+  }
+  event.dataTransfer?.setData('text/plain', '');
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+}
+
+function handlePanelDrop(event: DragEvent) {
+  if (!canAcceptDrop()) {
+    return;
+  }
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length === 0) {
+    return;
+  }
+  inputRef.value?.addExternalFiles(files);
 }
 
 onBeforeUnmount(() => {
@@ -290,6 +335,11 @@ watch(
     user-select: none;
   }
 
+  &--drop-active {
+    border-left-color: rgba(var(--color-accent), 0.6);
+    box-shadow: inset 0 0 0 1px rgba(var(--color-accent), 0.35);
+  }
+
   &__resizer {
     position: absolute;
     left: 0;
@@ -312,6 +362,7 @@ watch(
     width: var(--chat-panel-width);
     opacity: 0;
     transition: opacity 0.15s ease 0.1s;
+    position: relative;
 
     .chat-panel--open & {
       opacity: 1;
@@ -320,6 +371,22 @@ watch(
     .chat-panel--resizing & {
       transition: none;
     }
+  }
+
+  &__drop-hint {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    right: 12px;
+    z-index: 3;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid rgb(var(--color-border));
+    background: rgb(var(--color-panel-muted));
+    color: rgb(var(--color-text));
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
   }
 
   &__header {

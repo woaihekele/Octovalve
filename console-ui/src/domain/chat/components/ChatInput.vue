@@ -6,14 +6,13 @@
         'chat-input__container--focused': isFocused,
         'chat-input__container--mention': mentionOpen,
       }"
-      @dragover.prevent="handleDragOver"
-      @drop.prevent="handleDrop"
+      @dragover.stop.prevent="handleDragOver"
+      @drop.stop.prevent="handleDrop"
     >
       <input
-        v-if="supportsImage"
         ref="fileInputRef"
         type="file"
-        accept="image/*"
+        :accept="fileAccept"
         multiple
         class="chat-input__file-input"
         @change="handleFileSelect"
@@ -35,11 +34,26 @@
         @click="handleClick"
         @input="handleInput"
         @paste="handlePaste"
+        @dragover.stop.prevent="handleDragOver"
+        @drop.stop.prevent="handleDrop"
       />
 
       <div v-if="attachments.length > 0" class="chat-input__attachments">
-        <div v-for="(attachment, index) in attachments" :key="attachment.previewUrl" class="chat-input__attachment">
-          <img :src="attachment.previewUrl" :alt="attachment.name || 'image'" class="chat-input__attachment-thumb" />
+        <div
+          v-for="(attachment, index) in attachments"
+          :key="`${attachment.kind}-${attachment.name ?? index}`"
+          class="chat-input__attachment"
+          :class="{ 'chat-input__attachment--file': attachment.kind === 'text' }"
+        >
+          <img
+            v-if="attachment.kind === 'image'"
+            :src="attachment.previewUrl"
+            :alt="attachment.name || 'image'"
+            class="chat-input__attachment-thumb"
+          />
+          <div v-else class="chat-input__attachment-file">
+            <span class="chat-input__attachment-file-label">{{ attachment.name }}</span>
+          </div>
           <button type="button" class="chat-input__attachment-remove" @click="removeAttachment(index)">
             ×
           </button>
@@ -70,7 +84,6 @@
       <div class="chat-input__toolbar">
         <div class="chat-input__toolbar-left">
           <n-button
-            v-if="supportsImage"
             size="tiny"
             text
             class="chat-input__image-button"
@@ -78,7 +91,7 @@
             @click="triggerFileSelect"
           >
             <template #icon>
-              <n-icon :component="ImageOutline" />
+              <n-icon :component="AddOutline" />
             </template>
           </n-button>
           <!-- Provider selector -->
@@ -137,10 +150,10 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { NButton, NIcon, NSelect } from 'naive-ui';
-import { ImageOutline, StopOutline } from '@vicons/ionicons5';
+import { AddOutline, StopOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import type { TargetInfo } from '../../../shared/types';
-import type { ImageAttachment, SendMessageOptions } from '../types';
+import type { ImageAttachment, SendMessageOptions, TextAttachment } from '../types';
 
 interface Props {
   modelValue: string;
@@ -179,17 +192,27 @@ const mentionQuery = ref('');
 const mentionRangeStart = ref(-1);
 const mentionRangeEnd = ref(-1);
 const activeIndex = ref(0);
-const attachments = ref<ImageAttachment[]>([]);
+type ChatAttachment = ImageAttachment | TextAttachment;
+const attachments = ref<ChatAttachment[]>([]);
 const attachmentError = ref('');
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const MAX_IMAGE_COUNT = 3;
+const MAX_TEXT_BYTES = 512 * 1024;
+const MAX_ATTACHMENT_COUNT = 3;
 
 const resolvedPlaceholder = computed(() => props.placeholder ?? t('chat.input.placeholder.default'));
 const mentionEmptyLabel = computed(() =>
   props.targets.length === 0 ? t('chat.input.mention.noTargets') : t('chat.input.mention.noMatch')
 );
+
+const fileAccept = computed(() => {
+  const parts = ['.txt', '.md', 'text/plain', 'text/markdown'];
+  if (props.supportsImage) {
+    parts.unshift('image/*');
+  }
+  return parts.join(',');
+});
 
 function handleCompositionStart() {
   isComposing.value = true;
@@ -271,9 +294,12 @@ watch(filteredTargets, (list) => {
 watch(
   () => props.supportsImage,
   (supports) => {
-    if (!supports && attachments.value.length > 0) {
-      attachments.value = [];
-      attachmentError.value = '';
+    if (!supports) {
+      const remaining = attachments.value.filter((attachment) => attachment.kind === 'text');
+      if (remaining.length !== attachments.value.length) {
+        attachments.value = remaining;
+        attachmentError.value = '';
+      }
     }
   }
 );
@@ -437,9 +463,16 @@ function handleKeyUp(event: KeyboardEvent) {
 
 function handleSend() {
   if (!canSend.value) return;
+  const imageAttachments = attachments.value.filter(
+    (attachment): attachment is ImageAttachment => attachment.kind === 'image'
+  );
+  const textAttachments = attachments.value.filter(
+    (attachment): attachment is TextAttachment => attachment.kind === 'text'
+  );
   const options: SendMessageOptions = {
     content: inputValue.value.trim(),
-    images: attachments.value.slice(),
+    images: imageAttachments,
+    files: textAttachments,
   };
   emit('send', options);
   inputValue.value = '';
@@ -479,16 +512,13 @@ function handleBlur() {
 }
 
 function triggerFileSelect() {
-  if (!props.supportsImage || props.disabled || props.isStreaming) {
+  if (props.disabled || props.isStreaming) {
     return;
   }
   fileInputRef.value?.click();
 }
 
 function handleFileSelect(event: Event) {
-  if (!props.supportsImage) {
-    return;
-  }
   const input = event.target as HTMLInputElement | null;
   const files = input?.files;
   if (!files || files.length === 0) {
@@ -510,14 +540,17 @@ function handlePaste(event: ClipboardEvent) {
 }
 
 function handleDragOver(event: DragEvent) {
-  if (!props.supportsImage) {
+  if (props.disabled || props.isStreaming) {
     return;
   }
   event.dataTransfer?.setData('text/plain', '');
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
 }
 
 function handleDrop(event: DragEvent) {
-  if (!props.supportsImage) {
+  if (props.disabled || props.isStreaming) {
     return;
   }
   const files = Array.from(event.dataTransfer?.files || []);
@@ -531,42 +564,92 @@ function removeAttachment(index: number) {
   attachments.value.splice(index, 1);
 }
 
+function canAcceptAttachments() {
+  return !props.disabled && !props.isStreaming;
+}
+
+async function addExternalFiles(files: File[]) {
+  if (!canAcceptAttachments()) {
+    return;
+  }
+  await addFiles(files);
+}
+
 async function addFiles(files: File[]) {
   attachmentError.value = '';
-  const remainingSlots = MAX_IMAGE_COUNT - attachments.value.length;
+  const remainingSlots = MAX_ATTACHMENT_COUNT - attachments.value.length;
   if (remainingSlots <= 0) {
-    attachmentError.value = `Max ${MAX_IMAGE_COUNT} images`;
+    attachmentError.value = `Max ${MAX_ATTACHMENT_COUNT} attachments`;
     return;
   }
 
-  const candidates = files.filter((file) => file.type.startsWith('image/')).slice(0, remainingSlots);
+  const candidates: File[] = [];
+  for (const file of files) {
+    if (candidates.length >= remainingSlots) {
+      break;
+    }
+    if (isImageFile(file)) {
+      if (props.supportsImage) {
+        candidates.push(file);
+      }
+      continue;
+    }
+    if (isTextFile(file)) {
+      candidates.push(file);
+    }
+  }
+
   if (candidates.length === 0) {
-    attachmentError.value = 'Only image files are supported';
+    attachmentError.value = props.supportsImage
+      ? 'Only image or text files are supported'
+      : 'Only text files are supported';
     return;
   }
 
   for (const file of candidates) {
-    if (file.size > MAX_IMAGE_BYTES) {
-      attachmentError.value = `Image must be smaller than ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB`;
+    if (isImageFile(file)) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        attachmentError.value = `Image must be smaller than ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB`;
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        const parsed = parseDataUrl(dataUrl);
+        if (!parsed) {
+          attachmentError.value = 'Failed to read image';
+          continue;
+        }
+        attachments.value.push({
+          kind: 'image',
+          data: parsed.data,
+          mimeType: parsed.mimeType,
+          previewUrl: dataUrl,
+          name: file.name,
+          size: file.size,
+        });
+      } catch (err) {
+        console.warn('Failed to read image:', err);
+        attachmentError.value = 'Failed to read image';
+      }
+      continue;
+    }
+
+    if (file.size > MAX_TEXT_BYTES) {
+      attachmentError.value = `Text file must be smaller than ${Math.round(MAX_TEXT_BYTES / 1024)}KB`;
       continue;
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file);
-      const parsed = parseDataUrl(dataUrl);
-      if (!parsed) {
-        attachmentError.value = 'Failed to read image';
-        continue;
-      }
+      const text = await readFileAsText(file);
       attachments.value.push({
-        data: parsed.data,
-        mimeType: parsed.mimeType,
-        previewUrl: dataUrl,
-        name: file.name,
+        kind: 'text',
+        name: file.name || 'file',
+        mimeType: file.type || inferTextMimeType(file.name),
+        content: text,
         size: file.size,
       });
     } catch (err) {
-      console.warn('Failed to read image:', err);
-      attachmentError.value = 'Failed to read image';
+      console.warn('Failed to read text file:', err);
+      attachmentError.value = 'Failed to read text file';
     }
   }
 }
@@ -588,6 +671,44 @@ function parseDataUrl(value: string): { mimeType: string; data: string } | null 
   return { mimeType: match[1], data: match[2] };
 }
 
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
+function isImageFile(file: File): boolean {
+  if (file.type.startsWith('image/')) {
+    return true;
+  }
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith('.png') ||
+    name.endsWith('.jpg') ||
+    name.endsWith('.jpeg') ||
+    name.endsWith('.webp')
+  );
+}
+
+function isTextFile(file: File): boolean {
+  if (file.type.startsWith('text/')) {
+    return true;
+  }
+  const name = file.name.toLowerCase();
+  return name.endsWith('.txt') || name.endsWith('.md');
+}
+
+function inferTextMimeType(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.md')) {
+    return 'text/markdown';
+  }
+  return 'text/plain';
+}
+
 function focus() {
   nextTick(() => {
     textareaRef.value?.focus();
@@ -598,7 +719,7 @@ onMounted(() => {
   autoResize();
 });
 
-defineExpose({ focus });
+defineExpose({ focus, addExternalFiles });
 </script>
 
 <style scoped lang="scss">
@@ -667,12 +788,37 @@ defineExpose({ focus });
     height: 64px;
   }
 
+  &__attachment--file {
+    width: auto;
+    min-width: 140px;
+    height: 56px;
+  }
+
   &__attachment-thumb {
     width: 100%;
     height: 100%;
     object-fit: cover;
     border-radius: 8px;
     border: 1px solid rgb(var(--color-border));
+  }
+
+  &__attachment-file {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid rgb(var(--color-border));
+    background: rgb(var(--color-panel));
+    color: rgb(var(--color-text));
+    font-size: 12px;
+    max-width: 220px;
+  }
+
+  &__attachment-file-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__attachment-remove {

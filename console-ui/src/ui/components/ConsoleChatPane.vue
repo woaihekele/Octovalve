@@ -1,6 +1,7 @@
 <template>
   <ChatPanel
     :is-open="isChatOpen"
+    :show-drop-hint="showDropHint"
     :messages="messages"
     :plan-entries="planEntries"
     :is-streaming="isStreaming"
@@ -38,6 +39,7 @@ import type { TargetInfo } from '../../shared/types';
 
 defineProps<{
   isChatOpen: boolean;
+  showDropHint: boolean;
   messages: ChatMessage[];
   planEntries: PlanEntry[];
   isStreaming: boolean;

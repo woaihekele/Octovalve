@@ -59,6 +59,11 @@
             alt="image"
           />
         </div>
+        <div v-if="message.files?.length" class="chat-row__files">
+          <div v-for="(file, index) in message.files" :key="`${message.id}-file-${index}`" class="chat-row__file">
+            {{ file }}
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -512,6 +517,26 @@ const assistantMarkdown = computed(() => {
     border-radius: 8px;
     border: 1px solid rgb(var(--color-border));
     object-fit: cover;
+  }
+
+  &__files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  &__file {
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-border));
+    background: rgb(var(--color-panel-muted));
+    color: rgb(var(--color-text));
+    font-size: 12px;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   // Smooth text appearance for streaming

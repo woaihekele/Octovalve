@@ -9,6 +9,7 @@ import type {
   PlanEntryPriority,
   PlanEntryStatus,
   ImageAttachment,
+  TextAttachment,
   PromptBlock,
   SendMessageOptions,
 } from '../types';
@@ -729,6 +730,7 @@ export const useChatStore = defineStore('chat', () => {
       content,
       status: 'complete',
       images: toDisplayImages(options.images),
+      files: toDisplayFiles(options.files),
     });
 
     // Add assistant placeholder
@@ -1271,7 +1273,7 @@ export const useChatStore = defineStore('chat', () => {
       content: input.content ?? '',
       images: input.images ?? [],
       blocks: input.blocks,
-      files: input.files,
+      files: input.files ?? [],
       context: input.context,
     };
   }
@@ -1292,6 +1294,14 @@ export const useChatStore = defineStore('chat', () => {
           data: image.data,
           mimeType: image.mimeType,
           previewUrl: image.previewUrl,
+        });
+      }
+    }
+    if (options.files) {
+      for (const file of options.files) {
+        blocks.push({
+          type: 'text',
+          text: `[File: ${file.name}]\n${file.content}`,
         });
       }
     }
@@ -1323,13 +1333,35 @@ export const useChatStore = defineStore('chat', () => {
     return images.map((img) => img.previewUrl);
   }
 
+  function toDisplayFiles(files?: TextAttachment[]): string[] | undefined {
+    if (!files || files.length === 0) {
+      return undefined;
+    }
+    return files.map((file) => file.name);
+  }
+
+  function buildTextPrompt(options: SendMessageOptions): string {
+    const parts: string[] = [];
+    const text = options.content?.trim();
+    if (text) {
+      parts.push(text);
+    }
+    if (options.files) {
+      for (const file of options.files) {
+        parts.push(`[File: ${file.name}]\n${file.content}`);
+      }
+    }
+    return parts.join('\n\n');
+  }
+
   async function sendOpenaiMessage(options: SendMessageOptions) {
     const content = options.content ?? '';
+    const promptText = buildTextPrompt(options);
     if (!openaiInitialized.value) {
       throw new Error('OpenAI not initialized');
     }
 
-    if (!content.trim()) {
+    if (!promptText.trim()) {
       return;
     }
 
@@ -1350,11 +1382,12 @@ export const useChatStore = defineStore('chat', () => {
       content,
       status: 'complete',
       images: toDisplayImages(options.images),
+      files: toDisplayFiles(options.files),
     });
 
     // Add user message to OpenAI context
     await enqueueOpenaiContextOp(async () => {
-      await openaiService.addMessage({ role: 'user', content });
+      await openaiService.addMessage({ role: 'user', content: promptText });
     });
 
     await openaiContextQueue;

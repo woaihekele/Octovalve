@@ -42,7 +42,7 @@ export function useChatService() {
       content: options.content,
       status: 'complete',
       images: options.images?.map((img) => img.previewUrl),
-      files: options.files,
+      files: options.files?.map((file) => file.name),
     });
 
     // Create placeholder for assistant response
