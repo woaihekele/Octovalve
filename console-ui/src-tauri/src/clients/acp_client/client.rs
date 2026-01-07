@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::clients::acp_types::*;
@@ -77,8 +77,9 @@ impl AcpClient {
         let pending_clone = pending_requests.clone();
         let app_handle_clone = app_handle.clone();
         let log_path_clone = log_path.clone();
+        let stdin_clone = stdin.clone();
         let reader_handle = std::thread::spawn(move || {
-            Self::read_loop(stdout, pending_clone, app_handle_clone, log_path_clone);
+            Self::read_loop(stdout, stdin_clone, pending_clone, app_handle_clone, log_path_clone);
         });
         Ok(Self {
             process,
@@ -96,6 +97,7 @@ impl AcpClient {
     /// Read loop for processing messages from codex-acp.
     fn read_loop(
         stdout: ChildStdout,
+        stdin: Arc<Mutex<ChildStdin>>,
         pending: PendingRequests,
         app_handle: AppHandle,
         log_path: PathBuf,
@@ -135,6 +137,31 @@ impl AcpClient {
             };
 
             match message {
+                AcpMessage::Request(request) => {
+                    log_line(
+                        &log_path,
+                        &format!("[ACP reader] parsed as Request: {}", request.method),
+                    );
+                    if request.method == "session/request_permission" {
+                        let option_id = pick_permission_option(&request.params);
+                        let result = if let Some(option_id) = option_id {
+                            json!({ "outcome": "selected", "optionId": option_id })
+                        } else {
+                            json!({ "outcome": "cancelled" })
+                        };
+                        if let Err(e) = send_json_response(&stdin, request.id, result) {
+                            log_line(
+                                &log_path,
+                                &format!("[ACP] request_permission response failed: {}", e),
+                            );
+                        } else {
+                            log_line(
+                                &log_path,
+                                &format!("[ACP] request_permission responded id={}", request.id),
+                            );
+                        }
+                    }
+                }
                 AcpMessage::Notification(notification) => {
                     log_line(
                         &log_path,
@@ -402,6 +429,52 @@ impl AcpClient {
         let _ = self.reader_handle.take();
         log_line(&self.log_path, "[ACP] stop: done");
     }
+}
+
+fn pick_permission_option(params: &Option<Value>) -> Option<String> {
+    let options = params
+        .as_ref()
+        .and_then(|value| value.get("options"))
+        .and_then(|value| value.as_array())?;
+    let mut fallback: Option<String> = None;
+    for option in options {
+        let option_id = option
+            .get("optionId")
+            .or_else(|| option.get("option_id"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string());
+        if fallback.is_none() {
+            fallback = option_id.clone();
+        }
+        let kind = option.get("kind").and_then(|value| value.as_str()).unwrap_or("");
+        if matches!(kind, "allow_once" | "allow_always") {
+            return option_id;
+        }
+    }
+    fallback
+}
+
+fn send_json_response(
+    stdin: &Arc<Mutex<ChildStdin>>,
+    id: u64,
+    result: Value,
+) -> Result<(), AcpError> {
+    #[derive(serde::Serialize)]
+    struct JsonRpcResponseOut {
+        jsonrpc: &'static str,
+        id: u64,
+        result: Value,
+    }
+    let response = JsonRpcResponseOut {
+        jsonrpc: "2.0",
+        id,
+        result,
+    };
+    let response_json = serde_json::to_string(&response)?;
+    let mut guard = stdin.lock().unwrap();
+    writeln!(guard, "{}", response_json)?;
+    guard.flush()?;
+    Ok(())
 }
 
 fn log_line(log_path: &Path, message: &str) {

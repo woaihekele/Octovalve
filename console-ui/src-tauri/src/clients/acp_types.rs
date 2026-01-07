@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// JSON-RPC 2.0 request
+/// JSON-RPC 2.0 request (outgoing)
 #[derive(Debug, Serialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: &'static str,
@@ -22,6 +22,16 @@ impl JsonRpcRequest {
             params,
         }
     }
+}
+
+/// JSON-RPC 2.0 request (incoming)
+#[derive(Debug, Deserialize)]
+pub struct JsonRpcIncomingRequest {
+    pub jsonrpc: String,
+    pub id: u64,
+    pub method: String,
+    #[serde(default)]
+    pub params: Option<Value>,
 }
 
 /// JSON-RPC 2.0 response
@@ -53,12 +63,13 @@ pub struct JsonRpcNotification {
     pub params: Option<Value>,
 }
 
-/// Incoming message from codex-acp (either response or notification)
-/// Note: Notification must come first because Response has optional id field
+/// Incoming message from codex-acp (request, notification, or response)
+/// Note: Order matters because some fields are optional and overlap.
 /// which would match notifications incorrectly
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum AcpMessage {
+    Request(JsonRpcIncomingRequest),
     Notification(JsonRpcNotification),
     Response(JsonRpcResponse),
 }
