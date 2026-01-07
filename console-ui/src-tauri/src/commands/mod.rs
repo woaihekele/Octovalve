@@ -4,5 +4,6 @@ pub mod config;
 pub mod console;
 pub mod mcp;
 pub mod openai;
+pub mod opener;
 pub mod profiles;
 pub mod terminal;

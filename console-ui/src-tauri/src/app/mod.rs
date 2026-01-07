@@ -62,7 +62,8 @@ pub fn run() {
             crate::commands::openai::openai_clear_messages,
             crate::commands::openai::openai_cancel,
             crate::commands::openai::openai_send,
-            crate::commands::mcp::mcp_call_tool
+            crate::commands::mcp::mcp_call_tool,
+            crate::commands::opener::open_external
         ])
         .setup(|app| {
             crate::app::setup::init(app).map_err(|err| {
