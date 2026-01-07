@@ -65,7 +65,6 @@ pub struct JsonRpcNotification {
 
 /// Incoming message from codex-acp (request, notification, or response)
 /// Note: Order matters because some fields are optional and overlap.
-/// which would match notifications incorrectly
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum AcpMessage {
