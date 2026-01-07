@@ -83,6 +83,15 @@
       <!-- Toolbar inside container -->
       <div class="chat-input__toolbar">
         <div class="chat-input__toolbar-left">
+          <!-- Provider selector -->
+          <n-select
+            :value="provider"
+            :options="providerOptions"
+            size="tiny"
+            :consistent-menu-width="false"
+            class="chat-input__provider-select"
+            @update:value="$emit('change-provider', $event)"
+          />
           <n-button
             size="tiny"
             text
@@ -94,15 +103,6 @@
               <n-icon :component="AddOutline" />
             </template>
           </n-button>
-          <!-- Provider selector -->
-          <n-select
-            :value="provider"
-            :options="providerOptions"
-            size="tiny"
-            :consistent-menu-width="false"
-            class="chat-input__provider-select"
-            @update:value="$emit('change-provider', $event)"
-          />
         </div>
         <div class="chat-input__toolbar-right">
           <!-- Send / Stop button -->
@@ -928,7 +928,7 @@ defineExpose({ focus, addExternalFiles });
   }
 
   &__provider-select {
-    width: 140px;
+    width: 70px;
     
     :deep(.n-base-selection) {
       --n-height: 26px;
