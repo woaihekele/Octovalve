@@ -362,8 +362,9 @@ async fn send_request(addr: &str, request: &CommandRequest) -> anyhow::Result<Co
 }
 
 fn response_to_tool_result(response: CommandResponse) -> CallToolResult {
+    let id = format!("id: {}", response.id);
     let status = format!("status: {:?}", response.status);
-    let mut message = vec![status];
+    let mut message = vec![id, status];
     if let Some(code) = response.exit_code {
         message.push(format!("exit_code: {code}"));
     }
@@ -382,7 +383,7 @@ fn response_to_tool_result(response: CommandResponse) -> CallToolResult {
 
     if matches!(
         response.status,
-        CommandStatus::Error | CommandStatus::Denied
+        CommandStatus::Error | CommandStatus::Denied | CommandStatus::Cancelled
     ) {
         if let Some(Value::Object(map)) = structured.as_mut() {
             map.insert("is_error".to_string(), Value::Bool(true));
@@ -393,7 +394,7 @@ fn response_to_tool_result(response: CommandResponse) -> CallToolResult {
         content: vec![Content::text(text)],
         is_error: Some(matches!(
             response.status,
-            CommandStatus::Denied | CommandStatus::Error
+            CommandStatus::Denied | CommandStatus::Error | CommandStatus::Cancelled
         )),
         meta: None,
         structured_content: structured,

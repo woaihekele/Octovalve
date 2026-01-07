@@ -59,8 +59,19 @@ pub async fn execute_request(
         }
     }
 
-    let timeout = Duration::from_secs(limits.timeout_secs);
-    let max_bytes = usize::try_from(limits.max_output_bytes).unwrap_or(usize::MAX);
+    let max_timeout_ms = limits.timeout_secs.saturating_mul(1000);
+    let requested_timeout_ms = request.timeout_ms.filter(|value| *value > 0);
+    let timeout_ms = requested_timeout_ms
+        .unwrap_or(max_timeout_ms)
+        .min(max_timeout_ms);
+    let timeout = Duration::from_millis(timeout_ms);
+
+    let max_output_bytes = request
+        .max_output_bytes
+        .filter(|value| *value > 0)
+        .unwrap_or(limits.max_output_bytes)
+        .min(limits.max_output_bytes);
+    let max_bytes = usize::try_from(max_output_bytes).unwrap_or(usize::MAX);
     let stdout_path = output_dir.join(format!("{}.stdout", request.id));
     let stderr_path = output_dir.join(format!("{}.stderr", request.id));
 
