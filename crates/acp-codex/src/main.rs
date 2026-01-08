@@ -1468,38 +1468,20 @@ async fn handle_acp_request_inner(
             let conversation_params = build_new_conversation_params(config, &cwd)?;
             let response = app_server.new_conversation(conversation_params).await?;
             let conversation_id = response.conversation_id;
-            let conversation_id_fallback = conversation_id.to_string();
             app_server
                 .add_conversation_listener(conversation_id.clone())
                 .await?;
 
-            let (waiter, session_id_ready) = {
+            let session_id = {
                 let mut guard = state.lock().await;
                 guard.conversation_id = Some(conversation_id);
-                if let Some(session_id) = guard.session_id.clone() {
-                    (None, Some(session_id))
-                } else {
-                    let (tx, rx) = oneshot::channel();
-                    guard.session_id_waiters.push(tx);
-                    (Some(rx), None)
-                }
-            };
-
-            let session_id = if let Some(session_id) = session_id_ready {
-                session_id
-            } else if let Some(waiter) = waiter {
-                match tokio::time::timeout(std::time::Duration::from_secs(5), waiter).await {
-                    Ok(Ok(value)) => value,
-                    _ => conversation_id_fallback,
-                }
-            } else {
-                conversation_id_fallback
-            };
-
-            {
-                let mut guard = state.lock().await;
+                let session_id = guard
+                    .session_id
+                    .clone()
+                    .unwrap_or_else(|| conversation_id.to_string());
                 guard.session_id = Some(session_id.clone());
-            }
+                session_id
+            };
 
             let mut result = serde_json::Map::new();
             insert_dual(
