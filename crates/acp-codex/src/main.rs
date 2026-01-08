@@ -121,6 +121,8 @@ struct AcpState {
     pending_prompt_ids: VecDeque<u64>,
     session_id_waiters: Vec<oneshot::Sender<String>>,
     app_server_initialized: bool,
+    saw_message_delta: bool,
+    saw_reasoning_delta: bool,
 }
 
 struct AcpWriter {
@@ -874,6 +876,8 @@ async fn handle_codex_event(
             let session_id_value = payload.session_id.to_string();
             let mut guard = state.lock().await;
             guard.session_id = Some(session_id_value.clone());
+            guard.saw_message_delta = false;
+            guard.saw_reasoning_delta = false;
             for waiter in guard.session_id_waiters.drain(..) {
                 let _ = waiter.send(session_id_value.clone());
             }
@@ -892,24 +896,48 @@ async fn handle_codex_event(
 
     match event {
         EventMsg::AgentMessageDelta(AgentMessageDeltaEvent { delta }) => {
+            {
+                let mut guard = state.lock().await;
+                guard.saw_message_delta = true;
+            }
             let mut update = update_with_type("agent_message_chunk");
             update.insert("content".to_string(), json!({ "text": delta }));
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
         EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent { delta }) => {
+            {
+                let mut guard = state.lock().await;
+                guard.saw_reasoning_delta = true;
+            }
             let mut update = update_with_type("agent_thought_chunk");
             update.insert("content".to_string(), json!({ "text": delta }));
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
         EventMsg::AgentMessage(AgentMessageEvent { message }) => {
-            let mut update = update_with_type("agent_message_chunk");
-            update.insert("content".to_string(), json!({ "text": message }));
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
+            let should_send = {
+                let mut guard = state.lock().await;
+                let should_send = !guard.saw_message_delta;
+                guard.saw_message_delta = true;
+                should_send
+            };
+            if should_send {
+                let mut update = update_with_type("agent_message_chunk");
+                update.insert("content".to_string(), json!({ "text": message }));
+                send_session_update(writer, &session_id, Value::Object(update)).await?;
+            }
         }
         EventMsg::AgentReasoning(AgentReasoningEvent { text }) => {
-            let mut update = update_with_type("agent_thought_chunk");
-            update.insert("content".to_string(), json!({ "text": text }));
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
+            let should_send = {
+                let mut guard = state.lock().await;
+                let should_send = !guard.saw_reasoning_delta;
+                guard.saw_reasoning_delta = true;
+                should_send
+            };
+            if should_send {
+                let mut update = update_with_type("agent_thought_chunk");
+                update.insert("content".to_string(), json!({ "text": text }));
+                send_session_update(writer, &session_id, Value::Object(update)).await?;
+            }
         }
         EventMsg::PlanUpdate(UpdatePlanArgs { plan, explanation }) => {
             let entries: Vec<Value> = plan
@@ -1144,6 +1172,11 @@ async fn handle_codex_event(
             } {
                 send_prompt_complete(writer, prompt_id, "error").await?;
             }
+            {
+                let mut guard = state.lock().await;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
+            }
         }
         EventMsg::Error(ErrorEvent { message, .. }) => {
             let mut update = update_with_type("error");
@@ -1154,6 +1187,11 @@ async fn handle_codex_event(
                 guard.pending_prompt_ids.pop_front()
             } {
                 send_prompt_complete(writer, prompt_id, "error").await?;
+            }
+            {
+                let mut guard = state.lock().await;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
             }
         }
         EventMsg::TaskComplete(_) => {
@@ -1168,6 +1206,11 @@ async fn handle_codex_event(
                 guard.pending_prompt_ids.pop_front()
             } {
                 send_prompt_complete(writer, prompt_id, "end_turn").await?;
+            }
+            {
+                let mut guard = state.lock().await;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
             }
         }
         _ => {}
@@ -1245,6 +1288,8 @@ async fn main() -> Result<()> {
                 AppServerEvent::SessionConfigured { session_id } => {
                     let mut guard = state_clone.lock().await;
                     guard.session_id = Some(session_id.clone());
+                    guard.saw_message_delta = false;
+                    guard.saw_reasoning_delta = false;
                     for waiter in guard.session_id_waiters.drain(..) {
                         let _ = waiter.send(session_id.clone());
                     }
@@ -1417,6 +1462,8 @@ async fn handle_acp_request_inner(
                 guard.session_id = None;
                 guard.pending_prompt_ids.clear();
                 guard.conversation_id = None;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
             }
             let conversation_params = build_new_conversation_params(config, &cwd)?;
             let response = app_server.new_conversation(conversation_params).await?;
@@ -1489,6 +1536,8 @@ async fn handle_acp_request_inner(
                 guard.session_id = None;
                 guard.pending_prompt_ids.clear();
                 guard.conversation_id = None;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
             }
 
             let rollout_path = SessionHandler::find_rollout_file_path(&params.session_id)?;
@@ -1542,6 +1591,12 @@ async fn handle_acp_request_inner(
                 return Err(anyhow!("session_id 不匹配"));
             }
 
+            {
+                let mut guard = state.lock().await;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
+            }
+
             let mut items = Vec::new();
             for block in params.prompt {
                 match block {
@@ -1593,6 +1648,11 @@ async fn handle_acp_request_inner(
                 guard.pending_prompt_ids.pop_front()
             } {
                 send_prompt_complete(writer, prompt_id, "cancelled").await?;
+            }
+            {
+                let mut guard = state.lock().await;
+                guard.saw_message_delta = false;
+                guard.saw_reasoning_delta = false;
             }
             let response = JsonRpcResponseOut {
                 jsonrpc: "2.0",
