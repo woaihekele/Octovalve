@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
@@ -117,6 +118,60 @@ pub(crate) fn build_new_conversation_params(
         compact_prompt: None,
         developer_instructions: None,
     })
+}
+
+pub(crate) fn build_mcp_overrides(servers: &[Value]) -> Option<HashMap<String, Value>> {
+    if servers.is_empty() {
+        return None;
+    }
+
+    let mut overrides = HashMap::new();
+    for server in servers {
+        let Value::Object(map) = server else {
+            continue;
+        };
+        let name = map
+            .get("name")
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string());
+        let Some(name) = name else {
+            continue;
+        };
+        let mut config = map.clone();
+        config.remove("name");
+        normalize_mcp_server_config(&mut config);
+        overrides.insert(format!("mcp_servers.{name}"), Value::Object(config));
+    }
+
+    if overrides.is_empty() {
+        None
+    } else {
+        Some(overrides)
+    }
+}
+
+fn normalize_mcp_server_config(config: &mut serde_json::Map<String, Value>) {
+    if let Some(value) = config.remove("envVars") {
+        config.entry("env_vars".to_string()).or_insert(value);
+    }
+
+    if let Some(env_value) = config.remove("env") {
+        match env_value {
+            Value::Null => {}
+            Value::Array(values) => {
+                if !values.is_empty() && values.iter().all(|value| value.as_str().is_some()) {
+                    config
+                        .entry("env_vars".to_string())
+                        .or_insert(Value::Array(values));
+                }
+            }
+            other => {
+                config.insert("env".to_string(), other);
+            }
+        }
+    }
 }
 
 pub(crate) fn update_with_type(update_type: &str) -> serde_json::Map<String, Value> {

@@ -22,8 +22,8 @@ use crate::protocol::{
 };
 use crate::state::AcpState;
 use crate::utils::{
-    SessionHandler, build_new_conversation_params, insert_dual, load_rollout_history,
-    normalize_cwd, update_with_type, write_temp_image,
+    SessionHandler, build_mcp_overrides, build_new_conversation_params, insert_dual,
+    load_rollout_history, normalize_cwd, update_with_type, write_temp_image,
 };
 use crate::writer::AcpWriter;
 
@@ -501,7 +501,10 @@ async fn handle_acp_request_inner(
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
             }
-            let conversation_params = build_new_conversation_params(config, &cwd)?;
+            let mut conversation_params = build_new_conversation_params(config, &cwd)?;
+            if let Some(overrides) = build_mcp_overrides(&params.mcp_servers) {
+                conversation_params.config = Some(overrides);
+            }
             let response = app_server.new_conversation(conversation_params).await?;
             let conversation_id = response.conversation_id;
             app_server
