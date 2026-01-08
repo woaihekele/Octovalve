@@ -185,7 +185,6 @@ const emit = defineEmits<{
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isFocused = ref(false);
 const isComposing = ref(false);
-const suppressEnter = ref(false);
 const { t } = useI18n();
 const mentionOpen = ref(false);
 const mentionQuery = ref('');
@@ -220,10 +219,6 @@ function handleCompositionStart() {
 
 function handleCompositionEnd() {
   isComposing.value = false;
-  suppressEnter.value = true;
-  requestAnimationFrame(() => {
-    suppressEnter.value = false;
-  });
   nextTick(updateMentionState);
 }
 
@@ -385,7 +380,8 @@ function selectMention(name: string) {
 }
 
 function handleKeyDown(event: KeyboardEvent) {
-  const shouldIgnoreEnter = () => isComposing.value || event.isComposing || suppressEnter.value;
+  const shouldIgnoreEnter = () =>
+    isComposing.value || event.isComposing || event.key === 'Process' || event.keyCode === 229;
   if (mentionOpen.value) {
     if (event.key === 'Tab') {
       event.preventDefault();
