@@ -185,7 +185,7 @@ const emit = defineEmits<{
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isFocused = ref(false);
 const isComposing = ref(false);
-const ignoreNextEnter = ref(false);
+const suppressEnter = ref(false);
 const { t } = useI18n();
 const mentionOpen = ref(false);
 const mentionQuery = ref('');
@@ -216,14 +216,14 @@ const fileAccept = computed(() => {
 
 function handleCompositionStart() {
   isComposing.value = true;
-  ignoreNextEnter.value = false;
 }
 
 function handleCompositionEnd() {
   isComposing.value = false;
-  if (props.sendOnEnter) {
-    ignoreNextEnter.value = true;
-  }
+  suppressEnter.value = true;
+  requestAnimationFrame(() => {
+    suppressEnter.value = false;
+  });
   nextTick(updateMentionState);
 }
 
@@ -385,6 +385,7 @@ function selectMention(name: string) {
 }
 
 function handleKeyDown(event: KeyboardEvent) {
+  const shouldIgnoreEnter = () => isComposing.value || event.isComposing || suppressEnter.value;
   if (mentionOpen.value) {
     if (event.key === 'Tab') {
       event.preventDefault();
@@ -399,7 +400,7 @@ function handleKeyDown(event: KeyboardEvent) {
       return;
     }
     if (event.key === 'Enter') {
-      if (isComposing.value || event.isComposing) {
+      if (shouldIgnoreEnter()) {
         return;
       }
       event.preventDefault();
@@ -436,19 +437,14 @@ function handleKeyDown(event: KeyboardEvent) {
   }
   if (event.key !== 'Enter') return;
   if (props.sendOnEnter) {
-    if (event.shiftKey || isComposing.value || event.isComposing) {
-      return;
-    }
-    if (ignoreNextEnter.value) {
-      ignoreNextEnter.value = false;
-      event.preventDefault();
+    if (event.shiftKey || shouldIgnoreEnter()) {
       return;
     }
     event.preventDefault();
     handleSend();
     return;
   }
-  if (event.metaKey && !event.shiftKey && !isComposing.value && !event.isComposing) {
+  if (event.metaKey && !event.shiftKey && !shouldIgnoreEnter()) {
     event.preventDefault();
     handleSend();
   }
