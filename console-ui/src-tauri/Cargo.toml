@@ -29,6 +29,7 @@ tokio-tungstenite = "0.23"
 urlencoding = "2.1"
 uuid = { version = "1.8", features = ["v4"] }
 protocol = { path = "../../crates/protocol" }
+acp-codex = { path = "../../crates/acp-codex" }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
