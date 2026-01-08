@@ -369,6 +369,7 @@ impl AcpClient {
     pub async fn load_session(&self, session_id: &str) -> Result<LoadSessionResult, AcpError> {
         let params = LoadSessionParams {
             session_id: session_id.to_string(),
+            mcp_servers: self.mcp_servers.clone(),
         };
 
         let result = self

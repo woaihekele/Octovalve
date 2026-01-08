@@ -95,6 +95,8 @@ pub(crate) struct NewSessionParamsInput {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LoadSessionParamsInput {
     pub(crate) session_id: String,
+    #[serde(default)]
+    pub(crate) mcp_servers: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize)]

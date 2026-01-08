@@ -184,6 +184,8 @@ pub struct NewSessionResult {
 #[serde(rename_all = "camelCase")]
 pub struct LoadSessionParams {
     pub session_id: String,
+    #[serde(default)]
+    pub mcp_servers: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

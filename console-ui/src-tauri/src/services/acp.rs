@@ -169,15 +169,6 @@ pub async fn acp_start(
     acp_args.push(mcp_override);
     let cli_config = build_cli_config(acp_args)?;
 
-    let existing = {
-        let mut guard = state.0.lock().await;
-        guard.take()
-    };
-    if let Some(client) = existing {
-        let _ = append_log_line(&log_path, "[acp_start] stopping existing client");
-        client.stop().await;
-    }
-
     let _ = append_log_line(&log_path, "[acp_start] starting new client...");
     let client = Arc::new(
         AcpClient::start(app.clone(), log_path.clone(), cli_config, mcp_servers)
@@ -192,9 +183,13 @@ pub async fn acp_start(
         e.to_string()
     })?;
 
-    {
+    let old_client = {
         let mut guard = state.0.lock().await;
-        *guard = Some(client);
+        guard.replace(client)
+    };
+    if let Some(old_client) = old_client {
+        let _ = append_log_line(&log_path, "[acp_start] stopping previous client");
+        old_client.stop().await;
     }
 
     let _ = append_log_line(

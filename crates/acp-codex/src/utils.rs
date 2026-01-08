@@ -174,6 +174,59 @@ fn normalize_mcp_server_config(config: &mut serde_json::Map<String, Value>) {
     }
 }
 
+pub(crate) fn save_mcp_servers(rollout_path: &Path, servers: &[Value]) -> Result<()> {
+    if servers.is_empty() {
+        return Ok(());
+    }
+    let normalized = normalize_mcp_servers(servers);
+    let payload = json!({ "mcp_servers": normalized });
+    let data = serde_json::to_vec(&payload)?;
+    let path = mcp_metadata_path(rollout_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, data)?;
+    Ok(())
+}
+
+pub(crate) fn load_mcp_servers(rollout_path: &Path) -> Result<Option<Vec<Value>>> {
+    let path = mcp_metadata_path(rollout_path);
+    let data = match std::fs::read_to_string(&path) {
+        Ok(data) => data,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+    let value: Value = serde_json::from_str(&data)?;
+    let servers = value
+        .get("mcp_servers")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if servers.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(normalize_mcp_servers(&servers)))
+}
+
+fn normalize_mcp_servers(servers: &[Value]) -> Vec<Value> {
+    let mut normalized = Vec::new();
+    for server in servers {
+        let Value::Object(map) = server else {
+            continue;
+        };
+        let mut map = map.clone();
+        normalize_mcp_server_config(&mut map);
+        normalized.push(Value::Object(map));
+    }
+    normalized
+}
+
+fn mcp_metadata_path(rollout_path: &Path) -> PathBuf {
+    let mut path = rollout_path.to_path_buf();
+    path.set_extension("mcp.json");
+    path
+}
+
 pub(crate) fn update_with_type(update_type: &str) -> serde_json::Map<String, Value> {
     let mut map = serde_json::Map::new();
     map.insert(

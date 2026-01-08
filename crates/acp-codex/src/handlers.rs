@@ -23,7 +23,8 @@ use crate::protocol::{
 use crate::state::AcpState;
 use crate::utils::{
     SessionHandler, build_mcp_overrides, build_new_conversation_params, insert_dual,
-    load_rollout_history, normalize_cwd, update_with_type, write_temp_image,
+    load_mcp_servers, load_rollout_history, normalize_cwd, save_mcp_servers,
+    update_with_type, write_temp_image,
 };
 use crate::writer::AcpWriter;
 
@@ -506,6 +507,11 @@ async fn handle_acp_request_inner(
                 conversation_params.config = Some(overrides);
             }
             let response = app_server.new_conversation(conversation_params).await?;
+            if !params.mcp_servers.is_empty() {
+                if let Err(err) = save_mcp_servers(&response.rollout_path, &params.mcp_servers) {
+                    eprintln!("[acp-codex] 写入 MCP 会话配置失败: {err}");
+                }
+            }
             let conversation_id = response.conversation_id;
             app_server
                 .add_conversation_listener(conversation_id.clone())
@@ -563,7 +569,27 @@ async fn handle_acp_request_inner(
 
             let rollout_path = SessionHandler::find_rollout_file_path(&params.session_id)?;
             let cwd = normalize_cwd(".");
-            let conversation_params = build_new_conversation_params(config, &cwd)?;
+            let mut conversation_params = build_new_conversation_params(config, &cwd)?;
+            let stored_mcp_servers = match load_mcp_servers(&rollout_path) {
+                Ok(servers) => servers,
+                Err(err) => {
+                    eprintln!("[acp-codex] 读取 MCP 会话配置失败: {err}");
+                    None
+                }
+            };
+            let mcp_servers = if let Some(servers) = stored_mcp_servers {
+                servers
+            } else if !params.mcp_servers.is_empty() {
+                if let Err(err) = save_mcp_servers(&rollout_path, &params.mcp_servers) {
+                    eprintln!("[acp-codex] 写入 MCP 会话配置失败: {err}");
+                }
+                params.mcp_servers.clone()
+            } else {
+                Vec::new()
+            };
+            if let Some(overrides) = build_mcp_overrides(&mcp_servers) {
+                conversation_params.config = Some(overrides);
+            }
 
             let response = app_server
                 .resume_conversation(rollout_path.clone(), conversation_params)

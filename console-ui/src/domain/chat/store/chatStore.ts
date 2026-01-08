@@ -49,6 +49,7 @@ export const useChatStore = defineStore('chat', () => {
   const authMethods = ref<AuthMethod[]>([]);
   const acpCapabilities = ref<AgentCapabilities | null>(null);
   const acpCwd = ref<string | null>(null);
+  const acpLoadedSessionId = ref<string | null>(null);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
 
@@ -300,7 +301,9 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadAcpSessionOrThrow(sessionId: string) {
     try {
-      return await acpService.loadSession(sessionId);
+      const loaded = await acpService.loadSession(sessionId);
+      acpLoadedSessionId.value = sessionId;
+      return loaded;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`ACP load session failed: ${msg}`);
@@ -320,6 +323,9 @@ export const useChatStore = defineStore('chat', () => {
     }
     const session = activeSession.value;
     if (!session?.acpSessionId) {
+      return;
+    }
+    if (acpLoadedSessionId.value === session.acpSessionId) {
       return;
     }
 
@@ -658,10 +664,12 @@ export const useChatStore = defineStore('chat', () => {
       console.log('[chatStore] initializeAcp: acpService.start returned:', response);
       authMethods.value = response.authMethods;
       acpInitialized.value = true;
+      setConnected(true);
       acpCapabilities.value = response.agentCapabilities ?? null;
       provider.value = 'acp';
       providerInitialized.value = true;
       acpCwd.value = cwd;
+      acpLoadedSessionId.value = null;
       openaiContextSessionId.value = null;
       setupAcpEventListener();
       if (activeSession.value?.acpSessionId) {
@@ -679,6 +687,7 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e) {
       console.error('[chatStore] initializeAcp failed:', e);
       setError(`Failed to initialize ACP: ${e}`);
+      setConnected(false);
       throw e;
     }
   }
@@ -701,7 +710,7 @@ export const useChatStore = defineStore('chat', () => {
     const session = activeSession.value!;
 
     if (session.acpSessionId) {
-      if (canLoadAcpSession()) {
+      if (canLoadAcpSession() && acpLoadedSessionId.value !== session.acpSessionId) {
         const loaded = await loadAcpSessionOrThrow(session.acpSessionId);
         applyAcpHistoryToActiveSession(loaded.history);
       }
@@ -710,6 +719,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const info = await acpService.newSession(cwd);
     session.acpSessionId = info.sessionId;
+    acpLoadedSessionId.value = info.sessionId;
     session.updatedAt = Date.now();
     saveToStorage();
     return info.sessionId;
@@ -811,6 +821,7 @@ export const useChatStore = defineStore('chat', () => {
     acpInitialized.value = false;
     acpCapabilities.value = null;
     acpCwd.value = null;
+    acpLoadedSessionId.value = null;
     providerInitialized.value = false;
     setConnected(false);
     console.log('[chatStore] stopAcp done');
@@ -821,6 +832,10 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setupAcpEventListener() {
+    if (acpEventUnlisten) {
+      acpEventUnlisten();
+      acpEventUnlisten = null;
+    }
     acpService.onEvent(handleAcpEvent).then((unlisten) => {
       acpEventUnlisten = unlisten;
     });

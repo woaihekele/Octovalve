@@ -1136,8 +1136,6 @@ async function refreshChatProviderFromSettings(previous: AppSettings, next: AppS
     await stopActiveProvider();
   } else if (nextProvider === 'openai' && openaiChanged && chatStore.provider === 'openai') {
     await chatStore.stopOpenai();
-  } else if (nextProvider === 'acp' && acpChanged && chatStore.provider === 'acp') {
-    await chatStore.stopAcp();
   }
 
   try {
