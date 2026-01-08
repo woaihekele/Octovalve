@@ -101,6 +101,13 @@ const effectiveUiScale = computed(
 const effectiveTerminalScale = computed(
   () => previewTerminalScale.value ?? settings.value.terminalScale
 );
+const DRAG_REGION_BASE_PX = 28;
+const dragRegionHeight = computed(() => {
+  const scale = Number.isFinite(effectiveUiScale.value) && effectiveUiScale.value > 0
+    ? effectiveUiScale.value
+    : 1;
+  return `${DRAG_REGION_BASE_PX / scale}px`;
+});
 const selectedSnapshot = computed(() => {
   if (!selectedTargetName.value) {
     return null;
@@ -1414,9 +1421,13 @@ watch(
       </div>
     </n-card>
   </n-modal>
-  <div class="flex h-screen w-screen bg-surface text-foreground overflow-hidden pt-7">
+  <div
+    class="flex h-screen w-screen bg-surface text-foreground overflow-hidden"
+    :style="{ paddingTop: dragRegionHeight }"
+  >
     <div
-      class="fixed top-0 left-0 right-0 h-7 z-[4000] pointer-events-auto"
+      class="fixed top-0 left-0 right-0 z-[4000] pointer-events-auto"
+      :style="{ height: dragRegionHeight }"
       data-tauri-drag-region
     ></div>
     <ConsoleLeftPane
