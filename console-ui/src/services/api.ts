@@ -224,6 +224,13 @@ export async function writeProfileRuntimeSettings(name: string, settings: Profil
   await invoke('write_profile_runtime_settings', { name, settings });
 }
 
+export async function cleanupTunnels() {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.tunnel'));
+  }
+  await invoke('proxy_cleanup_tunnels');
+}
+
 export async function openConsoleStream(
   onEvent: (event: ConsoleEvent) => void,
   onStatus?: (status: ConsoleConnectionStatus) => void

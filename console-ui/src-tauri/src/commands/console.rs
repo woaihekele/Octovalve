@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
 
 use crate::services::console_http::{
-    console_get, console_post, console_post_with_timeout, HTTP_RELOAD_TIMEOUT,
+    console_get, console_post, console_post_with_timeout, HTTP_RELOAD_TIMEOUT, HTTP_TUNNEL_TIMEOUT,
 };
 use crate::services::console_sidecar::{start_console, stop_console};
 use crate::services::console_ws::start_console_stream as start_console_stream_service;
@@ -197,6 +197,17 @@ pub async fn proxy_reload_remote_brokers(log_state: State<'_, AppLogState>) -> R
         json!({}),
         &log_state.app_log,
         HTTP_RELOAD_TIMEOUT,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn proxy_cleanup_tunnels(log_state: State<'_, AppLogState>) -> Result<(), String> {
+    console_post_with_timeout(
+        "/tunnels/cleanup",
+        json!({}),
+        &log_state.app_log,
+        HTTP_TUNNEL_TIMEOUT,
     )
     .await
 }

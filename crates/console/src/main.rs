@@ -48,6 +48,7 @@ struct AppState {
     state: Arc<RwLock<crate::state::ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
     bootstrap: BootstrapConfig,
+    tunnel_manager: Option<Arc<TunnelManager>>,
 }
 
 const CONSOLE_TUNNEL_CLIENT_ID: &str = "console";
@@ -81,25 +82,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let shared_state = Arc::new(RwLock::new(state));
     let (event_tx, _) = broadcast::channel(512);
-    let app_state = AppState {
-        state: Arc::clone(&shared_state),
-        event_tx: event_tx.clone(),
-        bootstrap: bootstrap.clone(),
-    };
     spawn_target_ip_resolution(Arc::clone(&shared_state), event_tx.clone());
-
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/targets", get(list_targets))
-        .route("/targets/:name/snapshot", get(get_snapshot))
-        .route("/targets/reload-brokers", post(reload_remote_brokers))
-        .route("/targets/:name/approve", post(approve_command))
-        .route("/targets/:name/deny", post(deny_command))
-        .route("/targets/:name/cancel", post(cancel_command))
-        .route("/targets/:name/terminal", get(terminal_ws_handler))
-        .route("/ws", get(ws_handler))
-        .with_state(app_state)
-        .layer(middleware::from_fn(log_http_request));
 
     let tunnel_manager = if tunnel_targets.is_empty() {
         None
@@ -107,6 +90,26 @@ async fn main() -> anyhow::Result<()> {
         let control_dir = expand_tilde(&args.tunnel_control_dir);
         Some(Arc::new(TunnelManager::new(tunnel_targets, control_dir)?))
     };
+    let app_state = AppState {
+        state: Arc::clone(&shared_state),
+        event_tx: event_tx.clone(),
+        bootstrap: bootstrap.clone(),
+        tunnel_manager: tunnel_manager.clone(),
+    };
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/targets", get(list_targets))
+        .route("/targets/:name/snapshot", get(get_snapshot))
+        .route("/targets/reload-brokers", post(reload_remote_brokers))
+        .route("/tunnels/cleanup", post(cleanup_tunnels))
+        .route("/targets/:name/approve", post(approve_command))
+        .route("/targets/:name/deny", post(deny_command))
+        .route("/targets/:name/cancel", post(cancel_command))
+        .route("/targets/:name/terminal", get(terminal_ws_handler))
+        .route("/ws", get(ws_handler))
+        .with_state(app_state)
+        .layer(middleware::from_fn(log_http_request));
     let tunnel_manager_handle = tunnel_manager.clone();
     let worker_handles = spawn_target_workers(
         Arc::clone(&shared_state),
@@ -307,6 +310,29 @@ async fn reload_remote_brokers(
         warn!(event = "remote_broker.reload_failed", errors = ?failures, "remote broker reload failed");
         Err(StatusCode::SERVICE_UNAVAILABLE)
     }
+}
+
+async fn cleanup_tunnels(
+    State(state): State<AppState>,
+) -> Result<Json<ActionResponse>, StatusCode> {
+    let manager = state.tunnel_manager.clone();
+    let Some(manager) = manager else {
+        return Ok(Json(ActionResponse {
+            message: "tunnel manager not active".to_string(),
+        }));
+    };
+    info!(
+        event = "tunnel.cleanup.requested",
+        "tunnel cleanup requested"
+    );
+    manager.shutdown().await;
+    info!(
+        event = "tunnel.cleanup.completed",
+        "tunnel cleanup completed"
+    );
+    Ok(Json(ActionResponse {
+        message: "tunnels cleaned".to_string(),
+    }))
 }
 
 fn runtime_from_spec(spec: crate::state::TargetSpec) -> TargetRuntime {

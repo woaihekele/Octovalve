@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NButton, NInput, NInputNumber, NSelect, NSpin } from 'naive-ui';
+import { NButton, NIcon, NInput, NInputNumber, NSelect, NSpin } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import { AddOutline, TrashOutline } from '@vicons/ionicons5';
 import MonacoEditor from '../MonacoEditor.vue';
 import type { ConfigFilePayload } from '../../../shared/types';
 import type { ResolvedTheme } from '../../../shared/theme';
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'save'): void;
   (e: 'apply'): void;
+  (e: 'request-cleanup-tunnels'): void;
   (e: 'update:proxyConfigText', value: string): void;
   (e: 'update:brokerConfigText', value: string): void;
   (e: 'update:remoteDirAlias', value: string): void;
@@ -118,23 +120,47 @@ const statusText = computed(() => {
             :disabled="props.configBusy || props.logModalOpen || props.configLoading"
             @update:value="(v) => emit('request-profile-change', v as string | null)"
           />
-          <NButton size="small" :disabled="props.configBusy || props.logModalOpen || props.configLoading" @click="emit('open-create-profile')">
-            {{ $t('common.create') }}
+          <NButton
+            size="small"
+            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+            :aria-label="$t('common.create')"
+            :title="$t('common.create')"
+            @click="emit('open-create-profile')"
+          >
+            <template #icon>
+              <NIcon :component="AddOutline" />
+            </template>
           </NButton>
           <NButton
             size="small"
             quaternary
             :disabled="props.configBusy || props.logModalOpen || props.configLoading || !props.canDeleteProfile"
+            :aria-label="$t('common.delete')"
+            :title="$t('common.delete')"
             @click="emit('open-delete-profile')"
           >
-            {{ $t('common.delete') }}
+            <template #icon>
+              <NIcon :component="TrashOutline" />
+            </template>
           </NButton>
         </div>
       </div>
 
       <div class="rounded-lg border border-border/50 bg-panel-muted/50 p-3 text-sm">
-        <div class="font-medium">{{ $t('settings.profile.remote.title') }}</div>
-        <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.help') }}</div>
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div class="font-medium">{{ $t('settings.profile.remote.title') }}</div>
+            <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.help') }}</div>
+          </div>
+          <NButton
+            size="small"
+            type="primary"
+            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+            @click="emit('request-cleanup-tunnels')"
+          >
+            {{ $t('settings.profile.remote.cleanupAction') }}
+          </NButton>
+        </div>
         <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div class="flex flex-col gap-1">
             <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.aliasLabel') }}</div>
@@ -173,7 +199,9 @@ const statusText = computed(() => {
             />
           </div>
         </div>
-        <div class="mt-2 text-xs text-foreground-muted">{{ $t('settings.profile.remote.portHint') }}</div>
+        <div class="mt-2 text-xs text-foreground-muted">
+          {{ $t('settings.profile.remote.portHint') }}
+        </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">

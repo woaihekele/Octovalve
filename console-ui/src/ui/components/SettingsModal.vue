@@ -21,6 +21,7 @@ import { useI18n } from 'vue-i18n';
 import {
   createProfile,
   deleteProfile,
+  cleanupTunnels,
   listProfiles,
   readConsoleLog,
   readProfileBrokerConfig,
@@ -100,6 +101,7 @@ const deleteProfileOpen = ref(false);
 const deleteProfileName = ref<string | null>(null);
 const refreshConfirmOpen = ref(false);
 const confirmApplyOpen = ref(false);
+const cleanupTunnelsOpen = ref(false);
 const proxyConfig = ref<ConfigFilePayload | null>(null);
 const brokerConfig = ref<ConfigFilePayload | null>(null);
 const proxyConfigText = ref('');
@@ -712,6 +714,40 @@ function confirmRefresh() {
   void refreshConfigNow();
 }
 
+function openCleanupTunnels() {
+  if (configBusy.value || configLoading.value || logModalOpen.value) {
+    return;
+  }
+  cleanupTunnelsOpen.value = true;
+}
+
+function cancelCleanupTunnels() {
+  cleanupTunnelsOpen.value = false;
+}
+
+function confirmCleanupTunnels() {
+  cleanupTunnelsOpen.value = false;
+  void runCleanupTunnels();
+}
+
+async function runCleanupTunnels() {
+  if (configBusy.value) {
+    return;
+  }
+  configBusy.value = true;
+  try {
+    await cleanupTunnels();
+    showConfigMessage(t('settings.profile.remote.cleanupDone'));
+  } catch (err) {
+    showConfigMessage(
+      t('settings.profile.remote.cleanupFailed', { error: String(err) }),
+      'error'
+    );
+  } finally {
+    configBusy.value = false;
+  }
+}
+
 async function saveConfigFiles() {
   if (configBusy.value || configLoading.value) {
     return;
@@ -903,6 +939,7 @@ watch(
       deleteProfileOpen.value = false;
       deleteProfileName.value = null;
       refreshConfirmOpen.value = false;
+      cleanupTunnelsOpen.value = false;
       proxyConfig.value = null;
       brokerConfig.value = null;
       proxyConfigText.value = '';
@@ -1041,6 +1078,7 @@ watch(
                 @open-create-profile="openCreateProfile"
                 @open-delete-profile="openDeleteProfile"
                 @request-refresh="requestRefreshConfig"
+                @request-cleanup-tunnels="openCleanupTunnels"
                 @close="emit('close')"
                 @save="saveConfigFiles"
                 @apply="requestApplyConfig"
@@ -1138,6 +1176,23 @@ watch(
           <n-button @click="cancelRefreshConfirm">{{ $t('common.cancel') }}</n-button>
           <n-button type="primary" :disabled="configBusy" @click="confirmRefresh">
             {{ $t('settings.config.refreshConfirm') }}
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="cleanupTunnelsOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>{{ $t('settings.profile.remote.cleanupConfirmTitle') }}</template>
+      <div class="text-sm text-foreground-muted">
+        {{ $t('settings.profile.remote.cleanupConfirmHint') }}
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="cancelCleanupTunnels">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :disabled="configBusy" @click="confirmCleanupTunnels">
+            {{ $t('settings.profile.remote.cleanupConfirm') }}
           </n-button>
         </div>
       </template>
