@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NSelect, NInput, NInputNumber, NAlert, NSwitch } from 'naive-ui';
+import { NSelect, NInput, NInputNumber, NSwitch } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import type { ChatProviderConfig } from '../../../shared/types';
@@ -158,10 +158,6 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
     <!-- ACP Settings -->
     <div v-if="props.config.provider === 'acp'" class="space-y-4 p-4 rounded-lg bg-panel-muted/50">
       <div class="text-sm font-medium text-accent">{{ $t('settings.chat.acp.title') }}</div>
-      
-      <NAlert type="info" :bordered="false" class="mb-4">
-        {{ $t('settings.chat.acp.hint') }}
-      </NAlert>
 
       <div class="space-y-1">
         <div class="text-sm">{{ $t('settings.chat.acp.arguments') }}</div>
