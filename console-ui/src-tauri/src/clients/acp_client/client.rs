@@ -1,4 +1,4 @@
-//! ACP client for managing codex-acp subprocess and protocol communication.
+//! ACP client for managing acp-codex subprocess and protocol communication.
 
 use std::collections::HashMap;
 use std::fs;
@@ -21,7 +21,7 @@ use super::error::AcpError;
 
 type PendingRequests = Arc<Mutex<HashMap<u64, mpsc::Sender<Result<Value, AcpError>>>>>;
 
-/// ACP client managing the codex-acp subprocess.
+/// ACP client managing the acp-codex subprocess.
 pub struct AcpClient {
     process: Child,
     stdin: Arc<Mutex<ChildStdin>>,
@@ -35,15 +35,15 @@ pub struct AcpClient {
 }
 
 impl AcpClient {
-    /// Start a new codex-acp process.
+    /// Start a new acp-codex process.
     pub fn start(
-        codex_acp_path: &PathBuf,
+        acp_codex_path: &PathBuf,
         app_handle: AppHandle,
         log_path: PathBuf,
         acp_args: Vec<String>,
         mcp_servers: Vec<Value>,
     ) -> Result<Self, AcpError> {
-        let mut command = Command::new(codex_acp_path);
+        let mut command = Command::new(acp_codex_path);
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -100,7 +100,7 @@ impl AcpClient {
         })
     }
 
-    /// Read loop for processing messages from codex-acp.
+    /// Read loop for processing messages from acp-codex.
     fn read_loop(
         stdout: ChildStdout,
         stdin: Arc<Mutex<ChildStdin>>,
@@ -235,7 +235,7 @@ impl AcpClient {
         value.chars().take(max_chars).collect()
     }
 
-    /// Handle incoming notifications from codex-acp.
+    /// Handle incoming notifications from acp-codex.
     fn handle_notification(
         app_handle: &AppHandle,
         log_path: &Path,
@@ -431,7 +431,7 @@ impl AcpClient {
         self.init_result.lock().unwrap().clone()
     }
 
-    /// Stop the codex-acp process.
+    /// Stop the acp-codex process.
     pub fn stop(&mut self) {
         log_line(&self.log_path, "[ACP] stop: killing process");
         let _ = self.process.kill();

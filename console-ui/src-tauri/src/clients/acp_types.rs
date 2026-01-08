@@ -1,4 +1,4 @@
-//! ACP (Agent Client Protocol) type definitions for communication with codex-acp.
+//! ACP (Agent Client Protocol) type definitions for communication with acp-codex.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -63,7 +63,7 @@ pub struct JsonRpcNotification {
     pub params: Option<Value>,
 }
 
-/// Incoming message from codex-acp (request, notification, or response)
+/// Incoming message from acp-codex (request, notification, or response)
 /// Note: Order matters because some fields are optional and overlap.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]

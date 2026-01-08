@@ -1,5 +1,5 @@
 /**
- * ACP (Agent Client Protocol) service for communicating with codex-acp backend
+ * ACP (Agent Client Protocol) service for communicating with acp-codex backend
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -119,10 +119,10 @@ export interface CompletePayload {
  */
 export async function acpStart(
   cwd: string,
-  codexAcpPath?: string,
+  acpCodexPath?: string,
   acpArgs?: string
 ): Promise<AcpInitResponse> {
-  return invoke<AcpInitResponse>('acp_start', { cwd, codexAcpPath, acpArgs });
+  return invoke<AcpInitResponse>('acp_start', { cwd, acpCodexPath, acpArgs });
 }
 
 /**

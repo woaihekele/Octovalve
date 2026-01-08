@@ -13,10 +13,10 @@ pub async fn acp_start(
     state: State<'_, AcpClientState>,
     proxy_state: State<'_, ProxyConfigState>,
     cwd: String,
-    codex_acp_path: Option<String>,
+    acp_codex_path: Option<String>,
     acp_args: Option<String>,
 ) -> Result<AcpInitResponse, String> {
-    acp::acp_start(app, state, proxy_state, cwd, codex_acp_path, acp_args).await
+    acp::acp_start(app, state, proxy_state, cwd, acp_codex_path, acp_args).await
 }
 
 #[tauri::command]

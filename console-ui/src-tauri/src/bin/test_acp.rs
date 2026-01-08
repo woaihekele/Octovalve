@@ -18,14 +18,14 @@ struct AcpEventPayload {
 
 fn parse_args() -> (PathBuf, String, Option<String>, Option<String>) {
     let mut args = std::env::args().skip(1);
-    let mut codex_acp_path: Option<PathBuf> = None;
+    let mut acp_codex_path: Option<PathBuf> = None;
     let mut cwd: Option<String> = None;
     let mut auth_method: Option<String> = None;
     let mut image_path: Option<String> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--codex-acp-path" => {
-                codex_acp_path = args.next().map(PathBuf::from);
+            "--acp-codex-path" => {
+                acp_codex_path = args.next().map(PathBuf::from);
             }
             "--cwd" => {
                 cwd = args.next();
@@ -40,20 +40,20 @@ fn parse_args() -> (PathBuf, String, Option<String>, Option<String>) {
         }
     }
 
-    let codex_acp_path = codex_acp_path
-        .or_else(|| std::env::var("CODEX_ACP_PATH").ok().map(PathBuf::from))
+    let acp_codex_path = acp_codex_path
+        .or_else(|| std::env::var("ACP_CODEX_PATH").ok().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("acp-codex"));
     let cwd = cwd.unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| "/".to_string())
     });
-    (codex_acp_path, cwd, auth_method, image_path)
+    (acp_codex_path, cwd, auth_method, image_path)
 }
 
 fn main() -> Result<(), String> {
-    let (codex_acp_path, cwd, auth_method, image_arg) = parse_args();
-    eprintln!("codex_acp_path={}", codex_acp_path.display());
+    let (acp_codex_path, cwd, auth_method, image_arg) = parse_args();
+    eprintln!("acp_codex_path={}", acp_codex_path.display());
     eprintln!("cwd={}", cwd);
 
     let app = tauri::Builder::default()
@@ -82,7 +82,7 @@ fn main() -> Result<(), String> {
     });
 
     let mut client = AcpClient::start(
-        &codex_acp_path,
+        &acp_codex_path,
         app_handle.clone(),
         app_log,
         Vec::new(),

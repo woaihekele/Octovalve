@@ -13,7 +13,7 @@ use crate::services::logging::append_log_line;
 use crate::services::profiles::{expand_tilde_path, octovalve_dir};
 use crate::state::{AppLogState, ProxyConfigState};
 
-fn resolve_codex_acp_path(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, String> {
+fn resolve_acp_codex_path(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, String> {
     if let Some(value) = configured {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
@@ -26,17 +26,10 @@ fn resolve_codex_acp_path(app: &AppHandle, configured: Option<&str>) -> Result<P
         if custom_path.exists() {
             return Ok(custom_path);
         }
-        let legacy_path = dir.join("codex-acp");
-        if legacy_path.exists() {
-            return Ok(legacy_path);
-        }
     }
 
     let search_path = build_console_path();
     if let Some(found) = find_in_path("acp-codex", &search_path) {
-        return Ok(found);
-    }
-    if let Some(found) = find_in_path("codex-acp", &search_path) {
         return Ok(found);
     }
 
@@ -130,24 +123,24 @@ pub async fn acp_start(
     state: State<'_, AcpClientState>,
     proxy_state: State<'_, ProxyConfigState>,
     cwd: String,
-    codex_acp_path: Option<String>,
+    acp_codex_path: Option<String>,
     acp_args: Option<String>,
 ) -> Result<AcpInitResponse, String> {
     let log_path = app.state::<AppLogState>().app_log.clone();
     let _ = append_log_line(&log_path, &format!("[acp_start] called with cwd: {}", cwd));
 
-    let codex_acp_path = match resolve_codex_acp_path(&app, codex_acp_path.as_deref()) {
+    let acp_codex_path = match resolve_acp_codex_path(&app, acp_codex_path.as_deref()) {
         Ok(path) => {
             let _ = append_log_line(
                 &log_path,
-                &format!("[acp_start] codex_acp_path resolved: {:?}", path),
+                &format!("[acp_start] acp_codex_path resolved: {:?}", path),
             );
             path
         }
         Err(e) => {
             let _ = append_log_line(
                 &log_path,
-                &format!("[acp_start] failed to resolve codex_acp_path: {}", e),
+                &format!("[acp_start] failed to resolve acp_codex_path: {}", e),
             );
             return Err(e);
         }
@@ -185,7 +178,7 @@ pub async fn acp_start(
             "[acp_start] spawn_blocking: calling AcpClient::start",
         );
         let client = AcpClient::start(
-            &codex_acp_path,
+            &acp_codex_path,
             app_clone,
             log_path_clone.clone(),
             acp_args,
