@@ -461,12 +461,17 @@ export const messages = {
       log: {
         title: {
           console: 'Console 重启日志',
+          acp: 'ACP 会话重启日志',
           remote: '远端重启日志',
         },
         footer: {
           console: {
             pending: '正在重启 console…',
             done: 'console 重启流程已结束',
+          },
+          acp: {
+            pending: '正在重启 ACP 会话…',
+            done: 'ACP 会话重启流程已结束',
           },
           remote: {
             pending: '正在重启远端 broker…',
@@ -478,6 +483,11 @@ export const messages = {
             pending: '正在重启 console，请稍候…',
             done: 'console 重启完成。',
             failed: 'console 重启失败：{error}',
+          },
+          acp: {
+            pending: '正在重启 ACP 会话，请稍候…',
+            done: 'ACP 会话重启完成。',
+            failed: 'ACP 会话重启失败：{error}',
           },
           remote: {
             pending: '正在重启远端 broker，请稍候…',
@@ -952,12 +962,17 @@ export const messages = {
       log: {
         title: {
           console: 'Console Restart Log',
+          acp: 'ACP Session Restart Log',
           remote: 'Remote Restart Log',
         },
         footer: {
           console: {
             pending: 'Restarting console...',
             done: 'Console restart finished',
+          },
+          acp: {
+            pending: 'Restarting ACP session...',
+            done: 'ACP session restart finished',
           },
           remote: {
             pending: 'Restarting remote broker...',
@@ -969,6 +984,11 @@ export const messages = {
             pending: 'Restarting console, please wait...',
             done: 'Console restarted.',
             failed: 'Console restart failed: {error}',
+          },
+          acp: {
+            pending: 'Restarting ACP session, please wait...',
+            done: 'ACP session restarted.',
+            failed: 'ACP session restart failed: {error}',
           },
           remote: {
             pending: 'Restarting remote broker, please wait...',

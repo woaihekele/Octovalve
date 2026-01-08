@@ -371,6 +371,13 @@ export async function readConsoleLog(offset: number, maxBytes: number): Promise<
   return invoke<ConsoleLogChunk>('read_console_log', { offset, maxBytes });
 }
 
+export async function readAppLog(offset: number, maxBytes: number): Promise<ConsoleLogChunk> {
+  if (!TAURI_AVAILABLE) {
+    return { content: '', nextOffset: 0 };
+  }
+  return invoke<ConsoleLogChunk>('read_app_log', { offset, maxBytes });
+}
+
 export async function terminalOpen(name: string, cols: number, rows: number, term?: string) {
   if (!TAURI_AVAILABLE) {
     throw new Error(t('api.tauriOnly.terminal'));

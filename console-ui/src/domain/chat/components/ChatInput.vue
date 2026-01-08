@@ -89,6 +89,7 @@
             :options="providerOptions"
             size="tiny"
             :consistent-menu-width="false"
+            :disabled="disabled"
             class="chat-input__provider-select"
             @update:value="$emit('change-provider', $event)"
           />

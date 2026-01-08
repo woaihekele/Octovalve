@@ -44,6 +44,7 @@ pub fn run() {
             crate::commands::console::proxy_reload_remote_brokers,
             crate::commands::console::proxy_cleanup_tunnels,
             crate::commands::console::read_console_log,
+            crate::commands::console::read_app_log,
             crate::commands::ai::ai_risk_assess,
             crate::commands::console::start_console_stream,
             crate::commands::terminal::terminal_open,

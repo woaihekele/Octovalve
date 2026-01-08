@@ -20,12 +20,7 @@ fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir.join("logs").join("console.log"))
 }
 
-fn read_console_log_blocking(
-    offset: u64,
-    max_bytes: u64,
-    app: &AppHandle,
-) -> Result<LogChunk, String> {
-    let path = console_log_path(app)?;
+fn read_log_blocking(offset: u64, max_bytes: u64, path: &Path) -> Result<LogChunk, String> {
     if !path.exists() {
         return Ok(LogChunk {
             content: String::new(),
@@ -34,7 +29,7 @@ fn read_console_log_blocking(
     }
     let mut file = OpenOptions::new()
         .read(true)
-        .open(&path)
+        .open(path)
         .map_err(|err| err.to_string())?;
     let len = file.metadata().map_err(|err| err.to_string())?.len();
     let start = if offset > len { 0 } else { offset };
@@ -56,6 +51,15 @@ fn read_console_log_blocking(
     })
 }
 
+fn read_console_log_blocking(
+    offset: u64,
+    max_bytes: u64,
+    app: &AppHandle,
+) -> Result<LogChunk, String> {
+    let path = console_log_path(app)?;
+    read_log_blocking(offset, max_bytes, &path)
+}
+
 #[tauri::command]
 pub async fn read_console_log(
     offset: u64,
@@ -68,6 +72,18 @@ pub async fn read_console_log(
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn read_app_log(
+    offset: u64,
+    max_bytes: u64,
+    log_state: State<'_, AppLogState>,
+) -> Result<LogChunk, String> {
+    let log_path = log_state.app_log.clone();
+    tauri::async_runtime::spawn_blocking(move || read_log_blocking(offset, max_bytes, &log_path))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]

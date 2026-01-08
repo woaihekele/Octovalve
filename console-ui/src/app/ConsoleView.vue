@@ -16,6 +16,7 @@ import {
   listProfiles,
   logUiEvent,
   openConsoleStream,
+  readAppLog,
   readConsoleLog,
   restartConsole,
   selectProfile,
@@ -156,7 +157,8 @@ const {
 const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
-const chatInputLocked = computed(() => providerSwitching.value);
+const acpRestarting = ref(false);
+const chatInputLocked = computed(() => providerSwitching.value || acpRestarting.value);
 const showChatDropHint = computed(() => isFileDragging.value);
 const pendingProviderLabel = computed(() => {
   if (pendingProvider.value === 'acp') {
@@ -178,12 +180,22 @@ let switchLogPollTimer: number | null = null;
 let switchLogTerminal: Terminal | null = null;
 let switchLogFitAddon: FitAddon | null = null;
 let switchLogResizeObserver: ResizeObserver | null = null;
-const switchLogTitle = computed(() => t('settings.log.title.console'));
-const switchLogFooterText = computed(() =>
-  switchLogInProgress.value
-    ? t('settings.log.footer.console.pending')
-    : t('settings.log.footer.console.done')
+const switchLogContext = ref<'console' | 'acp'>('console');
+const switchLogTitle = computed(() =>
+  switchLogContext.value === 'acp'
+    ? t('settings.log.title.acp')
+    : t('settings.log.title.console')
 );
+const switchLogFooterText = computed(() => {
+  if (switchLogContext.value === 'acp') {
+    return switchLogInProgress.value
+      ? t('settings.log.footer.acp.pending')
+      : t('settings.log.footer.acp.done');
+  }
+  return switchLogInProgress.value
+    ? t('settings.log.footer.console.pending')
+    : t('settings.log.footer.console.done');
+});
 const quickProfileConfirmOpen = ref(false);
 const pendingQuickProfile = ref<string | null>(null);
 
@@ -385,7 +397,10 @@ function applySwitchLogScale() {
 
 async function pollSwitchLog() {
   try {
-    const chunk = await readConsoleLog(switchLogOffset.value, 4096);
+    const chunk =
+      switchLogContext.value === 'acp'
+        ? await readAppLog(switchLogOffset.value, 4096)
+        : await readConsoleLog(switchLogOffset.value, 4096);
     if (chunk.content) {
       switchLogTerminal?.write(chunk.content);
       switchLogHasOutput.value = true;
@@ -396,7 +411,8 @@ async function pollSwitchLog() {
   }
 }
 
-async function startSwitchLogPolling() {
+async function startSwitchLogPolling(context: 'console' | 'acp') {
+  switchLogContext.value = context;
   resetSwitchLogState();
   switchLogInProgress.value = true;
   switchLogOpen.value = true;
@@ -405,7 +421,10 @@ async function startSwitchLogPolling() {
   applySwitchLogTheme();
   switchLogFitAddon?.fit();
   try {
-    const chunk = await readConsoleLog(0, 0);
+    const chunk =
+      switchLogContext.value === 'acp'
+        ? await readAppLog(0, 0)
+        : await readConsoleLog(0, 0);
     switchLogOffset.value = chunk.nextOffset;
   } catch {
     switchLogOffset.value = 0;
@@ -478,7 +497,7 @@ async function handleQuickProfileSwitch(profileName: string) {
   hasConnected.value = false;
   connectionState.value = 'connecting';
   try {
-    await startSwitchLogPolling();
+    await startSwitchLogPolling('console');
     switchLogStatusMessage.value = t('settings.log.status.console.pending');
     await selectProfile(profileName);
     await restartConsole();
@@ -1116,10 +1135,42 @@ function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
   );
 }
 
+function hasAcpRestartSettingsChanged(previous: AppSettings, next: AppSettings) {
+  return (
+    previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
+    previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode
+  );
+}
+
+async function restartAcpSessionWithLog(createSession: boolean) {
+  if (acpRestarting.value) {
+    return;
+  }
+  acpRestarting.value = true;
+  chatStore.setConnected(false);
+  try {
+    await startSwitchLogPolling('acp');
+    switchLogStatusMessage.value = t('settings.log.status.acp.pending');
+    await initChatProvider();
+    if (createSession) {
+      chatStore.createSession();
+    }
+    switchLogStatusMessage.value = t('settings.log.status.acp.done');
+  } catch (err) {
+    const message = t('settings.log.status.acp.failed', { error: String(err) });
+    switchLogStatusMessage.value = message;
+    showNotification(message);
+  } finally {
+    stopSwitchLogPolling();
+    acpRestarting.value = false;
+  }
+}
+
 async function refreshChatProviderFromSettings(previous: AppSettings, next: AppSettings) {
   const providerChanged = previous.chat.provider !== next.chat.provider;
   const openaiChanged = hasOpenaiConfigChanged(previous, next);
   const acpChanged = hasAcpConfigChanged(previous, next);
+  const acpRestartChanged = hasAcpRestartSettingsChanged(previous, next);
   const nextProvider = next.chat.provider;
   const needsOpenaiRefresh = nextProvider === 'openai' && (providerChanged || openaiChanged);
   const needsAcpRefresh = nextProvider === 'acp' && (providerChanged || acpChanged);
@@ -1136,6 +1187,11 @@ async function refreshChatProviderFromSettings(previous: AppSettings, next: AppS
     await stopActiveProvider();
   } else if (nextProvider === 'openai' && openaiChanged && chatStore.provider === 'openai') {
     await chatStore.stopOpenai();
+  }
+
+  if (nextProvider === 'acp' && acpRestartChanged) {
+    await restartAcpSessionWithLog(providerChanged);
+    return;
   }
 
   try {
