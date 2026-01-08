@@ -151,7 +151,6 @@ export interface ChatProviderConfig {
     chatPath: string;
   };
   acp: {
-    path: string;
     args: string;
     approvalPolicy: 'auto' | 'unless-trusted' | 'on-failure' | 'on-request' | 'never';
     sandboxMode: 'auto' | 'read-only' | 'workspace-write' | 'danger-full-access';

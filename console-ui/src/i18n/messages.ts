@@ -353,8 +353,6 @@ export const messages = {
         acp: {
           title: 'ACP 配置',
           hint: 'ACP (Agent Client Protocol) 使用 acp-codex 命令行工具',
-          path: 'acp-codex 路径',
-          pathHelp: '留空使用系统 PATH 中的 acp-codex',
           arguments: '启动参数',
           argumentsHelp: '填写 acp-codex 启动参数（示例：-c ...）。内置 MCP 会自动附加。',
           approvalPolicy: {
@@ -847,8 +845,6 @@ export const messages = {
         acp: {
           title: 'ACP Settings',
           hint: 'ACP (Agent Client Protocol) uses acp-codex CLI',
-          path: 'acp-codex Path',
-          pathHelp: 'Leave empty to use acp-codex from PATH',
           arguments: 'Arguments',
           argumentsHelp: 'Extra acp-codex CLI args (e.g. -c ...). Built-in MCP is always appended.',
           approvalPolicy: {

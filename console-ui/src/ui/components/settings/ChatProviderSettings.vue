@@ -50,13 +50,6 @@ function updateOpenaiField(field: keyof ChatProviderConfig['openai'], value: str
   });
 }
 
-function updateAcpPath(value: string) {
-  emit('update', {
-    ...props.config,
-    acp: { ...props.config.acp, path: value },
-  });
-}
-
 function updateAcpArgs(value: string) {
   emit('update', {
     ...props.config,
@@ -169,17 +162,6 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
       <NAlert type="info" :bordered="false" class="mb-4">
         {{ $t('settings.chat.acp.hint') }}
       </NAlert>
-
-      <div class="space-y-1">
-        <div class="text-sm">{{ $t('settings.chat.acp.path') }}</div>
-        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.acp.pathHelp') }}</div>
-        <NInput
-          :value="props.config.acp.path"
-          size="small"
-          placeholder="/usr/local/bin/acp-codex"
-          @update:value="updateAcpPath"
-        />
-      </div>
 
       <div class="space-y-1">
         <div class="text-sm">{{ $t('settings.chat.acp.arguments') }}</div>

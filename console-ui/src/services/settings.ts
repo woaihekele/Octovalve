@@ -99,7 +99,6 @@ const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
     chatPath: '/chat/completions',
   },
   acp: {
-    path: '',
     args: '',
     approvalPolicy: 'on-request',
     sandboxMode: 'workspace-write',
@@ -233,7 +232,6 @@ export function loadSettings(): AppSettings {
         chatPath: normalizeText(parsedOpenai.chatPath, DEFAULT_CHAT_SETTINGS.openai.chatPath),
       },
       acp: {
-        path: normalizeText(parsedAcp.path, DEFAULT_CHAT_SETTINGS.acp.path),
         args: normalizeText(parsedAcp.args, DEFAULT_CHAT_SETTINGS.acp.args),
         approvalPolicy: normalizeAcpApprovalPolicy(
           parsedAcp.approvalPolicy,

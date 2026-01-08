@@ -1,119 +1,113 @@
-//! ACP client for managing acp-codex subprocess and protocol communication.
+//! ACP client for managing embedded acp-codex and protocol communication.
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use acp_codex::CliConfig;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::{Mutex, oneshot};
+use tokio::task::AbortHandle;
+use tokio::time::timeout;
 
 use crate::clients::acp_types::*;
-use crate::services::console_sidecar::build_console_path;
 use crate::services::logging::append_log_line;
 
 use super::error::AcpError;
 
-type PendingRequests = Arc<Mutex<HashMap<u64, mpsc::Sender<Result<Value, AcpError>>>>>;
+type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, AcpError>>>>>;
 
-/// ACP client managing the acp-codex subprocess.
+/// ACP client managing the embedded acp-codex loopback.
 pub struct AcpClient {
-    process: Child,
-    stdin: Arc<Mutex<ChildStdin>>,
-    reader_handle: Option<std::thread::JoinHandle<()>>,
-    request_id: AtomicU64,
+    writer: Arc<Mutex<tokio::io::WriteHalf<tokio::io::DuplexStream>>>,
     pending_requests: PendingRequests,
+    request_id: AtomicU64,
     session_id: Mutex<Option<String>>,
     init_result: Mutex<Option<InitializeResult>>,
     mcp_servers: Vec<Value>,
     log_path: PathBuf,
+    reader_abort: StdMutex<Option<AbortHandle>>,
+    server_abort: StdMutex<Option<AbortHandle>>,
 }
 
 impl AcpClient {
-    /// Start a new acp-codex process.
-    pub fn start(
-        acp_codex_path: &PathBuf,
+    /// Start an embedded acp-codex instance using in-memory transport.
+    pub async fn start(
         app_handle: AppHandle,
         log_path: PathBuf,
-        acp_args: Vec<String>,
+        config: CliConfig,
         mcp_servers: Vec<Value>,
     ) -> Result<Self, AcpError> {
-        let mut command = Command::new(acp_codex_path);
-        command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .env("PATH", build_console_path());
-        if !acp_args.is_empty() {
-            command.args(acp_args);
-        }
-        if std::env::var_os("HOME").is_none() {
-            if let Ok(home) = app_handle.path().home_dir() {
-                command.env("HOME", home);
-            }
-        }
-        let mut process = command
-            .spawn()
-            .map_err(|e| AcpError(format!("Failed to start ACP agent: {}", e)))?;
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (server_read, server_write) = tokio::io::split(server_io);
 
-        let stdin = process
-            .stdin
-            .take()
-            .ok_or_else(|| AcpError("Failed to get stdin".into()))?;
-        let stdout = process
-            .stdout
-            .take()
-            .ok_or_else(|| AcpError("Failed to get stdout".into()))?;
-
-        let stdin = Arc::new(Mutex::new(stdin));
+        let writer = Arc::new(Mutex::new(client_write));
         let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
 
-        // Spawn reader thread.
+        let log_path_clone = log_path.clone();
+        let server_task = tokio::spawn(async move {
+            if let Err(err) = acp_codex::run_with_io(config, server_read, server_write).await {
+                log_line(&log_path_clone, &format!("[acp-codex] server exited: {err}"));
+            }
+        });
+        let server_abort = server_task.abort_handle();
+
         let pending_clone = pending_requests.clone();
         let app_handle_clone = app_handle.clone();
-        let log_path_clone = log_path.clone();
-        let stdin_clone = stdin.clone();
-        let reader_handle = std::thread::spawn(move || {
-            Self::read_loop(
-                stdout,
-                stdin_clone,
+        let log_path_reader = log_path.clone();
+        let log_path_reader_err = log_path.clone();
+        let writer_clone = writer.clone();
+        let reader_task = tokio::spawn(async move {
+            if let Err(err) = Self::read_loop(
+                client_read,
+                writer_clone,
                 pending_clone,
                 app_handle_clone,
-                log_path_clone,
-            );
+                log_path_reader,
+            )
+            .await
+            {
+                log_line(&log_path_reader_err, &format!("[ACP reader] exited: {err}"));
+            }
         });
+        let reader_abort = reader_task.abort_handle();
+
         Ok(Self {
-            process,
-            stdin,
-            reader_handle: Some(reader_handle),
-            request_id: AtomicU64::new(1),
+            writer,
             pending_requests,
+            request_id: AtomicU64::new(1),
             session_id: Mutex::new(None),
             init_result: Mutex::new(None),
             mcp_servers,
             log_path,
+            reader_abort: StdMutex::new(Some(reader_abort)),
+            server_abort: StdMutex::new(Some(server_abort)),
         })
     }
 
     /// Read loop for processing messages from acp-codex.
-    fn read_loop(
-        stdout: ChildStdout,
-        stdin: Arc<Mutex<ChildStdin>>,
+    async fn read_loop(
+        reader: tokio::io::ReadHalf<tokio::io::DuplexStream>,
+        writer: Arc<Mutex<tokio::io::WriteHalf<tokio::io::DuplexStream>>>,
         pending: PendingRequests,
         app_handle: AppHandle,
         log_path: PathBuf,
-    ) {
+    ) -> Result<(), AcpError> {
         log_line(&log_path, "[ACP reader] starting read loop");
-        let reader = BufReader::new(stdout);
+        let mut reader = BufReader::new(reader);
+        let mut buffer = String::new();
         let mut exit_reason: Option<String> = None;
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
+
+        loop {
+            buffer.clear();
+            let bytes = match reader.read_line(&mut buffer).await {
+                Ok(size) => size,
                 Err(e) => {
                     let reason = format!("read error: {}", e);
                     log_line(&log_path, &format!("[ACP reader] {}", reason));
@@ -122,6 +116,11 @@ impl AcpClient {
                 }
             };
 
+            if bytes == 0 {
+                break;
+            }
+
+            let line = buffer.trim_end_matches(['\n', '\r']);
             if line.is_empty() {
                 continue;
             }
@@ -130,11 +129,11 @@ impl AcpClient {
                 &log_path,
                 &format!(
                     "[ACP reader] received line: {}",
-                    Self::truncate_log_line(&line, 200)
+                    Self::truncate_log_line(line, 200)
                 ),
             );
 
-            let message: AcpMessage = match serde_json::from_str(&line) {
+            let message: AcpMessage = match serde_json::from_str(line) {
                 Ok(m) => m,
                 Err(e) => {
                     log_line(&log_path, &format!("[ACP reader] parse error: {}", e));
@@ -155,7 +154,7 @@ impl AcpClient {
                         } else {
                             json!({ "outcome": "cancelled" })
                         };
-                        if let Err(e) = send_json_response(&stdin, request.id, result) {
+                        if let Err(e) = send_json_response(&writer, request.id, result).await {
                             log_line(
                                 &log_path,
                                 &format!("[ACP] request_permission response failed: {}", e),
@@ -184,7 +183,7 @@ impl AcpClient {
                         &format!("[ACP reader] parsed as Response, id: {:?}", response.id),
                     );
                     if let Some(id) = response.id {
-                        let mut pending_guard = pending.lock().unwrap();
+                        let mut pending_guard = pending.lock().await;
                         if let Some(sender) = pending_guard.remove(&id) {
                             let result = if let Some(error) = response.error {
                                 Err(AcpError(format!("{}: {}", error.code, error.message)))
@@ -192,7 +191,7 @@ impl AcpClient {
                                 Ok(response.result.unwrap_or(Value::Null))
                             };
                             let _ = sender.send(result);
-                        } else if let Some(result) = &response.result {
+                        } else if let Some(result) = response.result {
                             if let Some(stop_reason) = result.get("stopReason") {
                                 log_line(
                                     &log_path,
@@ -217,6 +216,7 @@ impl AcpClient {
                 }
             }
         }
+
         let reason = exit_reason.unwrap_or_else(|| "stdout closed".to_string());
         log_line(
             &log_path,
@@ -225,10 +225,14 @@ impl AcpClient {
                 reason
             ),
         );
-        let mut pending_guard = pending.lock().unwrap();
+        let mut pending_guard = pending.lock().await;
         for (_, sender) in pending_guard.drain() {
-            let _ = sender.send(Err(AcpError(format!("ACP reader exited: {}", reason))));
+            let _ = sender.send(Err(AcpError(format!(
+                "ACP reader exited: {}",
+                reason
+            ))));
         }
+        Ok(())
     }
 
     fn truncate_log_line(value: &str, max_chars: usize) -> String {
@@ -255,30 +259,34 @@ impl AcpClient {
     }
 
     /// Send a JSON-RPC request and wait for response.
-    fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, AcpError> {
+    async fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, AcpError> {
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = JsonRpcRequest::new(id, method, params);
         let request_json = serde_json::to_string(&request)?;
 
-        // Register pending request.
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending_requests.lock().unwrap();
+            let mut pending = self.pending_requests.lock().await;
             pending.insert(id, tx);
         }
 
-        // Send request.
         {
-            let mut stdin = self.stdin.lock().unwrap();
-            writeln!(stdin, "{}", request_json)?;
-            stdin.flush()?;
+            let mut writer = self.writer.lock().await;
+            writer.write_all(request_json.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
         }
 
-        let timeout = request_timeout();
-        match rx.recv_timeout(timeout) {
-            Ok(result) => result,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let mut pending = self.pending_requests.lock().unwrap();
+        let timeout_duration = request_timeout();
+        match timeout(timeout_duration, rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => {
+                let mut pending = self.pending_requests.lock().await;
+                pending.remove(&id);
+                Err(AcpError("Request channel closed".into()))
+            }
+            Err(_) => {
+                let mut pending = self.pending_requests.lock().await;
                 pending.remove(&id);
                 log_line(
                     &self.log_path,
@@ -286,24 +294,19 @@ impl AcpClient {
                         "[ACP] request timeout method={} id={} timeout_secs={}",
                         method,
                         id,
-                        timeout.as_secs()
+                        timeout_duration.as_secs()
                     ),
                 );
                 Err(AcpError(format!(
                     "Request timed out after {}s",
-                    timeout.as_secs()
+                    timeout_duration.as_secs()
                 )))
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                let mut pending = self.pending_requests.lock().unwrap();
-                pending.remove(&id);
-                Err(AcpError("Request channel closed".into()))
             }
         }
     }
 
     /// Initialize the ACP connection.
-    pub fn initialize(&self) -> Result<InitializeResult, AcpError> {
+    pub async fn initialize(&self) -> Result<InitializeResult, AcpError> {
         let params = InitializeParams {
             protocol_version: "1".to_string(),
             client_capabilities: ClientCapabilities {
@@ -318,25 +321,27 @@ impl AcpClient {
             },
         };
 
-        let result = self.send_request("initialize", Some(serde_json::to_value(&params)?))?;
+        let result = self
+            .send_request("initialize", Some(serde_json::to_value(&params)?))
+            .await?;
         let init_result: InitializeResult = serde_json::from_value(result)?;
 
-        *self.init_result.lock().unwrap() = Some(init_result.clone());
+        *self.init_result.lock().await = Some(init_result.clone());
         Ok(init_result)
     }
 
     /// Authenticate with the agent.
-    pub fn authenticate(&self, method_id: &str) -> Result<(), AcpError> {
+    pub async fn authenticate(&self, method_id: &str) -> Result<(), AcpError> {
         let params = AuthenticateParams {
             method_id: method_id.to_string(),
         };
-        self.send_request("authenticate", Some(serde_json::to_value(&params)?))?;
+        self.send_request("authenticate", Some(serde_json::to_value(&params)?))
+            .await?;
         Ok(())
     }
 
     /// Create a new session.
-    pub fn new_session(&self, cwd: &str) -> Result<NewSessionResult, AcpError> {
-        // Ensure cwd is absolute.
+    pub async fn new_session(&self, cwd: &str) -> Result<NewSessionResult, AcpError> {
         let cwd_path = std::path::Path::new(cwd);
         let absolute_cwd = if cwd_path.is_absolute() {
             cwd.to_string()
@@ -351,29 +356,33 @@ impl AcpClient {
             mcp_servers: self.mcp_servers.clone(),
         };
 
-        let result = self.send_request("session/new", Some(serde_json::to_value(&params)?))?;
+        let result = self
+            .send_request("session/new", Some(serde_json::to_value(&params)?))
+            .await?;
         let session_result: NewSessionResult = serde_json::from_value(result)?;
 
-        *self.session_id.lock().unwrap() = Some(session_result.session_id.clone());
+        *self.session_id.lock().await = Some(session_result.session_id.clone());
         Ok(session_result)
     }
 
     /// Load an existing session.
-    pub fn load_session(&self, session_id: &str) -> Result<LoadSessionResult, AcpError> {
+    pub async fn load_session(&self, session_id: &str) -> Result<LoadSessionResult, AcpError> {
         let params = LoadSessionParams {
             session_id: session_id.to_string(),
         };
 
-        let result = self.send_request("session/load", Some(serde_json::to_value(&params)?))?;
+        let result = self
+            .send_request("session/load", Some(serde_json::to_value(&params)?))
+            .await?;
         let load_result: LoadSessionResult = serde_json::from_value(result)?;
 
-        *self.session_id.lock().unwrap() = Some(session_id.to_string());
+        *self.session_id.lock().await = Some(session_id.to_string());
         Ok(load_result)
     }
 
     /// Send a prompt to the current session (non-blocking).
     /// Content comes via notifications, completion comes via response.
-    pub fn prompt(
+    pub async fn prompt(
         &self,
         prompt: Vec<ContentBlock>,
         context: Option<Vec<ContextItem>>,
@@ -381,7 +390,7 @@ impl AcpClient {
         let session_id = self
             .session_id
             .lock()
-            .unwrap()
+            .await
             .clone()
             .ok_or_else(|| AcpError("No active session".into()))?;
 
@@ -391,52 +400,67 @@ impl AcpClient {
             context,
         };
 
-        // Send request but don't block waiting - let reader thread handle response.
         self.send_request_async("session/prompt", Some(serde_json::to_value(&params)?))
+            .await
     }
 
-    /// Send a request without waiting for response (reader thread will handle it).
-    fn send_request_async(&self, method: &str, params: Option<Value>) -> Result<(), AcpError> {
+    /// Send a request without waiting for response (reader loop will handle it).
+    async fn send_request_async(
+        &self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), AcpError> {
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = JsonRpcRequest::new(id, method, params);
         let request_json = serde_json::to_string(&request)?;
 
-        let mut stdin = self.stdin.lock().unwrap();
-        writeln!(stdin, "{}", request_json)?;
-        stdin.flush()?;
+        let mut writer = self.writer.lock().await;
+        writer.write_all(request_json.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
         Ok(())
     }
 
     /// Cancel the current operation.
-    pub fn cancel(&self) -> Result<(), AcpError> {
+    pub async fn cancel(&self) -> Result<(), AcpError> {
         let session_id = self
             .session_id
             .lock()
-            .unwrap()
+            .await
             .clone()
             .ok_or_else(|| AcpError("No active session".into()))?;
 
         let params = CancelParams { session_id };
-        // Use async request (don't wait for response).
         self.send_request_async("session/cancel", Some(serde_json::to_value(&params)?))
+            .await
     }
 
     /// Get the current session ID.
-    pub fn get_session_id(&self) -> Option<String> {
-        self.session_id.lock().unwrap().clone()
+    pub async fn get_session_id(&self) -> Option<String> {
+        self.session_id.lock().await.clone()
     }
 
     /// Get the initialization result.
-    pub fn get_init_result(&self) -> Option<InitializeResult> {
-        self.init_result.lock().unwrap().clone()
+    pub async fn get_init_result(&self) -> Option<InitializeResult> {
+        self.init_result.lock().await.clone()
     }
 
-    /// Stop the acp-codex process.
-    pub fn stop(&mut self) {
-        log_line(&self.log_path, "[ACP] stop: killing process");
-        let _ = self.process.kill();
-        // Don't wait for reader thread - it will exit when stdout closes.
-        let _ = self.reader_handle.take();
+    /// Stop the embedded acp-codex tasks.
+    pub async fn stop(&self) {
+        log_line(&self.log_path, "[ACP] stop: aborting tasks");
+
+        if let Some(handle) = self.reader_abort.lock().unwrap().take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.server_abort.lock().unwrap().take() {
+            handle.abort();
+        }
+
+        let mut pending = self.pending_requests.lock().await;
+        for (_, sender) in pending.drain() {
+            let _ = sender.send(Err(AcpError("ACP stopped".into())));
+        }
+
         log_line(&self.log_path, "[ACP] stop: done");
     }
 }
@@ -467,8 +491,8 @@ fn pick_permission_option(params: &Option<Value>) -> Option<String> {
     fallback
 }
 
-fn send_json_response(
-    stdin: &Arc<Mutex<ChildStdin>>,
+async fn send_json_response(
+    writer: &Arc<Mutex<tokio::io::WriteHalf<tokio::io::DuplexStream>>>,
     id: u64,
     result: Value,
 ) -> Result<(), AcpError> {
@@ -484,9 +508,10 @@ fn send_json_response(
         result,
     };
     let response_json = serde_json::to_string(&response)?;
-    let mut guard = stdin.lock().unwrap();
-    writeln!(guard, "{}", response_json)?;
-    guard.flush()?;
+    let mut guard = writer.lock().await;
+    guard.write_all(response_json.as_bytes()).await?;
+    guard.write_all(b"\n").await?;
+    guard.flush().await?;
     Ok(())
 }
 
@@ -503,12 +528,17 @@ fn request_timeout() -> Duration {
 
 impl Drop for AcpClient {
     fn drop(&mut self) {
-        self.stop();
+        if let Some(handle) = self.reader_abort.lock().unwrap().take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.server_abort.lock().unwrap().take() {
+            handle.abort();
+        }
     }
 }
 
 /// State wrapper for Tauri.
-pub struct AcpClientState(pub Mutex<Option<AcpClient>>);
+pub struct AcpClientState(pub Mutex<Option<Arc<AcpClient>>>);
 
 impl Default for AcpClientState {
     fn default() -> Self {

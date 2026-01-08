@@ -546,7 +546,7 @@ async function initChatProvider() {
       // ACP provider
       console.log('[initChatProvider] calling initializeAcp...');
       const acpArgs = buildAcpArgs(chatConfig.acp);
-      await chatStore.initializeAcp('.', chatConfig.acp.path, acpArgs);
+      await chatStore.initializeAcp('.', acpArgs);
       console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
       
       // Authentication is optional - don't fail if it's not available
@@ -1110,7 +1110,6 @@ function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
 
 function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
   return (
-    previous.chat.acp.path !== next.chat.acp.path ||
     previous.chat.acp.args !== next.chat.acp.args ||
     previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
     previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode

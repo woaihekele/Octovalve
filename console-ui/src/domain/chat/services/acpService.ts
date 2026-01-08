@@ -119,10 +119,9 @@ export interface CompletePayload {
  */
 export async function acpStart(
   cwd: string,
-  acpCodexPath?: string,
   acpArgs?: string
 ): Promise<AcpInitResponse> {
-  return invoke<AcpInitResponse>('acp_start', { cwd, acpCodexPath, acpArgs });
+  return invoke<AcpInitResponse>('acp_start', { cwd, acpArgs });
 }
 
 /**
