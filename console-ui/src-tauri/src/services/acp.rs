@@ -22,18 +22,25 @@ fn resolve_codex_acp_path(app: &AppHandle, configured: Option<&str>) -> Result<P
     }
 
     if let Ok(dir) = octovalve_dir(app) {
-        let custom_path = dir.join("codex-acp");
+        let custom_path = dir.join("acp-codex");
         if custom_path.exists() {
             return Ok(custom_path);
+        }
+        let legacy_path = dir.join("codex-acp");
+        if legacy_path.exists() {
+            return Ok(legacy_path);
         }
     }
 
     let search_path = build_console_path();
+    if let Some(found) = find_in_path("acp-codex", &search_path) {
+        return Ok(found);
+    }
     if let Some(found) = find_in_path("codex-acp", &search_path) {
         return Ok(found);
     }
 
-    Ok(PathBuf::from("codex-acp"))
+    Ok(PathBuf::from("acp-codex"))
 }
 
 fn find_in_path(program: &str, path_var: &str) -> Option<PathBuf> {

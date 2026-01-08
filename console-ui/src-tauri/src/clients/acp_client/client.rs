@@ -59,7 +59,7 @@ impl AcpClient {
         }
         let mut process = command
             .spawn()
-            .map_err(|e| AcpError(format!("Failed to start codex-acp: {}", e)))?;
+            .map_err(|e| AcpError(format!("Failed to start ACP agent: {}", e)))?;
 
         let stdin = process
             .stdin

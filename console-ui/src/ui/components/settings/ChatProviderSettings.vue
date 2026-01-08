@@ -20,6 +20,21 @@ const providerOptions = computed<SelectOption[]>(() => [
   { value: 'acp', label: t('settings.chat.provider.acp') },
 ]);
 
+const approvalPolicyOptions = computed<SelectOption[]>(() => [
+  { value: 'auto', label: t('settings.chat.acp.approvalPolicy.auto') },
+  { value: 'unless-trusted', label: t('settings.chat.acp.approvalPolicy.unlessTrusted') },
+  { value: 'on-failure', label: t('settings.chat.acp.approvalPolicy.onFailure') },
+  { value: 'on-request', label: t('settings.chat.acp.approvalPolicy.onRequest') },
+  { value: 'never', label: t('settings.chat.acp.approvalPolicy.never') },
+]);
+
+const sandboxModeOptions = computed<SelectOption[]>(() => [
+  { value: 'auto', label: t('settings.chat.acp.sandboxMode.auto') },
+  { value: 'read-only', label: t('settings.chat.acp.sandboxMode.readOnly') },
+  { value: 'workspace-write', label: t('settings.chat.acp.sandboxMode.workspaceWrite') },
+  { value: 'danger-full-access', label: t('settings.chat.acp.sandboxMode.dangerFullAccess') },
+]);
+
 function updateProvider(value: 'openai' | 'acp') {
   emit('update', { ...props.config, provider: value });
 }
@@ -46,6 +61,20 @@ function updateAcpArgs(value: string) {
   emit('update', {
     ...props.config,
     acp: { ...props.config.acp, args: value },
+  });
+}
+
+function updateAcpApprovalPolicy(value: ChatProviderConfig['acp']['approvalPolicy']) {
+  emit('update', {
+    ...props.config,
+    acp: { ...props.config.acp, approvalPolicy: value },
+  });
+}
+
+function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
+  emit('update', {
+    ...props.config,
+    acp: { ...props.config.acp, sandboxMode: value },
   });
 }
 </script>
@@ -147,7 +176,7 @@ function updateAcpArgs(value: string) {
         <NInput
           :value="props.config.acp.path"
           size="small"
-          placeholder="/usr/local/bin/codex-acp"
+          placeholder="/usr/local/bin/acp-codex"
           @update:value="updateAcpPath"
         />
       </div>
@@ -160,6 +189,30 @@ function updateAcpArgs(value: string) {
           size="small"
           placeholder='-c mcp_servers.octovalve={command="octovalve-proxy",args=["--config","/path"]}'
           @update:value="updateAcpArgs"
+        />
+      </div>
+
+      <div class="space-y-1">
+        <div class="text-sm">{{ $t('settings.chat.acp.approvalPolicy.label') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.acp.approvalPolicy.help') }}</div>
+        <NSelect
+          :value="props.config.acp.approvalPolicy"
+          :options="approvalPolicyOptions"
+          size="small"
+          class="w-56"
+          @update:value="updateAcpApprovalPolicy"
+        />
+      </div>
+
+      <div class="space-y-1">
+        <div class="text-sm">{{ $t('settings.chat.acp.sandboxMode.label') }}</div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.acp.sandboxMode.help') }}</div>
+        <NSelect
+          :value="props.config.acp.sandboxMode"
+          :options="sandboxModeOptions"
+          size="small"
+          class="w-56"
+          @update:value="updateAcpSandboxMode"
         />
       </div>
     </div>

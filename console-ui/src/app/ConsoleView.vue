@@ -520,6 +520,21 @@ function confirmQuickProfileSwitch() {
 }
 
 // Initialize chat provider based on settings
+function buildAcpArgs(config: AppSettings['chat']['acp']) {
+  const args: string[] = [];
+  const rawArgs = config.args.trim();
+  if (rawArgs) {
+    args.push(rawArgs);
+  }
+  if (config.approvalPolicy && config.approvalPolicy !== 'auto') {
+    args.push(`--approval-policy ${config.approvalPolicy}`);
+  }
+  if (config.sandboxMode && config.sandboxMode !== 'auto') {
+    args.push(`--sandbox-mode ${config.sandboxMode}`);
+  }
+  return args.join(' ').trim();
+}
+
 async function initChatProvider() {
   const chatConfig = settings.value.chat;
   console.log('[initChatProvider] config:', chatConfig.provider);
@@ -530,7 +545,8 @@ async function initChatProvider() {
     } else {
       // ACP provider
       console.log('[initChatProvider] calling initializeAcp...');
-      await chatStore.initializeAcp('.', chatConfig.acp.path, chatConfig.acp.args);
+      const acpArgs = buildAcpArgs(chatConfig.acp);
+      await chatStore.initializeAcp('.', chatConfig.acp.path, acpArgs);
       console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
       
       // Authentication is optional - don't fail if it's not available
@@ -1093,7 +1109,12 @@ function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
 }
 
 function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
-  return previous.chat.acp.path !== next.chat.acp.path || previous.chat.acp.args !== next.chat.acp.args;
+  return (
+    previous.chat.acp.path !== next.chat.acp.path ||
+    previous.chat.acp.args !== next.chat.acp.args ||
+    previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
+    previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode
+  );
 }
 
 async function refreshChatProviderFromSettings(previous: AppSettings, next: AppSettings) {

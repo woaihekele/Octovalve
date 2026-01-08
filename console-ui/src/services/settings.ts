@@ -101,6 +101,8 @@ const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
   acp: {
     path: '',
     args: '',
+    approvalPolicy: 'on-request',
+    sandboxMode: 'workspace-write',
   },
 };
 
@@ -198,6 +200,27 @@ export function loadSettings(): AppSettings {
     const parsedChat = (parsed.chat ?? {}) as Partial<ChatProviderConfig>;
     const normalizeChatProvider = (value: unknown): 'openai' | 'acp' =>
       (value === 'openai' || value === 'acp') ? value : DEFAULT_CHAT_SETTINGS.provider;
+    const normalizeAcpApprovalPolicy = (
+      value: unknown,
+      fallback: ChatProviderConfig['acp']['approvalPolicy']
+    ) =>
+      value === 'auto' ||
+      value === 'unless-trusted' ||
+      value === 'on-failure' ||
+      value === 'on-request' ||
+      value === 'never'
+        ? value
+        : fallback;
+    const normalizeAcpSandboxMode = (
+      value: unknown,
+      fallback: ChatProviderConfig['acp']['sandboxMode']
+    ) =>
+      value === 'auto' ||
+      value === 'read-only' ||
+      value === 'workspace-write' ||
+      value === 'danger-full-access'
+        ? value
+        : fallback;
     const parsedOpenai = (parsedChat.openai ?? {}) as Partial<ChatProviderConfig['openai']>;
     const parsedAcp = (parsedChat.acp ?? {}) as Partial<ChatProviderConfig['acp']>;
     const normalizedChat: ChatProviderConfig = {
@@ -212,6 +235,14 @@ export function loadSettings(): AppSettings {
       acp: {
         path: normalizeText(parsedAcp.path, DEFAULT_CHAT_SETTINGS.acp.path),
         args: normalizeText(parsedAcp.args, DEFAULT_CHAT_SETTINGS.acp.args),
+        approvalPolicy: normalizeAcpApprovalPolicy(
+          parsedAcp.approvalPolicy,
+          DEFAULT_CHAT_SETTINGS.acp.approvalPolicy
+        ),
+        sandboxMode: normalizeAcpSandboxMode(
+          parsedAcp.sandboxMode,
+          DEFAULT_CHAT_SETTINGS.acp.sandboxMode
+        ),
       },
     };
     return {

@@ -42,7 +42,7 @@ fn parse_args() -> (PathBuf, String, Option<String>, Option<String>) {
 
     let codex_acp_path = codex_acp_path
         .or_else(|| std::env::var("CODEX_ACP_PATH").ok().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("codex-acp"));
+        .unwrap_or_else(|| PathBuf::from("acp-codex"));
     let cwd = cwd.unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
