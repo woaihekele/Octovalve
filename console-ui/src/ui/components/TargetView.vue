@@ -1019,13 +1019,13 @@ onBeforeUnmount(() => {
       </div>
       <div
         v-show="props.terminalOpen"
-        class="h-2 bg-surface border-t border-border cursor-row-resize"
-        :class="isResizing ? 'bg-accent/30 border-accent/40' : 'hover:bg-panel/80'"
+        class="terminal-resizer"
+        :class="isResizing ? 'terminal-resizer--active' : null"
         @mousedown.prevent="startResize"
       ></div>
       <div
         v-show="props.terminalOpen"
-        class="flex-shrink-0 min-h-0 relative overflow-hidden"
+        class="flex-shrink-0 min-h-0 relative overflow-hidden border-t border-border"
         :style="terminalStyle"
         ref="terminalContainerRef"
       >

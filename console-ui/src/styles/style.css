@@ -362,26 +362,93 @@ body {
   overflow: auto;
 }
 
-.terminal-tabs .n-tabs-nav {
+.terminal-tabs.n-tabs--card-type .n-tabs-nav {
   padding-bottom: 0;
   margin-bottom: 0;
 }
 
-.terminal-tabs .n-tabs-nav--card-type {
+.terminal-tabs.n-tabs--card-type .n-tabs-nav--card-type {
   border-bottom: none;
   background-color: transparent;
 }
 
-.terminal-tabs .n-tabs-nav__add {
-  height: 24px;
+.terminal-tabs.n-tabs--card-type .n-tabs-scroll-padding,
+.terminal-tabs.n-tabs--card-type .n-tabs-tab-pad,
+.terminal-tabs.n-tabs--card-type .n-tabs-pad,
+.terminal-tabs.n-tabs--card-type .n-tabs-nav__prefix,
+.terminal-tabs.n-tabs--card-type .n-tabs-nav__suffix,
+.terminal-tabs.n-tabs--card-type .n-tabs-nav-scroll-content {
+  border: none !important;
 }
 
-.terminal-tabs .n-tabs-nav-scroll-content {
+.terminal-tabs.n-tabs--card-type .n-tabs-nav-scroll-content {
   padding-bottom: 0;
 }
 
-.terminal-tabs .n-tabs-tab {
+.terminal-tabs.n-tabs--card-type .n-tabs-tab {
   margin-bottom: 0;
+  border: none !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 10px !important;
+  height: 24px;
+  align-items: center;
+}
+
+.terminal-tabs.n-tabs--card-type .n-tabs-tab::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background-color: transparent;
+}
+
+.terminal-tabs.n-tabs--card-type .n-tabs-tab--active::after {
+  background-color: var(--n-bar-color);
+}
+
+.terminal-tabs.n-tabs--card-type .n-tabs-tab__close {
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.terminal-tabs.n-tabs--card-type .n-tabs-tab--active .n-tabs-tab__close,
+.terminal-tabs.n-tabs--card-type .n-tabs-tab:hover .n-tabs-tab__close {
+  opacity: 1;
+}
+
+.terminal-tabs.n-tabs--card-type .n-tabs-tab--addable {
+  padding: 0 8px !important;
+  justify-content: center;
+}
+
+.terminal-tabs.n-tabs--card-type .n-tabs-tab--addable::after {
+  display: none;
+}
+
+.terminal-resizer {
+  position: relative;
+  height: 0;
+  z-index: 30;
+}
+
+.terminal-resizer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 8px;
+  cursor: row-resize;
+  background-color: transparent;
+}
+
+.terminal-resizer--active::before {
+  background-color: rgb(var(--color-accent) / 0.18);
 }
 
 html,

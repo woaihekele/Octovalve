@@ -81,6 +81,7 @@
                   size="small"
                   addable
                   closable
+                  :pane-wrapper-style="{ display: 'none' }"
                   class="min-w-0 terminal-tabs"
                   @add="emit('terminal-add')"
                   @close="emit('terminal-close', $event)"
