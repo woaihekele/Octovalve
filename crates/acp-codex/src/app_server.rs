@@ -3,8 +3,8 @@ use std::{
     path::PathBuf,
     process::Stdio,
     sync::{
-        Arc,
         atomic::{AtomicI64, Ordering},
+        Arc,
     },
 };
 
@@ -18,13 +18,13 @@ use codex_app_server_protocol::{
     ResumeConversationParams, ResumeConversationResponse, SendUserMessageParams,
     SendUserMessageResponse, ServerRequest,
 };
-use codex_protocol::{ConversationId, protocol::EventMsg, protocol::ReviewDecision};
+use codex_protocol::{protocol::EventMsg, protocol::ReviewDecision, ConversationId};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
-    sync::{Mutex, mpsc, oneshot},
+    sync::{mpsc, oneshot, Mutex},
 };
 
 use crate::cli::CliConfig;
@@ -35,6 +35,7 @@ const CODEX_BASE_COMMAND: &[&str] = &["npx", "-y", "@openai/codex@0.77.0", "app-
 pub(crate) enum AppServerEvent {
     SessionConfigured { session_id: String },
     CodexEvent(EventMsg),
+    StderrLine(String),
 }
 
 pub(crate) struct AppServerClient {
@@ -53,19 +54,58 @@ impl AppServerClient {
         cmd.args(&config.app_server_args);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .env("NODE_NO_WARNINGS", "1")
             .env("NO_COLOR", "1")
             .env("RUST_LOG", "error");
 
         let mut child = cmd.spawn()?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow!("无法获取 app-server stdin"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow!("无法获取 app-server stdout"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("无法获取 app-server stdin"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("无法获取 app-server stdout"))?;
+        let stderr = child.stderr.take();
+
+        if let Some(stderr) = stderr {
+            let mut reader = BufReader::new(stderr);
+            let mut buffer = String::new();
+            let stderr_tx = events_tx.clone();
+            tokio::spawn(async move {
+                loop {
+                    buffer.clear();
+                    match reader.read_line(&mut buffer).await {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let line = buffer.trim_end_matches(['\n', '\r']);
+                            if line.is_empty() {
+                                continue;
+                            }
+                            eprintln!("{}", line);
+                            let _ = stderr_tx.send(AppServerEvent::StderrLine(line.to_string()));
+                        }
+                        Err(err) => {
+                            eprintln!("[acp-codex] app-server stderr read failed: {err}");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
 
         let callbacks = Arc::new(AppServerCallbacks { events_tx });
         let rpc = JsonRpcPeer::spawn(stdin, stdout, callbacks);
-        Ok((Self { rpc, _child: Mutex::new(child) }, events_rx))
+        Ok((
+            Self {
+                rpc,
+                _child: Mutex::new(child),
+            },
+            events_rx,
+        ))
     }
 
     pub(crate) async fn initialize(&self) -> Result<()> {
@@ -155,16 +195,8 @@ impl AppServerClient {
 
 #[async_trait]
 trait JsonRpcCallbacks: Send + Sync {
-    async fn on_request(
-        &self,
-        peer: &JsonRpcPeer,
-        request: JSONRPCRequest,
-    ) -> Result<()>;
-    async fn on_response(
-        &self,
-        _peer: &JsonRpcPeer,
-        _response: &JSONRPCResponse,
-    ) -> Result<()>;
+    async fn on_request(&self, peer: &JsonRpcPeer, request: JSONRPCRequest) -> Result<()>;
+    async fn on_response(&self, _peer: &JsonRpcPeer, _response: &JSONRPCResponse) -> Result<()>;
     async fn on_error(&self, _peer: &JsonRpcPeer, _error: &JSONRPCError) -> Result<()>;
     async fn on_notification(
         &self,

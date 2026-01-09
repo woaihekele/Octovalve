@@ -1068,6 +1068,29 @@ export const useChatStore = defineStore('chat', () => {
             updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
           }
         }
+      } else if (sessionUpdate === 'retry') {
+        const attempt = (update.attempt as number | undefined) ?? 0;
+        const maxAttempts =
+          (update.maxAttempts as number | undefined) ??
+          (update.max_attempts as number | undefined) ??
+          0;
+        const message = (update.message as string | undefined) ?? 'Retrying...';
+        if (currentAssistantMessageId.value) {
+          const retryToolCallId = 'acp-retry';
+          if (!findToolCall(currentAssistantMessageId.value, retryToolCallId)) {
+            addToolCall(currentAssistantMessageId.value, {
+              id: retryToolCallId,
+              name: 'Retry',
+              arguments: { attempt, maxAttempts },
+              status: 'running',
+            });
+          }
+          updateToolCall(currentAssistantMessageId.value, retryToolCallId, {
+            status: 'running',
+            arguments: { attempt, maxAttempts },
+            result: `[${attempt}/${maxAttempts}] ${message}\n`,
+          });
+        }
       } else if (sessionUpdate === 'plan') {
         const rawEntries =
           (update.entries as unknown) ??
@@ -1081,6 +1104,11 @@ export const useChatStore = defineStore('chat', () => {
       } else if (sessionUpdate === 'task_complete') {
         flushPending();
         if (currentAssistantMessageId.value) {
+          const retryToolCallId = 'acp-retry';
+          const existingRetry = findToolCall(currentAssistantMessageId.value, retryToolCallId);
+          if (existingRetry && existingRetry.status === 'running') {
+            updateToolCall(currentAssistantMessageId.value, retryToolCallId, { status: 'completed' });
+          }
           updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
           currentAssistantMessageId.value = null;
         }
@@ -1090,6 +1118,11 @@ export const useChatStore = defineStore('chat', () => {
         const errorMsg = (update.error as { message?: string })?.message || 'Unknown error';
         setError(errorMsg);
         if (currentAssistantMessageId.value) {
+          const retryToolCallId = 'acp-retry';
+          const existingRetry = findToolCall(currentAssistantMessageId.value, retryToolCallId);
+          if (existingRetry && existingRetry.status === 'running') {
+            updateToolCall(currentAssistantMessageId.value, retryToolCallId, { status: 'failed' });
+          }
           updateMessage(currentAssistantMessageId.value, { status: 'error', content: errorMsg });
           currentAssistantMessageId.value = null;
         }
@@ -1100,6 +1133,11 @@ export const useChatStore = defineStore('chat', () => {
       console.log('[chatStore] prompt/complete received:', payload);
       flushPending();
       if (currentAssistantMessageId.value) {
+        const retryToolCallId = 'acp-retry';
+        const existingRetry = findToolCall(currentAssistantMessageId.value, retryToolCallId);
+        if (existingRetry && existingRetry.status === 'running') {
+          updateToolCall(currentAssistantMessageId.value, retryToolCallId, { status: 'completed' });
+        }
         updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
         currentAssistantMessageId.value = null;
       }

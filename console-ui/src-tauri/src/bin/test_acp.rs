@@ -162,8 +162,11 @@ fn main() -> Result<(), String> {
 
     let mut full_text = String::new();
     let mut prompt_complete = false;
+    let mut saw_retry = false;
+    let mut retry_last_attempt: Option<u64> = None;
+    let mut retry_max_attempts: Option<u64> = None;
     let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(60) {
+    while start.elapsed() < Duration::from_secs(120) {
         match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(event) => {
                 match event.event_type.as_str() {
@@ -184,6 +187,54 @@ fn main() -> Result<(), String> {
                                         }
                                     }
                                     "agent_thought_chunk" => {}
+                                    "retry" => {
+                                        let attempt = update
+                                            .get("attempt")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let max_attempts = update
+                                            .get("maxAttempts")
+                                            .or_else(|| update.get("max_attempts"))
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let message = update
+                                            .get("message")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("Retrying...");
+
+                                        saw_retry = true;
+                                        retry_max_attempts = Some(max_attempts);
+                                        if let Some(prev) = retry_last_attempt {
+                                            if attempt != prev.saturating_add(1) && attempt != prev {
+                                                eprintln!(
+                                                    "\n[retry] unexpected attempt change: prev={} now={}",
+                                                    prev, attempt
+                                                );
+                                            }
+                                        }
+                                        retry_last_attempt = Some(attempt);
+                                        eprintln!(
+                                            "\n[retry] attempt={}/{} message={}",
+                                            attempt, max_attempts, message
+                                        );
+                                    }
+                                    "error" => {
+                                        if let Some(msg) = update
+                                            .get("error")
+                                            .and_then(|v| v.get("message"))
+                                            .and_then(|v| v.as_str())
+                                        {
+                                            eprintln!("\n[session_error] {}", msg);
+                                        } else {
+                                            eprintln!("\n[session_error] {:?}", update.get("error"));
+                                        }
+                                    }
+                                    "task_complete" => {
+                                        eprintln!(
+                                            "\n[session_complete_update] stop_reason={:?}",
+                                            update.get("stopReason").or_else(|| update.get("stop_reason"))
+                                        );
+                                    }
                                     "available_commands_update" => {
                                         if let Some(commands) = update.get("availableCommands") {
                                             eprintln!("\n[available_commands] {}", commands);
@@ -234,6 +285,16 @@ fn main() -> Result<(), String> {
                     }
                 }
                 if prompt_complete {
+                    if saw_retry {
+                        let attempt = retry_last_attempt.unwrap_or(0);
+                        let max_attempts = retry_max_attempts.unwrap_or(0);
+                        if max_attempts > 0 && attempt < max_attempts {
+                            eprintln!(
+                                "[BUG] prompt_complete arrived before retries exhausted: attempt={}/{}",
+                                attempt, max_attempts
+                            );
+                        }
+                    }
                     break;
                 }
             }

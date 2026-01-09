@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use base64::Engine;
 use codex_protocol::{
-    config_types::SandboxMode as CodexSandboxMode,
-    protocol::AskForApproval as CodexAskForApproval,
+    config_types::SandboxMode as CodexSandboxMode, protocol::AskForApproval as CodexAskForApproval,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::cli::CliConfig;

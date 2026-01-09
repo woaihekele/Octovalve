@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::app_server::{AppServerClient, AppServerEvent};
 use crate::cli::CliConfig;
-use crate::handlers::{handle_acp_request, handle_codex_event};
+use crate::handlers::{handle_acp_request, handle_app_server_stderr_line, handle_codex_event};
 use crate::protocol::AcpMessage;
 use crate::state::AcpState;
 use crate::writer::AcpWriter;
@@ -45,6 +45,13 @@ where
                         eprintln!("[acp-codex] 处理 codex 事件失败: {err}");
                     }
                 }
+                AppServerEvent::StderrLine(line) => {
+                    if let Err(err) =
+                        handle_app_server_stderr_line(line, &writer_clone, &state_clone).await
+                    {
+                        eprintln!("[acp-codex] 处理 app-server stderr 失败: {err}");
+                    }
+                }
             }
         }
     });
@@ -72,14 +79,8 @@ where
         };
 
         if let AcpMessage::Request(request) = message {
-            if let Err(err) = handle_acp_request(
-                request,
-                &writer,
-                &state,
-                &app_server,
-                &config,
-            )
-            .await
+            if let Err(err) =
+                handle_acp_request(request, &writer, &state, &app_server, &config).await
             {
                 eprintln!("[acp-codex] 处理 ACP 请求失败: {err}");
             }

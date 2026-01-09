@@ -117,6 +117,12 @@ pub(crate) struct CancelParamsInput {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum ContentBlock {
-    Text { text: String },
-    Image { data: String, #[serde(rename = "mimeType", alias = "mime_type")] mime_type: String },
+    Text {
+        text: String,
+    },
+    Image {
+        data: String,
+        #[serde(rename = "mimeType", alias = "mime_type")]
+        mime_type: String,
+    },
 }

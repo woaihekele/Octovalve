@@ -10,8 +10,9 @@ use codex_protocol::{
         PatchApplyEndEvent, StreamErrorEvent, WebSearchBeginEvent, WebSearchEndEvent,
     },
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 
 use crate::app_server::AppServerClient;
 use crate::cli::CliConfig;
@@ -22,11 +23,13 @@ use crate::protocol::{
 };
 use crate::state::AcpState;
 use crate::utils::{
-    SessionHandler, build_mcp_overrides, build_new_conversation_params, insert_dual,
-    load_mcp_servers, load_rollout_history, normalize_cwd, save_mcp_servers,
-    update_with_type, write_temp_image,
+    build_mcp_overrides, build_new_conversation_params, insert_dual, load_mcp_servers,
+    load_rollout_history, normalize_cwd, save_mcp_servers, update_with_type, write_temp_image,
+    SessionHandler,
 };
 use crate::writer::AcpWriter;
+
+const APP_SERVER_MAX_RETRIES: u32 = 5;
 
 pub(crate) async fn handle_codex_event(
     event: EventMsg,
@@ -61,6 +64,8 @@ pub(crate) async fn handle_codex_event(
             {
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = true;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
             let mut update = update_with_type("agent_message_chunk");
             update.insert("content".to_string(), json!({ "text": delta }));
@@ -70,6 +75,8 @@ pub(crate) async fn handle_codex_event(
             {
                 let mut guard = state.lock().await;
                 guard.saw_reasoning_delta = true;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
             let mut update = update_with_type("agent_thought_chunk");
             update.insert("content".to_string(), json!({ "text": delta }));
@@ -80,6 +87,8 @@ pub(crate) async fn handle_codex_event(
                 let mut guard = state.lock().await;
                 let should_send = !guard.saw_message_delta;
                 guard.saw_message_delta = true;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
                 should_send
             };
             if should_send {
@@ -93,6 +102,8 @@ pub(crate) async fn handle_codex_event(
                 let mut guard = state.lock().await;
                 let should_send = !guard.saw_reasoning_delta;
                 guard.saw_reasoning_delta = true;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
                 should_send
             };
             if should_send {
@@ -190,7 +201,10 @@ pub(crate) async fn handle_codex_event(
             }
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::McpToolCallBegin(McpToolCallBeginEvent { call_id, invocation }) => {
+        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+            call_id,
+            invocation,
+        }) => {
             let mut update = update_with_type("tool_call");
             insert_dual(
                 &mut update,
@@ -214,7 +228,9 @@ pub(crate) async fn handle_codex_event(
             );
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::McpToolCallEnd(McpToolCallEndEvent { call_id, result, .. }) => {
+        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+            call_id, result, ..
+        }) => {
             let output = match result {
                 Ok(value) => serde_json::to_string(&value).unwrap_or_default(),
                 Err(err) => err,
@@ -241,7 +257,9 @@ pub(crate) async fn handle_codex_event(
             }
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::PatchApplyBegin(PatchApplyBeginEvent { call_id, changes, .. }) => {
+        EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
+            call_id, changes, ..
+        }) => {
             let mut update = update_with_type("tool_call");
             insert_dual(
                 &mut update,
@@ -249,7 +267,12 @@ pub(crate) async fn handle_codex_event(
                 "toolCallId",
                 Value::String(call_id.to_string()),
             );
-            insert_dual(&mut update, "name", "name", Value::String("edit".to_string()));
+            insert_dual(
+                &mut update,
+                "name",
+                "name",
+                Value::String("edit".to_string()),
+            );
             insert_dual(
                 &mut update,
                 "status",
@@ -264,7 +287,9 @@ pub(crate) async fn handle_codex_event(
             );
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::PatchApplyEnd(PatchApplyEndEvent { call_id, success, .. }) => {
+        EventMsg::PatchApplyEnd(PatchApplyEndEvent {
+            call_id, success, ..
+        }) => {
             let mut update = update_with_type("tool_call_update");
             insert_dual(
                 &mut update,
@@ -325,6 +350,10 @@ pub(crate) async fn handle_codex_event(
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
         EventMsg::StreamError(StreamErrorEvent { message, .. }) => {
+            if is_retry_related_message(&message) {
+                handle_retry_signal(&session_id, message, false, writer, state).await?;
+                return Ok(());
+            }
             let mut update = update_with_type("error");
             update.insert("error".to_string(), json!({ "message": message }));
             send_session_update(writer, &session_id, Value::Object(update)).await?;
@@ -338,9 +367,15 @@ pub(crate) async fn handle_codex_event(
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
         }
         EventMsg::Error(ErrorEvent { message, .. }) => {
+            if is_retry_related_message(&message) {
+                handle_retry_signal(&session_id, message, false, writer, state).await?;
+                return Ok(());
+            }
             let mut update = update_with_type("error");
             update.insert("error".to_string(), json!({ "message": message }));
             send_session_update(writer, &session_id, Value::Object(update)).await?;
@@ -354,9 +389,34 @@ pub(crate) async fn handle_codex_event(
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
         }
         EventMsg::TaskComplete(_) => {
+            let retry_active = {
+                let guard = state.lock().await;
+                guard.retry_count > 0 && !guard.retry_exhausted
+            };
+            if retry_active {
+                return Ok(());
+            }
+
+            let should_delay = {
+                let guard = state.lock().await;
+                !guard.saw_message_delta && !guard.saw_reasoning_delta
+            };
+            if should_delay {
+                sleep(Duration::from_millis(200)).await;
+                let retry_active = {
+                    let guard = state.lock().await;
+                    guard.retry_count > 0 && !guard.retry_exhausted
+                };
+                if retry_active {
+                    return Ok(());
+                }
+            }
+
             let mut update = update_with_type("task_complete");
             update.insert(
                 "stop_reason".to_string(),
@@ -373,6 +433,8 @@ pub(crate) async fn handle_codex_event(
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
         }
         _ => {}
@@ -501,6 +563,8 @@ async fn handle_acp_request_inner(
                 guard.conversation_id = None;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
             let mut conversation_params = build_new_conversation_params(config, &cwd)?;
             if let Some(overrides) = build_mcp_overrides(&params.mcp_servers) {
@@ -565,6 +629,8 @@ async fn handle_acp_request_inner(
                 guard.conversation_id = None;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
 
             let rollout_path = SessionHandler::find_rollout_file_path(&params.session_id)?;
@@ -599,7 +665,9 @@ async fn handle_acp_request_inner(
                 .add_conversation_listener(conversation_id.clone())
                 .await?;
 
-            let history = load_rollout_history(&rollout_path).await.unwrap_or_default();
+            let history = load_rollout_history(&rollout_path)
+                .await
+                .unwrap_or_default();
 
             {
                 let mut guard = state.lock().await;
@@ -642,6 +710,8 @@ async fn handle_acp_request_inner(
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
 
             let mut items = Vec::new();
@@ -725,11 +795,7 @@ async fn handle_acp_request_inner(
     Ok(())
 }
 
-async fn send_session_update(
-    writer: &AcpWriter,
-    session_id: &str,
-    update: Value,
-) -> Result<()> {
+async fn send_session_update(writer: &AcpWriter, session_id: &str, update: Value) -> Result<()> {
     let params = json!({
         "session_id": session_id,
         "sessionId": session_id,
@@ -750,4 +816,166 @@ async fn send_prompt_complete(writer: &AcpWriter, id: u64, stop_reason: &str) ->
         result: json!({ "stopReason": stop_reason }),
     };
     writer.send_json(&response).await
+}
+
+pub(crate) async fn handle_app_server_stderr_line(
+    line: String,
+    writer: &AcpWriter,
+    state: &Arc<Mutex<AcpState>>,
+) -> Result<()> {
+    let session_id = {
+        let guard = state.lock().await;
+        guard.session_id.clone()
+    };
+    let Some(session_id) = session_id else {
+        return Ok(());
+    };
+
+    let is_rate_limit = line.contains("error=http 429")
+        || line.contains("Too Many Requests")
+        || line.to_lowercase().contains("rate_limit");
+    if !is_rate_limit {
+        return Ok(());
+    }
+
+    let message = extract_canonical_error_message(&line);
+    handle_retry_signal(&session_id, message, true, writer, state).await
+}
+
+fn extract_canonical_error_message(line: &str) -> String {
+    let needle = "\\\"message\\\":\\\"";
+    if let Some(start) = line.find(needle) {
+        let remainder = &line[start + needle.len()..];
+        if let Some(end) = remainder.find("\\\"") {
+            let raw = &remainder[..end];
+            return raw.replace("\\n", " ");
+        }
+    }
+    line.to_string()
+}
+
+fn is_retry_related_message(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("reconnecting")
+        || lower.contains("retrying")
+        || message.contains("429")
+        || message.contains("Too Many Requests")
+        || lower.contains("rate_limit")
+        || lower.contains("spending limit")
+        || lower.contains("weekly spending")
+}
+
+fn parse_retry_progress(message: &str) -> Option<u32> {
+    // Extract the attempt from patterns like "1/5" or "Reconnecting... 2/5".
+    // We only need attempt; max attempts is controlled by APP_SERVER_MAX_RETRIES.
+    let bytes = message.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            let attempt_str = &message[start..i];
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if i < bytes.len() && bytes[i] == b'/' {
+                if let Ok(attempt) = attempt_str.parse::<u32>() {
+                    return Some(attempt);
+                }
+            }
+            continue;
+        }
+        i += 1;
+    }
+    None
+}
+
+async fn handle_retry_signal(
+    session_id: &str,
+    message: String,
+    increment_if_missing: bool,
+    writer: &AcpWriter,
+    state: &Arc<Mutex<AcpState>>,
+) -> Result<()> {
+    let parsed_attempt = parse_retry_progress(&message);
+    let (attempt, exhausted) = {
+        let mut guard = state.lock().await;
+        if guard.retry_exhausted {
+            return Ok(());
+        }
+        if let Some(parsed) = parsed_attempt {
+            guard.retry_count = guard.retry_count.max(parsed);
+        } else if increment_if_missing {
+            guard.retry_count = guard.retry_count.saturating_add(1);
+        }
+        if guard.retry_count == 0 {
+            return Ok(());
+        }
+        if guard.retry_count >= APP_SERVER_MAX_RETRIES {
+            guard.retry_exhausted = true;
+        }
+        (guard.retry_count, guard.retry_exhausted)
+    };
+
+    if !exhausted {
+        let mut update = update_with_type("retry");
+        insert_dual(
+            &mut update,
+            "attempt",
+            "attempt",
+            Value::Number(serde_json::Number::from(attempt)),
+        );
+        insert_dual(
+            &mut update,
+            "max_attempts",
+            "maxAttempts",
+            Value::Number(serde_json::Number::from(APP_SERVER_MAX_RETRIES)),
+        );
+        update.insert("message".to_string(), Value::String(message));
+        send_session_update(writer, session_id, Value::Object(update)).await?;
+        return Ok(());
+    }
+
+    // Emit the final attempt as a retry update so the UI can display [max/max]
+    // before we close out the prompt with an error.
+    {
+        let mut update = update_with_type("retry");
+        insert_dual(
+            &mut update,
+            "attempt",
+            "attempt",
+            Value::Number(serde_json::Number::from(APP_SERVER_MAX_RETRIES)),
+        );
+        insert_dual(
+            &mut update,
+            "max_attempts",
+            "maxAttempts",
+            Value::Number(serde_json::Number::from(APP_SERVER_MAX_RETRIES)),
+        );
+        update.insert("message".to_string(), Value::String(message.clone()));
+        send_session_update(writer, session_id, Value::Object(update)).await?;
+    }
+
+    let error_message = format!(
+        "Request failed after {} retries: {}",
+        APP_SERVER_MAX_RETRIES, message
+    );
+    let mut update = update_with_type("error");
+    update.insert("error".to_string(), json!({ "message": error_message }));
+    send_session_update(writer, session_id, Value::Object(update)).await?;
+    if let Some(prompt_id) = {
+        let mut guard = state.lock().await;
+        guard.pending_prompt_ids.pop_front()
+    } {
+        send_prompt_complete(writer, prompt_id, "error").await?;
+    }
+    {
+        let mut guard = state.lock().await;
+        guard.saw_message_delta = false;
+        guard.saw_reasoning_delta = false;
+    }
+
+    Ok(())
 }

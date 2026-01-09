@@ -12,4 +12,6 @@ pub(crate) struct AcpState {
     pub(crate) app_server_initialized: bool,
     pub(crate) saw_message_delta: bool,
     pub(crate) saw_reasoning_delta: bool,
+    pub(crate) retry_count: u32,
+    pub(crate) retry_exhausted: bool,
 }

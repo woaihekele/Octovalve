@@ -31,9 +31,7 @@ impl CliConfig {
                     sandbox_mode = Some(value.replace('_', "-"));
                 }
                 "-c" | "--config" => {
-                    let value = args
-                        .next()
-                        .ok_or_else(|| anyhow!("-c 缺少配置值"))?;
+                    let value = args.next().ok_or_else(|| anyhow!("-c 缺少配置值"))?;
                     Self::apply_config_override(&value, &mut approval_policy, &mut sandbox_mode);
                     app_server_args.push(arg);
                     app_server_args.push(value);
