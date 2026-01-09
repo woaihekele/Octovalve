@@ -114,8 +114,8 @@ export const messages = {
       },
       providerSwitch: {
         title: '切换聊天 Provider',
-        hint: '将切换到 {provider}，当前会话将被清空。',
-        subHint: '如需保留记录，请先导出或保存。',
+        hint: '确认切换到 {provider} 后将清空当前会话。',
+        subHint: '可从会话历史中恢复。',
         confirm: '确认切换',
         failed: '切换失败：{error}',
       },
@@ -617,8 +617,8 @@ export const messages = {
       },
       providerSwitch: {
         title: 'Switch Chat Provider',
-        hint: 'Switch to {provider}. Current session will be cleared.',
-        subHint: 'Export or save if you need to keep it.',
+        hint: 'Confirming the switch to {provider} will clear the current session.',
+        subHint: 'You can restore it from chat history.',
         confirm: 'Confirm switch',
         failed: 'Switch failed: {error}',
       },
