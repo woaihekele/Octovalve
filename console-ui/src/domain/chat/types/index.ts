@@ -35,6 +35,10 @@ export interface ToolCall {
   result?: string;
 }
 
+export type ChatMessageBlock =
+  | { type: 'reasoning'; id: string; content: string }
+  | { type: 'tool_call'; toolCallId: string };
+
 export interface ImageAttachment {
   kind: 'image';
   data: string;
@@ -76,6 +80,7 @@ export interface ChatMessage {
   reasoning?: string;
   status: MessageStatus;
   toolCalls?: ToolCall[];
+  blocks?: ChatMessageBlock[];
   images?: string[];
   files?: string[];
   partial?: boolean;

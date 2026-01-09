@@ -25,6 +25,7 @@ import { openaiService, type OpenAiConfig, type ChatStreamEvent, type OpenAiCont
 import { fetchTargets } from '../../../services/api';
 import type { TargetInfo } from '../../../shared/types';
 import { i18n } from '../../../i18n';
+import { appendReasoningBlock, concatAcpTextChunk, ensureToolCallBlock } from './acpTimeline';
 
 const t = i18n.global.t;
 const TOOL_CALL_CONCURRENCY_LIMIT = 10;
@@ -59,6 +60,7 @@ export const useChatStore = defineStore('chat', () => {
   const acpHistorySummaries = ref<AcpSessionSummary[]>([]);
   const acpHistoryLoading = ref(false);
   const currentAssistantMessageId = ref<string | null>(null);
+  let currentAssistantStreamProvider: ChatProvider | null = null;
   let acpEventUnlisten: (() => void) | null = null;
 
   const acpSupportsImages = computed(() => {
@@ -88,6 +90,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!currentAssistantMessageId.value || !activeSession.value) {
       pendingAssistantContent = '';
       pendingAssistantReasoning = '';
+      currentAssistantStreamProvider = null;
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = null;
@@ -101,7 +104,17 @@ export const useChatStore = defineStore('chat', () => {
     if (msg && pendingAssistantReasoning) {
       const delta = pendingAssistantReasoning;
       pendingAssistantReasoning = '';
-      updateMessage(messageId, { reasoning: (msg.reasoning || '') + delta });
+      const isAcpStream = currentAssistantStreamProvider === 'acp';
+      const { blocks: nextBlocks, startedNewBlock } = isAcpStream
+        ? appendReasoningBlock(msg.blocks, delta, generateId)
+        : { blocks: msg.blocks, startedNewBlock: false };
+      const existingReasoning = msg.reasoning || '';
+      const needsSeparator = startedNewBlock && existingReasoning && !/^\s/.test(delta);
+      const deltaForReasoning = needsSeparator ? `\n${delta}` : delta;
+      updateMessage(messageId, {
+        reasoning: concatAcpTextChunk(existingReasoning, deltaForReasoning),
+        blocks: isAcpStream ? nextBlocks : msg.blocks,
+      });
     } else {
       pendingAssistantReasoning = '';
     }
@@ -574,6 +587,7 @@ export const useChatStore = defineStore('chat', () => {
     if (deletingActive) {
       await cancelAcp();
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
       pendingAssistantContent = '';
       pendingAssistantReasoning = '';
       acpLoadedSessionId.value = null;
@@ -606,6 +620,7 @@ export const useChatStore = defineStore('chat', () => {
     if (active?.provider === 'acp') {
       await cancelAcp();
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
       pendingAssistantContent = '';
       pendingAssistantReasoning = '';
       acpLoadedSessionId.value = null;
@@ -896,8 +911,10 @@ export const useChatStore = defineStore('chat', () => {
       content: '',
       status: 'streaming',
       partial: true,
+      blocks: [],
     });
     currentAssistantMessageId.value = assistantMsg.id;
+    currentAssistantStreamProvider = 'acp';
 
     setStreaming(true);
 
@@ -907,6 +924,7 @@ export const useChatStore = defineStore('chat', () => {
       updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
       setStreaming(false);
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
       throw e;
     }
   }
@@ -924,6 +942,7 @@ export const useChatStore = defineStore('chat', () => {
           updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
         }
         currentAssistantMessageId.value = null;
+        currentAssistantStreamProvider = null;
       }
     } catch (e) {
       console.error('Failed to cancel:', e);
@@ -1129,9 +1148,45 @@ export const useChatStore = defineStore('chat', () => {
     return null;
   }
 
+  function extractAcpSessionId(value: unknown): string | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+    const payload = value as Record<string, unknown>;
+    const direct = payload.sessionId ?? payload.session_id;
+    if (typeof direct === 'string') {
+      return direct;
+    }
+
+    const update = payload.update;
+    if (update && typeof update === 'object') {
+      const updateObj = update as Record<string, unknown>;
+      const updateSessionId = updateObj.sessionId ?? updateObj.session_id;
+      if (typeof updateSessionId === 'string') {
+        return updateSessionId;
+      }
+    }
+
+    return null;
+  }
+
   function handleAcpEvent(event: AcpEvent) {
     const method = event.type;
     const payload = event.payload as Record<string, unknown>;
+
+    if (provider.value !== 'acp') {
+      return;
+    }
+
+    const activeAcpSessionId = activeSession.value?.acpSessionId ?? null;
+    const eventSessionId = extractAcpSessionId(payload);
+    if (eventSessionId) {
+      if (!activeAcpSessionId || eventSessionId !== activeAcpSessionId) {
+        return;
+      }
+    } else if (!activeAcpSessionId && method === 'session/update') {
+      return;
+    }
 
     if (method === 'session/update') {
       const update = payload.update as Record<string, unknown> | undefined;
@@ -1143,25 +1198,46 @@ export const useChatStore = defineStore('chat', () => {
         const contentText = extractContentText(update.content);
         if (contentText && currentAssistantMessageId.value) {
           if (sessionUpdate === 'agent_thought_chunk' || sessionUpdate === 'agent_reasoning_chunk') {
-            pendingAssistantReasoning += contentText;
+            pendingAssistantReasoning = concatAcpTextChunk(pendingAssistantReasoning, contentText);
           } else {
             pendingAssistantContent += contentText;
           }
           scheduleFlush();
         }
       } else if (sessionUpdate === 'tool_call') {
+        flushPending();
+        const messageId = currentAssistantMessageId.value;
+        if (!messageId) {
+          return;
+        }
         const toolCallId = (update.toolCallId ?? update.tool_call_id) as string | undefined;
         const title = update.title as string | undefined;
         const name = update.name as string | undefined;
         const rawInput = update.rawInput ?? update.raw_input;
         const status = mapAcpToolStatus(update.status);
-        if (currentAssistantMessageId.value && toolCallId && !findToolCall(currentAssistantMessageId.value, toolCallId)) {
-          addToolCall(currentAssistantMessageId.value, {
+        if (toolCallId && !findToolCall(messageId, toolCallId)) {
+          addToolCall(messageId, {
             id: toolCallId,
             name: name || title || 'Unknown Tool',
             arguments: normalizeToolArguments(rawInput),
             status: status ?? 'running',
           });
+        }
+        if (toolCallId) {
+          const session = activeSession.value;
+          if (!session) {
+            return;
+          }
+          const msg = session.messages.find((m) => m.id === messageId);
+          if (msg) {
+            const { blocks, inserted } = ensureToolCallBlock(msg.blocks, toolCallId);
+            if (inserted) {
+              updateMessage(messageId, { blocks });
+            } else {
+              session.updatedAt = Date.now();
+              scheduleSaveToStorage();
+            }
+          }
         }
       } else if (sessionUpdate === 'tool_call_update') {
         const toolCallId = (update.toolCallId ?? update.tool_call_id) as string | undefined;
@@ -1186,6 +1262,7 @@ export const useChatStore = defineStore('chat', () => {
             updates.arguments = normalizeToolArguments(rawInput);
           }
           if (!existing) {
+            flushPending();
             addToolCall(currentAssistantMessageId.value, {
               id: toolCallId,
               name: updates.name || 'Unknown Tool',
@@ -1195,6 +1272,19 @@ export const useChatStore = defineStore('chat', () => {
             });
           } else {
             updateToolCall(currentAssistantMessageId.value, toolCallId, updates);
+          }
+          const session = activeSession.value;
+          if (!session) {
+            return;
+          }
+          const msg = session.messages.find((m) => m.id === currentAssistantMessageId.value);
+          if (msg) {
+            const { blocks, inserted } = ensureToolCallBlock(msg.blocks, toolCallId);
+            if (inserted) {
+              updateMessage(currentAssistantMessageId.value, { blocks });
+            }
+            session.updatedAt = Date.now();
+            scheduleSaveToStorage();
           }
         }
       } else if (sessionUpdate === 'retry') {
@@ -1207,6 +1297,7 @@ export const useChatStore = defineStore('chat', () => {
         if (currentAssistantMessageId.value) {
           const retryToolCallId = 'acp-retry';
           if (!findToolCall(currentAssistantMessageId.value, retryToolCallId)) {
+            flushPending();
             addToolCall(currentAssistantMessageId.value, {
               id: retryToolCallId,
               name: 'Retry',
@@ -1219,6 +1310,19 @@ export const useChatStore = defineStore('chat', () => {
             arguments: { attempt, maxAttempts },
             result: `[${attempt}/${maxAttempts}] ${message}\n`,
           });
+          const session = activeSession.value;
+          if (!session) {
+            return;
+          }
+          const msg = session.messages.find((m) => m.id === currentAssistantMessageId.value);
+          if (msg) {
+            const { blocks, inserted } = ensureToolCallBlock(msg.blocks, retryToolCallId);
+            if (inserted) {
+              updateMessage(currentAssistantMessageId.value, { blocks });
+            }
+            session.updatedAt = Date.now();
+            scheduleSaveToStorage();
+          }
         }
       } else if (sessionUpdate === 'plan') {
         const rawEntries =
@@ -1240,6 +1344,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
           currentAssistantMessageId.value = null;
+          currentAssistantStreamProvider = null;
         }
         setStreaming(false);
       } else if (sessionUpdate === 'error') {
@@ -1254,6 +1359,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           updateMessage(currentAssistantMessageId.value, { status: 'error', content: errorMsg });
           currentAssistantMessageId.value = null;
+          currentAssistantStreamProvider = null;
         }
         setStreaming(false);
       }
@@ -1269,6 +1375,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
         currentAssistantMessageId.value = null;
+        currentAssistantStreamProvider = null;
       }
       setStreaming(false);
     }
@@ -1616,6 +1723,7 @@ export const useChatStore = defineStore('chat', () => {
       partial: true,
     });
     currentAssistantMessageId.value = assistantMsg.id;
+    currentAssistantStreamProvider = 'openai';
 
     setStreaming(true);
 
@@ -1625,6 +1733,7 @@ export const useChatStore = defineStore('chat', () => {
       updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
       setStreaming(false);
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
       throw e;
     }
   }
@@ -1683,6 +1792,7 @@ export const useChatStore = defineStore('chat', () => {
 
       updateMessage(messageId, { status: 'complete', partial: false });
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
 
       void handleOpenaiToolCalls(messageId, event.toolCalls);
     } else if (event.eventType === 'cancelled') {
@@ -1695,6 +1805,7 @@ export const useChatStore = defineStore('chat', () => {
           updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
         }
         currentAssistantMessageId.value = null;
+        currentAssistantStreamProvider = null;
       }
       setStreaming(false);
     } else if (event.eventType === 'complete') {
@@ -1702,6 +1813,7 @@ export const useChatStore = defineStore('chat', () => {
       if (currentAssistantMessageId.value) {
         updateMessage(currentAssistantMessageId.value, { status: 'complete', partial: false });
         currentAssistantMessageId.value = null;
+        currentAssistantStreamProvider = null;
       }
       setStreaming(false);
       scheduleSaveToStorage();
@@ -1711,6 +1823,7 @@ export const useChatStore = defineStore('chat', () => {
       if (currentAssistantMessageId.value) {
         updateMessage(currentAssistantMessageId.value, { status: 'error', content: event.error });
         currentAssistantMessageId.value = null;
+        currentAssistantStreamProvider = null;
       }
       setStreaming(false);
     }
@@ -1831,6 +1944,7 @@ export const useChatStore = defineStore('chat', () => {
       partial: true,
     });
     currentAssistantMessageId.value = assistantMsg.id;
+    currentAssistantStreamProvider = 'openai';
 
     try {
       await openaiService.send();
@@ -1838,6 +1952,7 @@ export const useChatStore = defineStore('chat', () => {
       updateMessage(assistantMsg.id, { status: 'error', content: `Error: ${e}` });
       setStreaming(false);
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
       return;
     }
   }
@@ -1859,6 +1974,7 @@ export const useChatStore = defineStore('chat', () => {
         updateMessage(currentAssistantMessageId.value, { status: 'cancelled', partial: false });
       }
       currentAssistantMessageId.value = null;
+      currentAssistantStreamProvider = null;
     }
     if (closePendingOpenaiToolCalls(t('chat.tool.closeReason.userStop'))) {
       await syncOpenaiContextForSession(activeSession.value);

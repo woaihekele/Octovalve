@@ -652,7 +652,10 @@ async function handleChatCancel() {
   await cancelActiveChat();
 }
 
-function handleChatClear() {
+async function handleChatClear() {
+  if (chatIsStreaming.value) {
+    await cancelActiveChat();
+  }
   chatStore.createSession();
 }
 

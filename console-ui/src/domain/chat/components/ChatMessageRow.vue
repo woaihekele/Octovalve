@@ -1,31 +1,61 @@
 <template>
   <div class="chat-row" :class="[`chat-row--${message.role}`, { 'chat-row--streaming': isStreaming }]">
     <div ref="rowRef" class="chat-row__content">
-      <!-- Thinking section (collapsible) -->
-      <ReasoningBlock
-        v-if="hasMeaningfulThinking"
-        :show="thinkingOpen"
-        :streaming="isStreaming"
-        :preview-text="thinkingContent"
-        :preview-active="!hasMeaningfulResponse"
-        :preview-custom-id="`chat-thinking-preview-${message.id}`"
-        :is-dark="isDark"
-        :smooth-options="smoothOptions"
-        @toggle="handleToggleThinking"
-      >
-        <template #body>
-          <ChatMarkdown
-            :text="thinkingContent"
-            :streaming="isStreaming"
-            :content-key="`chat-thinking-${message.id}`"
+      <template v-if="hasTimelineBlocks">
+        <template v-for="block in timelineBlocks" :key="block.type === 'reasoning' ? block.id : block.toolCallId">
+          <ReasoningBlock
+            v-if="block.type === 'reasoning' && hasMeaningfulText(block.content)"
+            :show="isBlockOpen(block.id)"
+            :streaming="isBlockStreaming(block.id)"
+            :preview-text="block.content"
+            :preview-active="!hasMeaningfulResponse"
+            :preview-custom-id="`chat-thinking-preview-${message.id}-${block.id}`"
+            :is-dark="isDark"
             :smooth-options="smoothOptions"
+            @toggle="handleToggleThinkingBlock(block.id)"
+          >
+            <template #body>
+              <ChatMarkdown
+                :text="block.content"
+                :streaming="isBlockStreaming(block.id)"
+                :content-key="`chat-thinking-${message.id}-${block.id}`"
+                :smooth-options="smoothOptions"
+              />
+            </template>
+          </ReasoningBlock>
+          <ToolCallCard
+            v-else-if="block.type === 'tool_call' && toolCallById.get(block.toolCallId)"
+            :tool-call="toolCallById.get(block.toolCallId)!"
           />
         </template>
-      </ReasoningBlock>
-      <!-- Tool calls -->
-      <div v-if="message.toolCalls && message.toolCalls.length > 0" class="chat-row__tools">
-        <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc"/>
-      </div>
+      </template>
+      <template v-else>
+        <!-- Thinking section (collapsible) -->
+        <ReasoningBlock
+          v-if="hasMeaningfulThinking"
+          :show="thinkingOpen"
+          :streaming="isStreaming"
+          :preview-text="thinkingContent"
+          :preview-active="!hasMeaningfulResponse"
+          :preview-custom-id="`chat-thinking-preview-${message.id}`"
+          :is-dark="isDark"
+          :smooth-options="smoothOptions"
+          @toggle="handleToggleThinking"
+        >
+          <template #body>
+            <ChatMarkdown
+              :text="thinkingContent"
+              :streaming="isStreaming"
+              :content-key="`chat-thinking-${message.id}`"
+              :smooth-options="smoothOptions"
+            />
+          </template>
+        </ReasoningBlock>
+        <!-- Tool calls -->
+        <div v-if="message.toolCalls && message.toolCalls.length > 0" class="chat-row__tools">
+          <ToolCallCard v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc"/>
+        </div>
+      </template>
       <!-- Main response bubble -->
       <div
         class="chat-row__bubble"
@@ -71,7 +101,7 @@
 
 <script setup lang="ts">
 import {computed, ref} from 'vue';
-import type {ChatMessage} from '../types';
+import type { ChatMessage, ToolCall } from '../types';
 import ToolCallCard from './ToolCallCard.vue';
 import ReasoningBlock from './ReasoningBlock.vue';
 import ChatMarkdown from './ChatMarkdown.vue';
@@ -91,6 +121,7 @@ const emit = defineEmits<{
 
 const rowRef = ref<HTMLElement | null>(null);
 const thinkingOpen = ref(false);
+const reasoningBlocksOpen = ref<Record<string, boolean>>({});
 
 const isStreaming = computed(() => {
   return props.message.status === 'streaming' && props.isLast;
@@ -148,6 +179,35 @@ const hasMeaningfulText = (text?: string | null): boolean => {
 const hasMeaningfulThinking = computed(() => hasMeaningfulText(thinkingContent.value));
 const hasMeaningfulResponse = computed(() => hasMeaningfulText(responseContent.value));
 
+const hasTimelineBlocks = computed(() => {
+  const blocks = props.message.blocks;
+  return Array.isArray(blocks) && blocks.length > 0;
+});
+
+const timelineBlocks = computed(() => props.message.blocks || []);
+
+const toolCallById = computed(() => {
+  const map = new Map<string, ToolCall>();
+  for (const tc of props.message.toolCalls || []) {
+    map.set(tc.id, tc);
+  }
+  return map;
+});
+
+const lastReasoningBlockId = computed(() => {
+  const blocks = props.message.blocks;
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return null;
+  }
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (block?.type === 'reasoning') {
+      return block.id;
+    }
+  }
+  return null;
+});
+
 const smoothOptions = computed(() => ({
   minDelay: 24,
   chunkFactor: 9,
@@ -158,6 +218,20 @@ const smoothOptions = computed(() => ({
 function handleToggleThinking() {
   thinkingOpen.value = !thinkingOpen.value;
   emit('toggle-thinking', thinkingOpen.value);
+}
+
+function isBlockOpen(blockId: string): boolean {
+  return reasoningBlocksOpen.value[blockId] ?? false;
+}
+
+function isBlockStreaming(blockId: string): boolean {
+  return isStreaming.value && lastReasoningBlockId.value === blockId;
+}
+
+function handleToggleThinkingBlock(blockId: string) {
+  const next = !isBlockOpen(blockId);
+  reasoningBlocksOpen.value = { ...reasoningBlocksOpen.value, [blockId]: next };
+  emit('toggle-thinking', next);
 }
 
 const assistantMarkdown = computed(() => {

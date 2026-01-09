@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use codex_protocol::ConversationId;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
@@ -32,16 +33,33 @@ where
         while let Some(event) = app_events.recv().await {
             match event {
                 AppServerEvent::SessionConfigured { session_id } => {
+                    let parsed_conversation_id = ConversationId::from_string(&session_id).ok();
                     let mut guard = state_clone.lock().await;
-                    guard.session_id = Some(session_id.clone());
+                    if guard.session_id.is_none() {
+                        guard.session_id = Some(session_id.clone());
+                    }
+                    if guard.conversation_id.is_none() {
+                        guard.conversation_id = parsed_conversation_id;
+                    }
                     guard.saw_message_delta = false;
                     guard.saw_reasoning_delta = false;
+                    guard.retry_count = 0;
+                    guard.retry_exhausted = false;
+                    let effective_session_id = guard
+                        .session_id
+                        .clone()
+                        .unwrap_or_else(|| session_id.clone());
                     for waiter in guard.session_id_waiters.drain(..) {
-                        let _ = waiter.send(session_id.clone());
+                        let _ = waiter.send(effective_session_id.clone());
                     }
                 }
-                AppServerEvent::CodexEvent(msg) => {
-                    if let Err(err) = handle_codex_event(msg, &writer_clone, &state_clone).await {
+                AppServerEvent::CodexEvent {
+                    conversation_id,
+                    msg,
+                } => {
+                    if let Err(err) =
+                        handle_codex_event(conversation_id, msg, &writer_clone, &state_clone).await
+                    {
                         eprintln!("[acp-codex] 处理 codex 事件失败: {err}");
                     }
                 }

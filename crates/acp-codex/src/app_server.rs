@@ -13,10 +13,11 @@ use async_trait::async_trait;
 use codex_app_server_protocol::{
     AddConversationListenerParams, AddConversationSubscriptionResponse, ApplyPatchApprovalResponse,
     ClientInfo, ClientNotification, ClientRequest, ExecCommandApprovalResponse, InitializeParams,
-    InitializeResponse, InputItem, JSONRPCError, JSONRPCMessage, JSONRPCNotification,
-    JSONRPCRequest, JSONRPCResponse, NewConversationParams, NewConversationResponse, RequestId,
-    ResumeConversationParams, ResumeConversationResponse, SendUserMessageParams,
-    SendUserMessageResponse, ServerRequest,
+    InitializeResponse, InputItem, InterruptConversationParams, InterruptConversationResponse,
+    JSONRPCError, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse,
+    NewConversationParams, NewConversationResponse, RemoveConversationListenerParams,
+    RemoveConversationSubscriptionResponse, RequestId, ResumeConversationParams,
+    ResumeConversationResponse, SendUserMessageParams, SendUserMessageResponse, ServerRequest,
 };
 use codex_protocol::{protocol::EventMsg, protocol::ReviewDecision, ConversationId};
 use serde::Deserialize;
@@ -33,8 +34,13 @@ const CODEX_BASE_COMMAND: &[&str] = &["npx", "-y", "@openai/codex@0.77.0", "app-
 
 #[derive(Debug)]
 pub(crate) enum AppServerEvent {
-    SessionConfigured { session_id: String },
-    CodexEvent(EventMsg),
+    SessionConfigured {
+        session_id: String,
+    },
+    CodexEvent {
+        conversation_id: ConversationId,
+        msg: EventMsg,
+    },
     StderrLine(String),
 }
 
@@ -194,6 +200,46 @@ impl AppServerClient {
             .request(request_id(&request), &request, "sendUserMessage")
             .await
     }
+
+    pub(crate) async fn interrupt_conversation(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<InterruptConversationResponse> {
+        let request = ClientRequest::InterruptConversation {
+            request_id: self.rpc.next_request_id(),
+            params: InterruptConversationParams { conversation_id },
+        };
+        self.rpc
+            .request(request_id(&request), &request, "interruptConversation")
+            .await
+    }
+
+    pub(crate) async fn interrupt_conversation_no_wait(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<()> {
+        // `interruptConversation` returns only after `TurnAborted`; if the conversation
+        // has no active turn, the server may never respond. For our purposes we only
+        // need best-effort delivery.
+        let request = ClientRequest::InterruptConversation {
+            request_id: self.rpc.next_request_id(),
+            params: InterruptConversationParams { conversation_id },
+        };
+        self.rpc.send(&request).await
+    }
+
+    pub(crate) async fn remove_conversation_listener(
+        &self,
+        subscription_id: uuid::Uuid,
+    ) -> Result<RemoveConversationSubscriptionResponse> {
+        let request = ClientRequest::RemoveConversationListener {
+            request_id: self.rpc.next_request_id(),
+            params: RemoveConversationListenerParams { subscription_id },
+        };
+        self.rpc
+            .request(request_id(&request), &request, "removeConversationListener")
+            .await
+    }
 }
 
 #[async_trait]
@@ -343,6 +389,8 @@ fn request_id(request: &ClientRequest) -> RequestId {
 
 #[derive(Debug, Deserialize)]
 struct CodexNotificationParams {
+    #[serde(rename = "conversationId")]
+    conversation_id: ConversationId,
     #[serde(rename = "msg")]
     msg: EventMsg,
 }
@@ -432,7 +480,10 @@ impl JsonRpcCallbacks for AppServerCallbacks {
             return Ok(());
         };
 
-        let _ = self.events_tx.send(AppServerEvent::CodexEvent(params.msg));
+        let _ = self.events_tx.send(AppServerEvent::CodexEvent {
+            conversation_id: params.conversation_id,
+            msg: params.msg,
+        });
         Ok(())
     }
 

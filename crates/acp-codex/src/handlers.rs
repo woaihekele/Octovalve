@@ -9,6 +9,7 @@ use codex_protocol::{
         ErrorEvent, EventMsg, McpToolCallBeginEvent, McpToolCallEndEvent, PatchApplyBeginEvent,
         PatchApplyEndEvent, StreamErrorEvent, WebSearchBeginEvent, WebSearchEndEvent,
     },
+    ConversationId,
 };
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -17,8 +18,8 @@ use tokio::time::{sleep, Duration};
 use crate::app_server::AppServerClient;
 use crate::cli::CliConfig;
 use crate::protocol::{
-    AuthenticateParamsInput, CancelParamsInput, ContentBlock, InitializeParamsInput,
-    DeleteSessionParamsInput, JsonRpcErrorOut, JsonRpcErrorOutPayload, JsonRpcIncomingRequest,
+    AuthenticateParamsInput, CancelParamsInput, ContentBlock, DeleteSessionParamsInput,
+    InitializeParamsInput, JsonRpcErrorOut, JsonRpcErrorOutPayload, JsonRpcIncomingRequest,
     JsonRpcResponseOut, ListSessionsParamsInput, LoadSessionParamsInput, NewSessionParamsInput,
     PromptParamsInput,
 };
@@ -80,29 +81,45 @@ fn format_tool_result<T: serde::Serialize>(value: &T) -> String {
 }
 
 pub(crate) async fn handle_codex_event(
+    conversation_id: ConversationId,
     event: EventMsg,
     writer: &AcpWriter,
     state: &Arc<Mutex<AcpState>>,
 ) -> Result<()> {
-    match event {
-        EventMsg::SessionConfigured(payload) => {
+    // `addConversationListener` is sticky unless explicitly removed; without
+    // filtering, events from an old conversation can be mislabeled as the new
+    // session and show up in the wrong chat.
+    if let EventMsg::SessionConfigured(payload) = &event {
+        let mut guard = state.lock().await;
+        if let Some(active_conversation_id) = guard.conversation_id {
+            if active_conversation_id != conversation_id {
+                return Ok(());
+            }
+        } else {
+            guard.conversation_id = Some(conversation_id);
+        }
+        if guard.session_id.is_none() {
             let session_id_value = payload.session_id.to_string();
-            let mut guard = state.lock().await;
             guard.session_id = Some(session_id_value.clone());
-            guard.saw_message_delta = false;
-            guard.saw_reasoning_delta = false;
             for waiter in guard.session_id_waiters.drain(..) {
                 let _ = waiter.send(session_id_value.clone());
             }
-            return Ok(());
         }
-        _ => {}
+        guard.saw_message_delta = false;
+        guard.saw_reasoning_delta = false;
+        guard.retry_count = 0;
+        guard.retry_exhausted = false;
+        return Ok(());
     }
 
-    let session_id = {
+    let (active_conversation_id, session_id) = {
         let guard = state.lock().await;
-        guard.session_id.clone()
+        (guard.conversation_id, guard.session_id.clone())
     };
+    if active_conversation_id != Some(conversation_id) {
+        return Ok(());
+    }
+
     let Some(session_id) = session_id else {
         return Ok(());
     };
@@ -604,15 +621,34 @@ async fn handle_acp_request_inner(
                 .transpose()?
                 .ok_or_else(|| anyhow!("session/new 缺少参数"))?;
             let cwd = normalize_cwd(&params.cwd);
-            {
+            let (previous_conversation_id, previous_subscription_id) = {
                 let mut guard = state.lock().await;
+                let previous = (guard.conversation_id, guard.conversation_subscription_id);
                 guard.session_id = None;
                 guard.pending_prompt_ids.clear();
                 guard.conversation_id = None;
+                guard.conversation_subscription_id = None;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
                 guard.retry_count = 0;
                 guard.retry_exhausted = false;
+                previous
+            };
+            if let Some(previous_conversation_id) = previous_conversation_id {
+                if let Err(err) = app_server
+                    .interrupt_conversation_no_wait(previous_conversation_id)
+                    .await
+                {
+                    eprintln!("[acp-codex] interruptConversation 失败: {err}");
+                }
+            }
+            if let Some(previous_subscription_id) = previous_subscription_id {
+                if let Err(err) = app_server
+                    .remove_conversation_listener(previous_subscription_id)
+                    .await
+                {
+                    eprintln!("[acp-codex] removeConversationListener 失败: {err}");
+                }
             }
             let mut conversation_params = build_new_conversation_params(config, &cwd)?;
             if let Some(overrides) = build_mcp_overrides(&params.mcp_servers) {
@@ -625,20 +661,19 @@ async fn handle_acp_request_inner(
                 }
             }
             let conversation_id = response.conversation_id;
-            app_server
-                .add_conversation_listener(conversation_id.clone())
-                .await?;
-
-            let session_id = {
+            let session_id = conversation_id.to_string();
+            {
                 let mut guard = state.lock().await;
                 guard.conversation_id = Some(conversation_id);
-                let session_id = guard
-                    .session_id
-                    .clone()
-                    .unwrap_or_else(|| conversation_id.to_string());
                 guard.session_id = Some(session_id.clone());
-                session_id
-            };
+            }
+            let subscription = app_server
+                .add_conversation_listener(conversation_id)
+                .await?;
+            {
+                let mut guard = state.lock().await;
+                guard.conversation_subscription_id = Some(subscription.subscription_id);
+            }
 
             let mut result = serde_json::Map::new();
             insert_dual(
@@ -686,15 +721,34 @@ async fn handle_acp_request_inner(
                 .transpose()?
                 .ok_or_else(|| anyhow!("session/load 缺少参数"))?;
 
-            {
+            let (previous_conversation_id, previous_subscription_id) = {
                 let mut guard = state.lock().await;
+                let previous = (guard.conversation_id, guard.conversation_subscription_id);
                 guard.session_id = None;
                 guard.pending_prompt_ids.clear();
                 guard.conversation_id = None;
+                guard.conversation_subscription_id = None;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
                 guard.retry_count = 0;
                 guard.retry_exhausted = false;
+                previous
+            };
+            if let Some(previous_conversation_id) = previous_conversation_id {
+                if let Err(err) = app_server
+                    .interrupt_conversation_no_wait(previous_conversation_id)
+                    .await
+                {
+                    eprintln!("[acp-codex] interruptConversation 失败: {err}");
+                }
+            }
+            if let Some(previous_subscription_id) = previous_subscription_id {
+                if let Err(err) = app_server
+                    .remove_conversation_listener(previous_subscription_id)
+                    .await
+                {
+                    eprintln!("[acp-codex] removeConversationListener 失败: {err}");
+                }
             }
 
             let rollout_path = SessionHandler::find_rollout_file_path(&params.session_id)?;
@@ -725,19 +779,22 @@ async fn handle_acp_request_inner(
                 .resume_conversation(rollout_path.clone(), conversation_params)
                 .await?;
             let conversation_id = response.conversation_id;
-            app_server
-                .add_conversation_listener(conversation_id.clone())
-                .await?;
-
-            let history = load_rollout_history(&rollout_path)
-                .await
-                .unwrap_or_default();
-
             {
                 let mut guard = state.lock().await;
                 guard.session_id = Some(params.session_id.clone());
                 guard.conversation_id = Some(conversation_id);
             }
+            let subscription = app_server
+                .add_conversation_listener(conversation_id)
+                .await?;
+            {
+                let mut guard = state.lock().await;
+                guard.conversation_subscription_id = Some(subscription.subscription_id);
+            }
+
+            let history = load_rollout_history(&rollout_path)
+                .await
+                .unwrap_or_default();
 
             let result = json!({
                 "modes": [],
@@ -839,6 +896,18 @@ async fn handle_acp_request_inner(
                 .unwrap_or(CancelParamsInput {
                     session_id: "".to_string(),
                 });
+            let conversation_id = {
+                let guard = state.lock().await;
+                guard.conversation_id
+            };
+            if let Some(conversation_id) = conversation_id {
+                if let Err(err) = app_server
+                    .interrupt_conversation_no_wait(conversation_id)
+                    .await
+                {
+                    eprintln!("[acp-codex] interruptConversation 失败: {err}");
+                }
+            }
             if let Some(prompt_id) = {
                 let mut guard = state.lock().await;
                 guard.pending_prompt_ids.pop_front()
@@ -849,6 +918,8 @@ async fn handle_acp_request_inner(
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = false;
                 guard.saw_reasoning_delta = false;
+                guard.retry_count = 0;
+                guard.retry_exhausted = false;
             }
             let response = JsonRpcResponseOut {
                 jsonrpc: "2.0",
