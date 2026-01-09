@@ -540,6 +540,11 @@ function confirmQuickProfileSwitch() {
   }
 }
 
+type ChatProviderInitOptions = {
+  provider?: 'openai' | 'acp';
+  config?: AppSettings['chat'];
+};
+
 // Initialize chat provider based on settings
 function buildAcpArgs(config: AppSettings['chat']['acp']) {
   const args: string[] = [];
@@ -556,12 +561,13 @@ function buildAcpArgs(config: AppSettings['chat']['acp']) {
   return args.join(' ').trim();
 }
 
-async function initChatProvider() {
-  const chatConfig = settings.value.chat;
-  console.log('[initChatProvider] config:', chatConfig.provider);
+async function initChatProvider(options: ChatProviderInitOptions = {}) {
+  const chatConfig = options.config ?? settings.value.chat;
+  const provider = options.provider ?? chatConfig.provider;
+  console.log('[initChatProvider] config:', provider);
   
   try {
-    if (chatConfig.provider === 'openai') {
+    if (provider === 'openai') {
       await chatStore.initializeOpenai(chatConfig.openai);
     } else {
       // ACP provider
@@ -1166,7 +1172,17 @@ function handleSettingsSave(value: AppSettings, close = true) {
     isSettingsOpen.value = false;
     clearSettingsPreview();
   }
-  void refreshChatProviderFromSettings(previousSettings, value);
+  const providerChanged = previousSettings.chat.provider !== value.chat.provider;
+  if (providerChanged && chatStore.provider !== value.chat.provider) {
+    pendingProvider.value = value.chat.provider;
+    providerSwitchConfirmOpen.value = true;
+    void refreshChatProviderFromSettings(previousSettings, value, {
+      allowProviderSwitch: false,
+      activeProvider: chatStore.provider,
+    });
+  } else {
+    void refreshChatProviderFromSettings(previousSettings, value);
+  }
   void refreshQuickProfiles();
 }
 
@@ -1226,7 +1242,7 @@ function hasAcpRestartSettingsChanged(previous: AppSettings, next: AppSettings) 
   );
 }
 
-async function restartAcpSessionWithLog(createSession: boolean) {
+async function restartAcpSessionWithLog(createSession: boolean, config?: AppSettings['chat']) {
   if (acpRestarting.value) {
     return;
   }
@@ -1235,7 +1251,7 @@ async function restartAcpSessionWithLog(createSession: boolean) {
   try {
     await startSwitchLogPolling('acp');
     switchLogStatusMessage.value = t('settings.log.status.acp.pending');
-    await initChatProvider();
+    await initChatProvider({ provider: 'acp', config: config ?? settings.value.chat });
     if (createSession) {
       chatStore.createSession();
     }
@@ -1250,14 +1266,26 @@ async function restartAcpSessionWithLog(createSession: boolean) {
   }
 }
 
-async function refreshChatProviderFromSettings(previous: AppSettings, next: AppSettings) {
+type ChatProviderRefreshOptions = {
+  allowProviderSwitch?: boolean;
+  activeProvider?: 'openai' | 'acp';
+};
+
+async function refreshChatProviderFromSettings(
+  previous: AppSettings,
+  next: AppSettings,
+  options: ChatProviderRefreshOptions = {}
+) {
+  const allowProviderSwitch = options.allowProviderSwitch ?? true;
   const providerChanged = previous.chat.provider !== next.chat.provider;
   const openaiChanged = hasOpenaiConfigChanged(previous, next);
   const acpChanged = hasAcpConfigChanged(previous, next);
   const acpRestartChanged = hasAcpRestartSettingsChanged(previous, next);
-  const nextProvider = next.chat.provider;
-  const needsOpenaiRefresh = nextProvider === 'openai' && (providerChanged || openaiChanged);
-  const needsAcpRefresh = nextProvider === 'acp' && (providerChanged || acpChanged);
+  const activeProvider = options.activeProvider ?? chatStore.provider;
+  const shouldSwitchProvider = allowProviderSwitch && providerChanged;
+  const refreshProvider = shouldSwitchProvider ? next.chat.provider : activeProvider;
+  const needsOpenaiRefresh = refreshProvider === 'openai' && (shouldSwitchProvider || openaiChanged);
+  const needsAcpRefresh = refreshProvider === 'acp' && (shouldSwitchProvider || acpChanged);
 
   if (!needsOpenaiRefresh && !needsAcpRefresh) {
     return;
@@ -1267,20 +1295,20 @@ async function refreshChatProviderFromSettings(previous: AppSettings, next: AppS
     await cancelActiveChat();
   }
 
-  if (providerChanged) {
+  if (shouldSwitchProvider) {
     await stopActiveProvider();
-  } else if (nextProvider === 'openai' && openaiChanged && chatStore.provider === 'openai') {
+  } else if (refreshProvider === 'openai' && openaiChanged && chatStore.provider === 'openai') {
     await chatStore.stopOpenai();
   }
 
-  if (nextProvider === 'acp' && acpRestartChanged) {
-    await restartAcpSessionWithLog(providerChanged);
+  if (refreshProvider === 'acp' && acpRestartChanged) {
+    await restartAcpSessionWithLog(shouldSwitchProvider, next.chat);
     return;
   }
 
   try {
-    await initChatProvider();
-    if (providerChanged) {
+    await initChatProvider({ provider: refreshProvider, config: next.chat });
+    if (shouldSwitchProvider) {
       chatStore.createSession();
     }
   } catch (err) {
