@@ -55,6 +55,8 @@ pub fn run() {
             crate::commands::acp::acp_authenticate,
             crate::commands::acp::acp_new_session,
             crate::commands::acp::acp_load_session,
+            crate::commands::acp::acp_list_sessions,
+            crate::commands::acp::acp_delete_session,
             crate::commands::acp::acp_prompt,
             crate::commands::acp::acp_cancel,
             crate::commands::acp::acp_stop,

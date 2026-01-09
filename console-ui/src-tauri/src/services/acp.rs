@@ -7,7 +7,8 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::clients::acp_client::{AcpClient, AcpClientState};
 use crate::clients::acp_types::{
-    AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, LoadSessionResult,
+    AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, ListSessionsResult,
+    LoadSessionResult,
 };
 use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::logging::append_log_line;
@@ -257,6 +258,33 @@ pub async fn acp_load_session(
     };
     client
         .load_session(&session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn acp_list_sessions(app: AppHandle) -> Result<ListSessionsResult, String> {
+    let client = {
+        let state = app.state::<AcpClientState>();
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .cloned()
+            .ok_or("ACP client not started")?
+    };
+    client.list_sessions().await.map_err(|e| e.to_string())
+}
+
+pub async fn acp_delete_session(app: AppHandle, session_id: String) -> Result<(), String> {
+    let client = {
+        let state = app.state::<AcpClientState>();
+        let guard = state.0.lock().await;
+        guard
+            .as_ref()
+            .cloned()
+            .ok_or("ACP client not started")?
+    };
+    client
+        .delete_session(&session_id)
         .await
         .map_err(|e| e.to_string())
 }

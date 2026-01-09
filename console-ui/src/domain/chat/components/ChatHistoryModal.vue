@@ -16,7 +16,7 @@
 
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <div class="text-xs text-foreground-muted">{{ $t('chat.history.hint') }}</div>
+          <div class="text-xs text-foreground-muted">{{ historyHint }}</div>
           <n-button size="small" quaternary :disabled="props.sessions.length === 0" @click="confirmClearAllOpen = true">
             {{ $t('chat.history.clearAll') }}
           </n-button>
@@ -76,6 +76,7 @@ const props = defineProps<{
   show: boolean;
   sessions: ChatSession[];
   activeSessionId: string | null;
+  provider?: 'acp' | 'openai';
 }>();
 
 const emit = defineEmits<{
@@ -91,6 +92,9 @@ const sortedSessions = computed(() => {
 
 const { t, locale } = useI18n();
 const confirmClearAllOpen = ref(false);
+const historyHint = computed(() =>
+  props.provider === 'acp' ? t('chat.history.hintAcp') : t('chat.history.hintOpenai')
+);
 
 function confirmClearAll() {
   confirmClearAllOpen.value = false;
@@ -98,7 +102,7 @@ function confirmClearAll() {
 }
 
 function formatMeta(session: ChatSession) {
-  const count = session.messages.length;
+  const count = session.messageCount ?? session.messages.length;
   const dt = new Date(session.updatedAt);
   const time = dt.toLocaleString(locale.value);
   return t('chat.history.meta', { count, time });

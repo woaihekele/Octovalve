@@ -188,6 +188,36 @@ pub struct LoadSessionParams {
     pub mcp_servers: Vec<Value>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub title: String,
+    pub cwd: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub message_count: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionsResult {
+    pub sessions: Vec<SessionSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSessionParams {
+    pub session_id: String,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadSessionResult {

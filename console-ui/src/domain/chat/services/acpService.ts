@@ -57,6 +57,19 @@ export interface AcpLoadSessionResult {
   history: unknown;
 }
 
+export interface AcpSessionSummary {
+  sessionId: string;
+  title: string;
+  cwd: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+}
+
+export interface AcpListSessionsResult {
+  sessions: AcpSessionSummary[];
+}
+
 export interface ContextItem {
   type: string;
   [key: string]: unknown;
@@ -146,6 +159,20 @@ export async function acpLoadSession(sessionId: string): Promise<AcpLoadSessionR
 }
 
 /**
+ * List sessions for ACP workspace history.
+ */
+export async function acpListSessions(): Promise<AcpListSessionsResult> {
+  return invoke<AcpListSessionsResult>('acp_list_sessions');
+}
+
+/**
+ * Delete an ACP session.
+ */
+export async function acpDeleteSession(sessionId: string): Promise<void> {
+  return invoke('acp_delete_session', { sessionId });
+}
+
+/**
  * Send a prompt to the current session
  */
 export async function acpPrompt(prompt: AcpContentBlock[], context?: ContextItem[]): Promise<void> {
@@ -184,6 +211,8 @@ export const acpService = {
   authenticate: acpAuthenticate,
   newSession: acpNewSession,
   loadSession: acpLoadSession,
+  listSessions: acpListSessions,
+  deleteSession: acpDeleteSession,
   prompt: acpPrompt,
   cancel: acpCancel,
   stop: acpStop,

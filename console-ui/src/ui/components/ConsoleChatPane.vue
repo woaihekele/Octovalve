@@ -22,8 +22,9 @@
 
   <ChatHistoryModal
     :show="isHistoryOpen"
-    :sessions="openaiSessions"
+    :sessions="historySessions"
     :active-session-id="activeSessionId"
+    :provider="provider"
     @close="emit('close-history')"
     @select="emit('select-session', $event)"
     @delete="emit('delete-session', $event)"
@@ -50,7 +51,7 @@ defineProps<{
   targets: TargetInfo[];
   supportsImages: boolean;
   isHistoryOpen: boolean;
-  openaiSessions: ChatSession[];
+  historySessions: ChatSession[];
   activeSessionId: string | null;
 }>();
 

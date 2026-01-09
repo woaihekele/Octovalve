@@ -26,7 +26,7 @@ import {
 } from '../services/api';
 import { useChatStore } from '../domain/chat';
 import { storeToRefs } from 'pinia';
-import type { AuthMethod } from '../domain/chat/services/acpService';
+import type { AuthMethod, AcpSessionSummary } from '../domain/chat/services/acpService';
 import type { SendMessageOptions } from '../domain/chat/types';
 import { matchesShortcut } from '../shared/shortcuts';
 import ConsoleChatPane from '../ui/components/ConsoleChatPane.vue';
@@ -153,6 +153,7 @@ const {
   providerInitialized,
   provider: chatProvider,
   providerSupportsImages,
+  acpHistorySummaries,
 } = storeToRefs(chatStore);
 const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
@@ -650,9 +651,88 @@ function handleChatClear() {
 
 function handleChatShowHistory() {
   isChatHistoryOpen.value = true;
+  if (chatProvider.value === 'acp') {
+    void chatStore.refreshAcpHistorySummaries();
+  }
 }
 
 const openaiSessions = computed(() => chatStore.sessions.filter((s) => s.provider === 'openai'));
+const acpHistoryMap = computed(() => {
+  const map = new Map<string, AcpSessionSummary>();
+  const sessionByAcpId = new Map(
+    chatStore.sessions
+      .filter((s) => s.provider === 'acp' && s.acpSessionId)
+      .map((s) => [s.acpSessionId as string, s.id])
+  );
+  for (const summary of acpHistorySummaries.value) {
+    const displayId = sessionByAcpId.get(summary.sessionId) ?? summary.sessionId;
+    map.set(displayId, summary);
+  }
+  return map;
+});
+const acpHistorySessions = computed(() => {
+  const now = Date.now();
+  return acpHistorySummaries.value.map((summary) => {
+    const existing = chatStore.sessions.find(
+      (session) => session.provider === 'acp' && session.acpSessionId === summary.sessionId
+    );
+    const createdAt = summary.createdAt ?? summary.updatedAt ?? now;
+    const updatedAt = summary.updatedAt ?? summary.createdAt ?? createdAt;
+    return {
+      id: existing?.id ?? summary.sessionId,
+      provider: 'acp',
+      title: summary.title || summary.sessionId,
+      createdAt,
+      updatedAt,
+      messages: existing?.messages ?? [],
+      messageCount: summary.messageCount,
+      totalTokens: existing?.totalTokens ?? 0,
+      status: existing?.status ?? 'idle',
+      acpSessionId: summary.sessionId,
+      plan: existing?.plan,
+    };
+  });
+});
+const historySessions = computed(() =>
+  chatProvider.value === 'acp' ? acpHistorySessions.value : openaiSessions.value
+);
+
+function handleHistorySelect(sessionId: string) {
+  if (chatProvider.value === 'acp') {
+    const summary = acpHistoryMap.value.get(sessionId);
+    const remoteId = summary?.sessionId ?? sessionId;
+    chatStore.activateAcpHistorySession(remoteId, summary);
+  } else {
+    chatStore.setActiveSession(sessionId);
+  }
+  isChatHistoryOpen.value = false;
+}
+
+async function handleHistoryDelete(sessionId: string) {
+  if (chatProvider.value === 'acp') {
+    const summary = acpHistoryMap.value.get(sessionId);
+    const remoteId = summary?.sessionId ?? sessionId;
+    try {
+      await chatStore.deleteAcpHistorySession(remoteId);
+    } catch (err) {
+      showNotification(t('chat.error', { error: String(err) }));
+    }
+    return;
+  }
+  chatStore.deleteSessionForProvider(sessionId, 'openai');
+}
+
+async function handleHistoryClear() {
+  if (chatProvider.value === 'acp') {
+    try {
+      await chatStore.clearAcpHistorySessions();
+    } catch (err) {
+      showNotification(t('chat.error', { error: String(err) }));
+    }
+    return;
+  }
+  chatStore.clearSessionsForProvider('openai');
+}
 
 function handleChangeProvider(newProvider: 'acp' | 'openai') {
   if (chatProvider.value === newProvider) {
@@ -1557,7 +1637,7 @@ watch(
       :supports-images="providerSupportsImages"
       :targets="targets"
       :is-history-open="isChatHistoryOpen"
-      :openai-sessions="openaiSessions"
+      :history-sessions="historySessions"
       :active-session-id="chatStore.activeSessionId"
       @send="handleChatSend"
       @cancel="handleChatCancel"
@@ -1565,9 +1645,9 @@ watch(
       @clear="handleChatClear"
       @change-provider="handleChangeProvider"
       @close-history="isChatHistoryOpen = false"
-      @select-session="(id) => { chatStore.setActiveSession(id); isChatHistoryOpen = false; }"
-      @delete-session="(id) => chatStore.deleteSessionForProvider(id, 'openai')"
-      @clear-sessions="() => chatStore.clearSessionsForProvider('openai')"
+      @select-session="handleHistorySelect"
+      @delete-session="handleHistoryDelete"
+      @clear-sessions="handleHistoryClear"
     />
 
     <SettingsModal

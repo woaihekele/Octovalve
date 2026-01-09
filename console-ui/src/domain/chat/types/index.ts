@@ -94,6 +94,7 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];
+  messageCount?: number;
   totalTokens: number;
   status: 'idle' | 'running' | 'paused';
   acpSessionId?: string | null;

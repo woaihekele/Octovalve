@@ -13,7 +13,13 @@ import type {
   PromptBlock,
   SendMessageOptions,
 } from '../types';
-import type { AuthMethod, AcpEvent, AgentCapabilities, AcpContentBlock } from '../services/acpService';
+import type {
+  AuthMethod,
+  AcpEvent,
+  AgentCapabilities,
+  AcpContentBlock,
+  AcpSessionSummary,
+} from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig, type ChatStreamEvent, type OpenAiContentPart } from '../services/openaiService';
 import { fetchTargets } from '../../../services/api';
@@ -50,6 +56,8 @@ export const useChatStore = defineStore('chat', () => {
   const acpCapabilities = ref<AgentCapabilities | null>(null);
   const acpCwd = ref<string | null>(null);
   const acpLoadedSessionId = ref<string | null>(null);
+  const acpHistorySummaries = ref<AcpSessionSummary[]>([]);
+  const acpHistoryLoading = ref(false);
   const currentAssistantMessageId = ref<string | null>(null);
   let acpEventUnlisten: (() => void) | null = null;
 
@@ -292,6 +300,7 @@ export const useChatStore = defineStore('chat', () => {
 
     if (current.length === 0 || currentSignature !== parsedSignature || current.length < parsed.length) {
       session.messages = parsed;
+      session.messageCount = parsed.length;
       session.updatedAt = Date.now();
       saveToStorage();
     }
@@ -495,6 +504,101 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e) {
       console.warn('Failed to load chat sessions from storage:', e);
     }
+  }
+
+  async function refreshAcpHistorySummaries() {
+    if (!acpInitialized.value) {
+      acpHistorySummaries.value = [];
+      return;
+    }
+    if (acpHistoryLoading.value) {
+      return;
+    }
+    acpHistoryLoading.value = true;
+    try {
+      const result = await acpService.listSessions();
+      acpHistorySummaries.value = result.sessions ?? [];
+    } catch (e) {
+      console.warn('[chatStore] load ACP history failed:', e);
+      acpHistorySummaries.value = [];
+    } finally {
+      acpHistoryLoading.value = false;
+    }
+  }
+
+  function findAcpSessionByRemoteId(sessionId: string) {
+    return sessions.value.find((s) => s.provider === 'acp' && s.acpSessionId === sessionId);
+  }
+
+  function activateAcpHistorySession(sessionId: string, summary?: AcpSessionSummary) {
+    const existing = findAcpSessionByRemoteId(sessionId);
+    if (existing) {
+      if (summary?.title && summary.title !== existing.title) {
+        existing.title = summary.title;
+      }
+      if (typeof summary?.messageCount === 'number') {
+        existing.messageCount = summary.messageCount;
+      }
+      if (typeof summary?.updatedAt === 'number') {
+        existing.updatedAt = Math.max(existing.updatedAt, summary.updatedAt);
+      }
+      activeSessionId.value = existing.id;
+      scheduleSaveToStorage();
+      return;
+    }
+
+    const createdAt = summary?.createdAt ?? Date.now();
+    const updatedAt = summary?.updatedAt ?? createdAt;
+    const title = summary?.title ?? t('chat.session.title', { index: sessions.value.length + 1 });
+    const session: ChatSession = {
+      id: sessionId,
+      provider: 'acp',
+      title,
+      createdAt,
+      updatedAt,
+      messages: [],
+      messageCount: summary?.messageCount,
+      totalTokens: 0,
+      status: 'idle',
+      acpSessionId: sessionId,
+    };
+    sessions.value.push(session);
+    activeSessionId.value = session.id;
+    scheduleSaveToStorage();
+  }
+
+  async function deleteAcpHistorySession(sessionId: string) {
+    await acpService.deleteSession(sessionId);
+    acpHistorySummaries.value = acpHistorySummaries.value.filter(
+      (item) => item.sessionId !== sessionId
+    );
+    const activeId = activeSessionId.value;
+    sessions.value = sessions.value.filter(
+      (session) => !(session.provider === 'acp' && session.acpSessionId === sessionId)
+    );
+    if (activeId && !sessions.value.find((session) => session.id === activeId)) {
+      activeSessionId.value = sessions.value[0]?.id ?? null;
+      if (!activeSessionId.value && provider.value === 'acp') {
+        createSession();
+      }
+    }
+    scheduleSaveToStorage();
+  }
+
+  async function clearAcpHistorySessions() {
+    const summaries = [...acpHistorySummaries.value];
+    for (const item of summaries) {
+      await acpService.deleteSession(item.sessionId);
+    }
+    acpHistorySummaries.value = [];
+    sessions.value = sessions.value.filter((session) => session.provider !== 'acp');
+    if (provider.value === 'acp') {
+      activeSessionId.value = null;
+      createSession();
+    } else if (activeSessionId.value && !sessions.value.find((s) => s.id === activeSessionId.value)) {
+      activeSessionId.value = sessions.value[0]?.id ?? null;
+    }
+    scheduleSaveToStorage();
   }
 
   function saveToStorage() {
@@ -1821,8 +1925,14 @@ export const useChatStore = defineStore('chat', () => {
     // ACP
     acpInitialized,
     authMethods,
+    acpHistorySummaries,
+    acpHistoryLoading,
     initializeAcp,
     authenticateAcp,
+    refreshAcpHistorySummaries,
+    activateAcpHistorySession,
+    deleteAcpHistorySession,
+    clearAcpHistorySessions,
     sendAcpMessage,
     cancelAcp,
     stopAcp,

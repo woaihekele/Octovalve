@@ -381,6 +381,26 @@ impl AcpClient {
         Ok(load_result)
     }
 
+    /// List sessions scoped to the workspace.
+    pub async fn list_sessions(&self) -> Result<ListSessionsResult, AcpError> {
+        let params = ListSessionsParams { cwd: None };
+        let result = self
+            .send_request("session/list", Some(serde_json::to_value(&params)?))
+            .await?;
+        let list_result: ListSessionsResult = serde_json::from_value(result)?;
+        Ok(list_result)
+    }
+
+    /// Delete a session by id.
+    pub async fn delete_session(&self, session_id: &str) -> Result<(), AcpError> {
+        let params = DeleteSessionParams {
+            session_id: session_id.to_string(),
+        };
+        self.send_request("session/delete", Some(serde_json::to_value(&params)?))
+            .await?;
+        Ok(())
+    }
+
     /// Send a prompt to the current session (non-blocking).
     /// Content comes via notifications, completion comes via response.
     pub async fn prompt(

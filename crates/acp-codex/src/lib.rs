@@ -1,6 +1,7 @@
 mod app_server;
 mod cli;
 mod handlers;
+mod sessions;
 mod protocol;
 mod server;
 mod state;

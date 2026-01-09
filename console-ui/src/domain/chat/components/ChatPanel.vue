@@ -41,7 +41,6 @@
         </div>
         <div class="chat-panel__actions">
           <button
-            v-if="provider === 'openai'"
             class="chat-panel__btn"
             :title="$t('chat.history.title')"
             @click="$emit('show-history')"

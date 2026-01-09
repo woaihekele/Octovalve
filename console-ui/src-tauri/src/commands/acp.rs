@@ -1,7 +1,8 @@
 use tauri::State;
 
 use crate::clients::acp_types::{
-    AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, LoadSessionResult,
+    AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, ListSessionsResult,
+    LoadSessionResult,
 };
 use crate::clients::AcpClientState;
 use crate::services::acp;
@@ -34,6 +35,19 @@ pub async fn acp_load_session(
     session_id: String,
 ) -> Result<LoadSessionResult, String> {
     acp::acp_load_session(app, session_id).await
+}
+
+#[tauri::command]
+pub async fn acp_list_sessions(app: tauri::AppHandle) -> Result<ListSessionsResult, String> {
+    acp::acp_list_sessions(app).await
+}
+
+#[tauri::command]
+pub async fn acp_delete_session(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    acp::acp_delete_session(app, session_id).await
 }
 
 #[tauri::command]

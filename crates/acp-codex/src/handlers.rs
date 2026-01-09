@@ -18,9 +18,11 @@ use crate::app_server::AppServerClient;
 use crate::cli::CliConfig;
 use crate::protocol::{
     AuthenticateParamsInput, CancelParamsInput, ContentBlock, InitializeParamsInput,
-    JsonRpcErrorOut, JsonRpcErrorOutPayload, JsonRpcIncomingRequest, JsonRpcResponseOut,
-    LoadSessionParamsInput, NewSessionParamsInput, PromptParamsInput,
+    DeleteSessionParamsInput, JsonRpcErrorOut, JsonRpcErrorOutPayload, JsonRpcIncomingRequest,
+    JsonRpcResponseOut, ListSessionsParamsInput, LoadSessionParamsInput, NewSessionParamsInput,
+    PromptParamsInput,
 };
+use crate::sessions::{delete_workspace_session, list_workspace_sessions};
 use crate::state::AcpState;
 use crate::utils::{
     build_mcp_overrides, build_new_conversation_params, insert_dual, load_mcp_servers,
@@ -614,6 +616,22 @@ async fn handle_acp_request_inner(
             };
             writer.send_json(&response).await?;
         }
+        "session/list" => {
+            let _params: ListSessionsParamsInput = request
+                .params
+                .as_ref()
+                .map(|value| serde_json::from_value(value.clone()))
+                .transpose()?
+                .unwrap_or(ListSessionsParamsInput { cwd: None });
+            let sessions = list_workspace_sessions()?;
+            let result = json!({ "sessions": sessions });
+            let response = JsonRpcResponseOut {
+                jsonrpc: "2.0",
+                id: request.id,
+                result,
+            };
+            writer.send_json(&response).await?;
+        }
         "session/load" => {
             let params: LoadSessionParamsInput = request
                 .params
@@ -684,6 +702,21 @@ async fn handle_acp_request_inner(
                 jsonrpc: "2.0",
                 id: request.id,
                 result,
+            };
+            writer.send_json(&response).await?;
+        }
+        "session/delete" => {
+            let params: DeleteSessionParamsInput = request
+                .params
+                .as_ref()
+                .map(|value| serde_json::from_value(value.clone()))
+                .transpose()?
+                .ok_or_else(|| anyhow!("session/delete 缺少参数"))?;
+            delete_workspace_session(&params.session_id)?;
+            let response = JsonRpcResponseOut {
+                jsonrpc: "2.0",
+                id: request.id,
+                result: Value::Null,
             };
             writer.send_json(&response).await?;
         }

@@ -101,6 +101,19 @@ pub(crate) struct LoadSessionParamsInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ListSessionsParamsInput {
+    #[serde(default)]
+    pub(crate) cwd: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteSessionParamsInput {
+    pub(crate) session_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct PromptParamsInput {
     pub(crate) session_id: String,
     pub(crate) prompt: Vec<ContentBlock>,

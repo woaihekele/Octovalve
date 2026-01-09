@@ -82,7 +82,8 @@ export const messages = {
       },
       history: {
         title: '历史会话',
-        hint: '仅显示 OpenAI 会话历史',
+        hintAcp: '仅显示工作区内 ACP 会话历史',
+        hintOpenai: '仅显示 OpenAI 会话历史',
         clearAll: '清空历史',
         empty: '暂无历史会话',
         current: '当前',
@@ -583,7 +584,8 @@ export const messages = {
       },
       history: {
         title: 'Chat History',
-        hint: 'Only OpenAI sessions are shown',
+        hintAcp: 'Only ACP sessions under the workspace are shown',
+        hintOpenai: 'Only OpenAI sessions are shown',
         clearAll: 'Clear history',
         empty: 'No sessions yet',
         current: 'Current',
