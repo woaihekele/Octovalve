@@ -27,6 +27,7 @@ struct SessionMetadata {
 }
 
 pub(crate) fn list_workspace_sessions() -> Result<Vec<SessionSummary>> {
+    eprintln!("[acp-codex] list_workspace_sessions called");
     let sessions_root = SessionHandler::sessions_root()?;
     let workspace_root = workspace_root()?;
     let mut sessions = Vec::new();
@@ -208,10 +209,33 @@ fn workspace_root() -> Result<PathBuf> {
 
 fn is_within_workspace(cwd: &str, workspace_root: &Path) -> bool {
     let cwd_path = Path::new(cwd);
-    if let (Ok(root), Ok(target)) = (workspace_root.canonicalize(), cwd_path.canonicalize()) {
-        return target.starts_with(root);
+    let workspace_root = match workspace_root.canonicalize() {
+        Ok(root) => root,
+        Err(err) => {
+            eprintln!("[acp-codex] workspace_root canonicalize failed: {err}");
+            return cwd_path.starts_with(workspace_root);
+        }
+    };
+
+    let cwd_display = cwd_path.display().to_string();
+    let root_display = workspace_root.display().to_string();
+    if !cwd_display.starts_with(&root_display) {
+        eprintln!(
+            "[acp-codex] skip canonicalize for non-workspace cwd: {}",
+            cwd_display
+        );
+        return false;
     }
-    cwd_path.starts_with(workspace_root)
+
+    match cwd_path.canonicalize() {
+        Ok(target) => target.starts_with(&workspace_root),
+        Err(err) => {
+            eprintln!(
+                "[acp-codex] cwd canonicalize failed: {cwd_display}: {err}"
+            );
+            true
+        }
+    }
 }
 
 fn file_time_ms(path: &Path) -> Result<Option<u64>> {

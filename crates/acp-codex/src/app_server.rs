@@ -52,6 +52,9 @@ impl AppServerClient {
         let mut cmd = Command::new(CODEX_BASE_COMMAND[0]);
         cmd.args(&CODEX_BASE_COMMAND[1..]);
         cmd.args(&config.app_server_args);
+        if let Some(home) = dirs::home_dir() {
+            cmd.current_dir(&home).env("PWD", &home);
+        }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

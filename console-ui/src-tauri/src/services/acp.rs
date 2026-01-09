@@ -16,6 +16,66 @@ use crate::services::logging::append_log_line;
 use crate::services::profiles::{expand_tilde_path, octovalve_dir};
 use crate::state::{AppLogState, ProxyConfigState};
 
+fn ensure_npm_env(app: &AppHandle, log_path: &Path) {
+    let base = match octovalve_dir(app) {
+        Ok(dir) => dir.join("npm"),
+        Err(err) => {
+            let _ = append_log_line(
+                log_path,
+                &format!("[acp_start] npm env skipped: {err}"),
+            );
+            return;
+        }
+    };
+    let cache = base.join("cache");
+    let prefix = base.join("global");
+    let prefix_lib = prefix.join("lib");
+    let prefix_bin = prefix.join("bin");
+    let prefix_modules = prefix_lib.join("node_modules");
+    if let Err(err) = std::fs::create_dir_all(&cache) {
+        let _ = append_log_line(
+            log_path,
+            &format!("[acp_start] npm cache dir error: {err}"),
+        );
+    }
+    if let Err(err) = std::fs::create_dir_all(&prefix) {
+        let _ = append_log_line(
+            log_path,
+            &format!("[acp_start] npm prefix dir error: {err}"),
+        );
+    }
+    if let Err(err) = std::fs::create_dir_all(&prefix_lib) {
+        let _ = append_log_line(
+            log_path,
+            &format!("[acp_start] npm prefix lib error: {err}"),
+        );
+    }
+    if let Err(err) = std::fs::create_dir_all(&prefix_bin) {
+        let _ = append_log_line(
+            log_path,
+            &format!("[acp_start] npm prefix bin error: {err}"),
+        );
+    }
+    if let Err(err) = std::fs::create_dir_all(&prefix_modules) {
+        let _ = append_log_line(
+            log_path,
+            &format!("[acp_start] npm prefix node_modules error: {err}"),
+        );
+    }
+    std::env::set_var("NPM_CONFIG_CACHE", cache.to_string_lossy().as_ref());
+    std::env::set_var("NPM_CONFIG_PREFIX", prefix.to_string_lossy().as_ref());
+    let _ = append_log_line(
+        log_path,
+        &format!(
+            "[acp_start] npm env cache={} prefix={} lib={} bin={}",
+            cache.display(),
+            prefix.display(),
+            prefix_lib.display(),
+            prefix_bin.display()
+        ),
+    );
+}
+
 fn parse_acp_args(raw: Option<String>) -> Result<Vec<String>, String> {
     let Some(raw) = raw else {
         return Ok(Vec::new());
@@ -154,7 +214,21 @@ pub async fn acp_start(
 ) -> Result<AcpInitResponse, String> {
     let log_path = app.state::<AppLogState>().app_log.clone();
     let _ = append_log_line(&log_path, &format!("[acp_start] called with cwd: {}", cwd));
+    let cwd_value = std::env::current_dir()
+        .ok()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_else(|| "<error>".to_string());
+    let pwd_value = std::env::var("PWD").unwrap_or_else(|_| "<unset>".to_string());
+    let home_value = std::env::var("HOME").unwrap_or_else(|_| "<unset>".to_string());
+    let _ = append_log_line(
+        &log_path,
+        &format!(
+            "[acp_start] env cwd={} PWD={} HOME={}",
+            cwd_value, pwd_value, home_value
+        ),
+    );
     std::env::set_var("PATH", build_console_path());
+    ensure_npm_env(&app, &log_path);
 
     let proxy_status = proxy_state.0.lock().unwrap().clone();
     let proxy_config_path = PathBuf::from(proxy_status.path);
@@ -265,6 +339,8 @@ pub async fn acp_load_session(
 }
 
 pub async fn acp_list_sessions(app: AppHandle) -> Result<ListSessionsResult, String> {
+    let log_path = app.state::<AppLogState>().app_log.clone();
+    let _ = append_log_line(&log_path, "[acp_list_sessions] called");
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
@@ -273,7 +349,10 @@ pub async fn acp_list_sessions(app: AppHandle) -> Result<ListSessionsResult, Str
             .cloned()
             .ok_or("ACP client not started")?
     };
-    client.list_sessions().await.map_err(|e| e.to_string())
+    client.list_sessions().await.map_err(|e| {
+        let _ = append_log_line(&log_path, &format!("[acp_list_sessions] error: {}", e));
+        e.to_string()
+    })
 }
 
 pub async fn acp_delete_session(app: AppHandle, session_id: String) -> Result<(), String> {
