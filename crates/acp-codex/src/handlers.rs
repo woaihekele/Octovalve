@@ -33,6 +33,52 @@ use crate::writer::AcpWriter;
 
 const APP_SERVER_MAX_RETRIES: u32 = 5;
 
+fn extract_tool_result_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) if !text.is_empty() => return Some(text.clone()),
+        Value::Object(map) => {
+            if let Some(Value::Array(content)) = map.get("content") {
+                for entry in content {
+                    if let Some(text) = entry.get("text").and_then(Value::as_str) {
+                        if !text.is_empty() {
+                            return Some(text.to_string());
+                        }
+                    }
+                    if let Some(text) = entry
+                        .get("content")
+                        .and_then(|value| value.get("text"))
+                        .and_then(Value::as_str)
+                    {
+                        if !text.is_empty() {
+                            return Some(text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+fn format_tool_result<T: serde::Serialize>(value: &T) -> String {
+    let value = serde_json::to_value(value).unwrap_or(Value::Null);
+    if let Some(text) = extract_tool_result_text(&value) {
+        return text;
+    }
+    if let Some(structured) = value
+        .get("structuredContent")
+        .or_else(|| value.get("structured_content"))
+    {
+        if !structured.is_null() {
+            if let Ok(text) = serde_json::to_string_pretty(structured) {
+                return text;
+            }
+        }
+    }
+    serde_json::to_string(&value).unwrap_or_default()
+}
+
 pub(crate) async fn handle_codex_event(
     event: EventMsg,
     writer: &AcpWriter,
@@ -234,7 +280,7 @@ pub(crate) async fn handle_codex_event(
             call_id, result, ..
         }) => {
             let output = match result {
-                Ok(value) => serde_json::to_string(&value).unwrap_or_default(),
+                Ok(value) => format_tool_result(&value),
                 Err(err) => err,
             };
             let mut update = update_with_type("tool_call_update");

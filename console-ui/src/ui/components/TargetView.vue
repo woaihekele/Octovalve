@@ -325,6 +325,9 @@ function buildOutput(result: ResultSnapshot) {
   if (stderr) {
     return stderr;
   }
+  if (result.status === 'error') {
+    return result.error?.trim() ?? '';
+  }
   return '';
 }
 

@@ -220,10 +220,6 @@ fn is_within_workspace(cwd: &str, workspace_root: &Path) -> bool {
     let cwd_display = cwd_path.display().to_string();
     let root_display = workspace_root.display().to_string();
     if !cwd_display.starts_with(&root_display) {
-        eprintln!(
-            "[acp-codex] skip canonicalize for non-workspace cwd: {}",
-            cwd_display
-        );
         return false;
     }
 
