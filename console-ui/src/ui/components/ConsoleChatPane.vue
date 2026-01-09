@@ -23,6 +23,7 @@
   <ChatHistoryModal
     :show="isHistoryOpen"
     :sessions="historySessions"
+    :loading="historyLoading"
     :active-session-id="activeSessionId"
     :provider="provider"
     @close="emit('close-history')"
@@ -52,6 +53,7 @@ defineProps<{
   supportsImages: boolean;
   isHistoryOpen: boolean;
   historySessions: ChatSession[];
+  historyLoading: boolean;
   activeSessionId: string | null;
 }>();
 

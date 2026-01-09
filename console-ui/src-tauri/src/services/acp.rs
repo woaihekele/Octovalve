@@ -10,6 +10,7 @@ use crate::clients::acp_types::{
     AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, ListSessionsResult,
     LoadSessionResult,
 };
+use crate::services::console_sidecar::build_console_path;
 use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::logging::append_log_line;
 use crate::services::profiles::{expand_tilde_path, octovalve_dir};
@@ -153,6 +154,7 @@ pub async fn acp_start(
 ) -> Result<AcpInitResponse, String> {
     let log_path = app.state::<AppLogState>().app_log.clone();
     let _ = append_log_line(&log_path, &format!("[acp_start] called with cwd: {}", cwd));
+    std::env::set_var("PATH", build_console_path());
 
     let proxy_status = proxy_state.0.lock().unwrap().clone();
     let proxy_config_path = PathBuf::from(proxy_status.path);

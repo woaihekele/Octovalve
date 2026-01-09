@@ -154,6 +154,7 @@ const {
   provider: chatProvider,
   providerSupportsImages,
   acpHistorySummaries,
+  acpHistoryLoading,
 } = storeToRefs(chatStore);
 const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
@@ -695,6 +696,9 @@ const acpHistorySessions = computed<ChatSession[]>(() => {
 });
 const historySessions = computed(() =>
   chatProvider.value === 'acp' ? acpHistorySessions.value : openaiSessions.value
+);
+const historyLoading = computed(() =>
+  chatProvider.value === 'acp' ? acpHistoryLoading.value : false
 );
 
 function handleHistorySelect(sessionId: string) {
@@ -1638,6 +1642,7 @@ watch(
       :targets="targets"
       :is-history-open="isChatHistoryOpen"
       :history-sessions="historySessions"
+      :history-loading="historyLoading"
       :active-session-id="chatStore.activeSessionId"
       @send="handleChatSend"
       @cancel="handleChatCancel"

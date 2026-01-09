@@ -13,8 +13,8 @@ use crate::types::{
 
 use super::index::{current_profile_entry, load_profiles_file, write_profiles_file};
 use super::paths::{
-    expand_tilde_path, legacy_proxy_config_path, octovalve_dir, profile_dir_for, profiles_dir,
-    profiles_index_path, resolve_config_path,
+    expand_tilde_path, legacy_proxy_config_path, octovalve_dir, profile_broker_path,
+    profile_dir_for, profile_proxy_path, profiles_dir, profiles_index_path, resolve_config_path,
 };
 
 fn ensure_broker_file(profile: &ProfileRecord) -> Result<(), String> {
@@ -103,6 +103,26 @@ pub fn prepare_profiles(
         write_profiles_file(&index_path, &profiles)?;
         profiles
     };
+
+    let _ = append_log_line(
+        log_path,
+        &format!("profiles loaded; current={}", profiles.current),
+    );
+    for profile in &profiles.profiles {
+        let proxy_resolved = profile_proxy_path(app, profile)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|err| format!("error: {err}"));
+        let broker_resolved = profile_broker_path(app, profile)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|err| format!("error: {err}"));
+        let _ = append_log_line(
+            log_path,
+            &format!(
+                "profile {} proxy_path={} (resolved={}) broker_path={} (resolved={})",
+                profile.name, profile.proxy_path, proxy_resolved, profile.broker_path, broker_resolved
+            ),
+        );
+    }
 
     if !profiles
         .profiles

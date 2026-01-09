@@ -16,13 +16,28 @@
 
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <div class="text-xs text-foreground-muted">{{ historyHint }}</div>
-          <n-button size="small" quaternary :disabled="props.sessions.length === 0" @click="confirmClearAllOpen = true">
+          <div class="text-xs text-foreground-muted flex items-center gap-2">
+            <n-spin v-if="props.loading" size="small" />
+            <span>{{ historyStatusText }}</span>
+          </div>
+          <n-button
+            size="small"
+            quaternary
+            :disabled="props.sessions.length === 0 || props.loading"
+            @click="confirmClearAllOpen = true"
+          >
             {{ $t('chat.history.clearAll') }}
           </n-button>
         </div>
 
-        <div v-if="props.sessions.length === 0" class="text-sm text-foreground-muted py-6 text-center">
+        <div
+          v-if="props.loading && props.sessions.length === 0"
+          class="text-sm text-foreground-muted py-6 text-center"
+        >
+          {{ $t('chat.history.loading') }}
+        </div>
+
+        <div v-else-if="props.sessions.length === 0" class="text-sm text-foreground-muted py-6 text-center">
           {{ $t('chat.history.empty') }}
         </div>
 
@@ -68,13 +83,14 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { NButton, NCard, NModal } from 'naive-ui';
+import { NButton, NCard, NModal, NSpin } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import type { ChatSession } from '../types';
 
 const props = defineProps<{
   show: boolean;
   sessions: ChatSession[];
+  loading?: boolean;
   activeSessionId: string | null;
   provider?: 'acp' | 'openai';
 }>();
@@ -94,6 +110,9 @@ const { t, locale } = useI18n();
 const confirmClearAllOpen = ref(false);
 const historyHint = computed(() =>
   props.provider === 'acp' ? t('chat.history.hintAcp') : t('chat.history.hintOpenai')
+);
+const historyStatusText = computed(() =>
+  props.loading ? t('chat.history.loading') : historyHint.value
 );
 
 function confirmClearAll() {
