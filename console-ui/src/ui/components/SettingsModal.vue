@@ -190,11 +190,19 @@ const logFooterText = computed(() => {
   }
   return logInProgress.value ? t('settings.log.footer.remote.pending') : t('settings.log.footer.remote.done');
 });
+const configStatusText = computed(() =>
+  t('settings.config.status', {
+    active: activeProfile.value || '-',
+    selected: selectedProfile.value || '-',
+    proxy: proxyDirty.value ? t('settings.config.changed') : t('settings.config.unchanged'),
+    broker: brokerDirty.value ? t('settings.config.changed') : t('settings.config.unchanged'),
+  })
+);
 const isAiTab = computed(() => activeTab.value === 'ai');
 const cardMaxWidth = computed(() => (isConfigTab.value ? '80rem' : isAiTab.value ? '64rem' : '32rem'));
 const cardShellStyle = computed<CSSProperties>(() => ({
-  width: '100%',
-  maxWidth: cardMaxWidth.value,
+  width: cardMaxWidth.value,
+  maxWidth: '100%',
   height: cardHeight.value ? `${cardHeight.value}px` : 'auto',
 }));
 const cardStyle = computed(() => ({
@@ -208,7 +216,7 @@ const cardContentStyle = computed<CSSProperties>(() => {
   return {
     display: 'flex',
     flexDirection: 'column',
-    height: '100%',
+    minHeight: 0,
   };
 });
 
@@ -222,7 +230,7 @@ async function syncCardHeight() {
   if (!inner) {
     return;
   }
-  const measuredHeight = Math.max(inner.scrollHeight, inner.offsetHeight);
+  const measuredHeight = isConfigTab.value ? inner.offsetHeight : Math.max(inner.scrollHeight, inner.offsetHeight);
   const nextHeight = Math.ceil(measuredHeight);
   if (!nextHeight) {
     return;
@@ -997,6 +1005,7 @@ watch(
 
 <template>
   <n-modal
+    class="settings-modal"
     :show="hasOpen"
     :mask-closable="false"
     :close-on-esc="!logModalOpen"
@@ -1010,7 +1019,13 @@ watch(
         :style="cardShellStyle"
       >
         <div ref="cardInnerRef" class="w-full">
-          <n-card :bordered="true" :style="cardStyle" :content-style="cardContentStyle" size="large">
+          <n-card
+            :bordered="true"
+            :style="cardStyle"
+            :content-style="cardContentStyle"
+            size="large"
+            :class="isConfigTab ? 'settings-card settings-card--config' : 'settings-card'"
+          >
             <template #header>
               <div>{{ $t('settings.title') }}</div>
             </template>
@@ -1090,6 +1105,37 @@ watch(
             <n-button @click="emit('close')">{{ $t('common.cancel') }}</n-button>
             <n-button type="primary" @click="save">{{ $t('common.save') }}</n-button>
           </div>
+          <template v-if="activeTab === 'config'" #footer>
+            <div class="border-t border-border/50 bg-panel">
+              <div class="flex items-center justify-between gap-3 px-3 py-3">
+                <div class="min-w-0 truncate text-xs text-foreground-muted" :title="configStatusText">
+                  {{ configStatusText }}
+                </div>
+                <div class="flex items-center gap-2">
+                  <n-button
+                    quaternary
+                    :disabled="configBusy || logModalOpen || configLoading"
+                    @click="requestRefreshConfig"
+                  >
+                    {{ $t('common.refresh') }}
+                  </n-button>
+                  <n-button :disabled="configBusy || logModalOpen" @click="emit('close')">
+                    {{ $t('common.cancel') }}
+                  </n-button>
+                  <n-button :disabled="configBusy || logModalOpen || configLoading" @click="saveConfigFiles">
+                    {{ $t('common.save') }}
+                  </n-button>
+                  <n-button
+                    type="primary"
+                    :disabled="configBusy || logModalOpen || configLoading"
+                    @click="requestApplyConfig"
+                  >
+                    {{ $t('common.apply') }}
+                  </n-button>
+                </div>
+              </div>
+            </div>
+          </template>
           </n-card>
         </div>
       </div>
@@ -1236,10 +1282,36 @@ watch(
   overflow-y: visible;
 }
 
+:deep(.settings-modal) {
+  box-shadow: none;
+  background: transparent;
+}
+
+.settings-modal-root {
+  display: flex;
+  justify-content: center;
+}
+
 .settings-card-shell--ready {
   transition: max-width 320ms cubic-bezier(0.22, 1, 0.36, 1),
     height 320ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: max-width, height;
+}
+
+.settings-card--config {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-card--config :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-card--config :deep(.n-card__footer) {
+  padding: 0;
 }
 
 .settings-tabs--full {
@@ -1256,6 +1328,7 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .ai-field {

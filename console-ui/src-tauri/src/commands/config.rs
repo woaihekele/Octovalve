@@ -7,7 +7,7 @@ use crate::services::config::{
 };
 use crate::services::profiles::resolve_broker_config_path;
 use crate::state::{ProfilesState, ProxyConfigState};
-use crate::types::ConfigFilePayload;
+use crate::types::{BrokerConfigEditor, ConfigFilePayload, ProxyConfigEditor};
 
 #[tauri::command]
 pub async fn read_proxy_config(
@@ -89,4 +89,14 @@ pub async fn write_broker_config(
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub fn parse_proxy_config_toml(content: String) -> Result<ProxyConfigEditor, String> {
+    toml::from_str::<ProxyConfigEditor>(&content).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn parse_broker_config_toml(content: String) -> Result<BrokerConfigEditor, String> {
+    toml::from_str::<BrokerConfigEditor>(&content).map_err(|err| err.to_string())
 }

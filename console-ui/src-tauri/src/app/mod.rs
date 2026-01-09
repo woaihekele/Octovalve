@@ -33,6 +33,8 @@ pub fn run() {
             crate::commands::config::write_proxy_config,
             crate::commands::config::read_broker_config,
             crate::commands::config::write_broker_config,
+            crate::commands::config::parse_proxy_config_toml,
+            crate::commands::config::parse_broker_config_toml,
             crate::commands::console::restart_console,
             crate::commands::console::validate_startup_config,
             crate::commands::console::log_ui_event,

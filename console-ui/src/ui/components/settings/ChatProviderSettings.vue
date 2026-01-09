@@ -73,7 +73,7 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="chat-settings space-y-6">
     <!-- Provider Selection -->
     <div class="space-y-2">
       <div class="text-sm font-medium">{{ $t('settings.chat.provider.label') }}</div>
@@ -200,5 +200,19 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
 <style scoped>
 .bg-panel-muted\/50 {
   background: rgb(var(--color-panel-muted) / 0.5);
+}
+
+.chat-settings :deep(.n-input:not(.n-input--disabled) .n-input__input input),
+.chat-settings :deep(.n-input:not(.n-input--disabled) .n-input__textarea textarea),
+.chat-settings :deep(.n-input-number:not(.n-input-number--disabled) .n-input__input input),
+.chat-settings :deep(.n-base-selection:not(.n-base-selection--disabled) .n-base-selection-label) {
+  color: rgb(var(--color-text));
+}
+
+.chat-settings :deep(.n-input:not(.n-input--disabled) .n-input__input input::placeholder),
+.chat-settings :deep(.n-input:not(.n-input--disabled) .n-input__textarea textarea::placeholder),
+.chat-settings :deep(.n-input-number:not(.n-input-number--disabled) .n-input__input input::placeholder),
+.chat-settings :deep(.n-base-selection:not(.n-base-selection--disabled) .n-base-selection-placeholder) {
+  color: rgb(var(--color-text-muted));
 }
 </style>

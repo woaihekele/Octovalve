@@ -3,10 +3,12 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { i18n } from '../i18n';
 import type {
   AiRiskApiResponse,
+  BrokerConfigEditor,
   ConfigFilePayload,
   ConsoleEvent,
   ProfileRuntimeSettings,
   ProfilesStatus,
+  ProxyConfigEditor,
   ServiceSnapshot,
   TargetInfo,
 } from '../shared/types';
@@ -229,6 +231,20 @@ export async function cleanupTunnels() {
     throw new Error(t('api.tauriOnly.tunnel'));
   }
   await invoke('proxy_cleanup_tunnels');
+}
+
+export async function parseProxyConfigToml(content: string): Promise<ProxyConfigEditor> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.profiles'));
+  }
+  return invoke<ProxyConfigEditor>('parse_proxy_config_toml', { content });
+}
+
+export async function parseBrokerConfigToml(content: string): Promise<BrokerConfigEditor> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.profiles'));
+  }
+  return invoke<BrokerConfigEditor>('parse_broker_config_toml', { content });
 }
 
 export async function openConsoleStream(

@@ -1,13 +1,13 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProxyConfig {
     pub default_target: Option<String>,
     pub defaults: Option<ProxyDefaults>,
     pub targets: Vec<TargetConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProxyDefaults {
     pub timeout_ms: Option<u64>,
     pub max_output_bytes: Option<u64>,
@@ -21,7 +21,7 @@ pub struct ProxyDefaults {
     pub control_local_port_offset: Option<u16>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TargetConfig {
     pub name: String,
     pub desc: String,

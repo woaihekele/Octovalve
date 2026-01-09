@@ -23,6 +23,60 @@ export interface ProfileRuntimeSettings {
   remote_control_port: number;
 }
 
+export interface ProxyDefaultsConfig {
+  timeout_ms?: number | null;
+  max_output_bytes?: number | null;
+  local_bind?: string | null;
+  remote_addr?: string | null;
+  ssh_args?: string[] | null;
+  ssh_password?: string | null;
+  terminal_locale?: string | null;
+  control_remote_addr?: string | null;
+  control_local_bind?: string | null;
+  control_local_port_offset?: number | null;
+}
+
+export interface ProxyTargetConfig {
+  name: string;
+  desc: string;
+  hostname?: string | null;
+  ip?: string | null;
+  ssh?: string | null;
+  remote_addr?: string | null;
+  local_port?: number | null;
+  local_bind?: string | null;
+  ssh_args?: string[] | null;
+  ssh_password?: string | null;
+  terminal_locale?: string | null;
+  control_remote_addr?: string | null;
+  control_local_port?: number | null;
+  control_local_bind?: string | null;
+}
+
+export interface ProxyConfigEditor {
+  broker_config_path?: string | null;
+  default_target?: string | null;
+  defaults?: ProxyDefaultsConfig | null;
+  targets: ProxyTargetConfig[];
+}
+
+export interface BrokerWhitelistConfig {
+  allowed: string[];
+  denied: string[];
+  arg_rules: Record<string, string>;
+}
+
+export interface BrokerLimitsConfig {
+  timeout_secs: number;
+  max_output_bytes: number;
+}
+
+export interface BrokerConfigEditor {
+  auto_approve_allowed: boolean;
+  whitelist: BrokerWhitelistConfig;
+  limits: BrokerLimitsConfig;
+}
+
 export interface TargetInfo {
   name: string;
   hostname?: string | null;
