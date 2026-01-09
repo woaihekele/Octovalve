@@ -39,16 +39,25 @@ const selectedId = ref<string | null>(null);
 const isFullScreen = ref(false);
 const splitContainerRef = ref<HTMLDivElement | null>(null);
 const terminalContainerRef = ref<HTMLDivElement | null>(null);
+const leftPaneWidth = ref<number | null>(null);
 const terminalHeight = ref<number | null>(null);
 const containerHeight = ref(0);
+const containerWidth = ref(0);
 const isResizing = ref(false);
+const isResizingColumns = ref(false);
 const lastPendingCount = ref(0);
+const leftPaneWidthStorageKey = 'console-ui.target-split.left.width';
 const terminalHeightStorageKey = 'console-ui.target-terminal.height';
+const minLeftPaneWidth = 320;
+const minRightPaneWidth = 420;
+const columnResizerWidth = 6;
 const minTerminalHeight = 240;
 const minContentHeight = 240;
 let resizeObserver: ResizeObserver | null = null;
 let resizeStartY = 0;
 let resizeStartHeight = 0;
+let resizeStartX = 0;
+let resizeStartWidth = 0;
 
 type SnapshotItem = RequestSnapshot | RunningSnapshot | ResultSnapshot;
 
@@ -67,6 +76,23 @@ const terminalStyle = computed(() => {
   const fallback = containerHeight.value > 0 ? containerHeight.value / 2 : minTerminalHeight;
   const height = terminalHeight.value ?? fallback;
   return { height: `${clampTerminalHeight(height)}px` };
+});
+const leftPaneStyle = computed(() => {
+  if (isFullScreen.value) {
+    return {};
+  }
+  const fallback = containerWidth.value > 0 ? containerWidth.value / 3 : minLeftPaneWidth;
+  const width = leftPaneWidth.value ?? fallback;
+  return { width: `${clampLeftPaneWidth(width)}px` };
+});
+const columnResizerStyle = computed(() => {
+  if (isFullScreen.value) {
+    return {};
+  }
+  const fallback = containerWidth.value > 0 ? containerWidth.value / 3 : minLeftPaneWidth;
+  const width = clampLeftPaneWidth(leftPaneWidth.value ?? fallback);
+  const offset = Math.round(width - columnResizerWidth / 2);
+  return { left: `${offset}px`, width: `${columnResizerWidth}px` };
 });
 const selectedIndex = computed(() => {
   if (!selectedId.value) {
@@ -403,17 +429,33 @@ function clampTerminalHeight(value: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function updateContainerHeight() {
+function clampLeftPaneWidth(value: number) {
+  if (containerWidth.value <= 0) {
+    return value;
+  }
+  const min = Math.min(minLeftPaneWidth, containerWidth.value);
+  const max = Math.max(min, containerWidth.value - minRightPaneWidth);
+  return Math.min(max, Math.max(min, value));
+}
+
+function updateContainerMetrics() {
   if (!splitContainerRef.value) {
     return;
   }
-  const nextHeight = Math.round(splitContainerRef.value.getBoundingClientRect().height);
-  if (!nextHeight || nextHeight === containerHeight.value) {
-    return;
+  const rect = splitContainerRef.value.getBoundingClientRect();
+  const nextHeight = Math.round(rect.height);
+  const nextWidth = Math.round(rect.width);
+  if (nextWidth && nextWidth !== containerWidth.value) {
+    containerWidth.value = nextWidth;
+    if (leftPaneWidth.value !== null) {
+      leftPaneWidth.value = clampLeftPaneWidth(leftPaneWidth.value);
+    }
   }
-  containerHeight.value = nextHeight;
-  if (terminalHeight.value !== null) {
-    terminalHeight.value = clampTerminalHeight(terminalHeight.value);
+  if (nextHeight && nextHeight !== containerHeight.value) {
+    containerHeight.value = nextHeight;
+    if (terminalHeight.value !== null) {
+      terminalHeight.value = clampTerminalHeight(terminalHeight.value);
+    }
   }
 }
 
@@ -422,6 +464,35 @@ function ensureTerminalHeight() {
     return;
   }
   terminalHeight.value = clampTerminalHeight(containerHeight.value / 2);
+}
+
+function readStoredLeftPaneWidth() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const raw = window.localStorage.getItem(leftPaneWidthStorageKey);
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function persistLeftPaneWidth() {
+  if (typeof window === 'undefined' || leftPaneWidth.value === null) {
+    return;
+  }
+  window.localStorage.setItem(leftPaneWidthStorageKey, String(leftPaneWidth.value));
+}
+
+function ensureLeftPaneWidth() {
+  if (leftPaneWidth.value !== null || containerWidth.value <= 0) {
+    return;
+  }
+  leftPaneWidth.value = clampLeftPaneWidth(containerWidth.value / 3);
 }
 
 function handleResizeMove(event: MouseEvent) {
@@ -451,6 +522,35 @@ function startResize(event: MouseEvent) {
 }
 
 terminalHeight.value = readStoredTerminalHeight();
+leftPaneWidth.value = readStoredLeftPaneWidth();
+
+function handleColumnResizeMove(event: MouseEvent) {
+  const dx = event.clientX - resizeStartX;
+  leftPaneWidth.value = clampLeftPaneWidth(resizeStartWidth + dx);
+}
+
+function stopColumnResize() {
+  if (!isResizingColumns.value) {
+    return;
+  }
+  isResizingColumns.value = false;
+  window.removeEventListener('mousemove', handleColumnResizeMove);
+  window.removeEventListener('mouseup', stopColumnResize);
+  persistLeftPaneWidth();
+}
+
+function startColumnResize(event: MouseEvent) {
+  if (isFullScreen.value) {
+    return;
+  }
+  isResizingColumns.value = true;
+  updateContainerMetrics();
+  resizeStartX = event.clientX;
+  resizeStartWidth = leftPaneWidth.value ?? clampLeftPaneWidth(containerWidth.value / 3);
+  leftPaneWidth.value = clampLeftPaneWidth(resizeStartWidth);
+  window.addEventListener('mousemove', handleColumnResizeMove);
+  window.addEventListener('mouseup', stopColumnResize);
+}
 
 watch(
   () => props.terminalOpen,
@@ -458,17 +558,29 @@ watch(
     if (!open) {
       return;
     }
-    updateContainerHeight();
+    updateContainerMetrics();
     ensureTerminalHeight();
   }
 );
 
+watch(
+  () => isFullScreen.value,
+  (full) => {
+    if (full) {
+      return;
+    }
+    updateContainerMetrics();
+    ensureLeftPaneWidth();
+  }
+);
+
 onMounted(() => {
-  updateContainerHeight();
+  updateContainerMetrics();
   ensureTerminalHeight();
+  ensureLeftPaneWidth();
   if (typeof ResizeObserver !== 'undefined' && splitContainerRef.value) {
     resizeObserver = new ResizeObserver(() => {
-      updateContainerHeight();
+      updateContainerMetrics();
     });
     resizeObserver.observe(splitContainerRef.value);
   }
@@ -481,6 +593,8 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('mousemove', handleResizeMove);
   window.removeEventListener('mouseup', stopResize);
+  window.removeEventListener('mousemove', handleColumnResizeMove);
+  window.removeEventListener('mouseup', stopColumnResize);
 });
 </script>
 
@@ -571,8 +685,12 @@ onBeforeUnmount(() => {
     </div>
 
     <div ref="splitContainerRef" class="flex-1 flex flex-col overflow-hidden min-h-0">
-      <div class="flex-1 min-h-0 flex overflow-hidden">
-        <div v-if="!isFullScreen" class="w-1/3 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0">
+      <div class="flex-1 min-h-0 flex overflow-hidden relative">
+        <div
+          v-if="!isFullScreen"
+          class="shrink-0 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0"
+          :style="leftPaneStyle"
+        >
           <div class="flex items-center justify-between border-b border-border px-4 py-3">
             <div class="text-sm font-medium text-foreground">{{ $t('target.list.title') }}</div>
             <div class="flex items-center gap-2 text-xs text-foreground-muted">
@@ -691,7 +809,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="flex-1 flex flex-col">
+        <div
+          v-if="!isFullScreen"
+          class="absolute top-0 bottom-0 cursor-col-resize z-10 select-none bg-transparent"
+          :class="isResizingColumns ? 'bg-accent/20' : 'hover:bg-panel-muted/30'"
+          :style="columnResizerStyle"
+          @mousedown.prevent="startColumnResize"
+        ></div>
+
+        <div class="flex-1 flex flex-col min-w-0">
           <template v-if="selectedItem">
             <div class="border-b border-border bg-panel/30 p-6 flex justify-between gap-6">
               <div class="flex-1">
@@ -876,7 +1002,7 @@ onBeforeUnmount(() => {
                   </svg>
                 </button>
               </div>
-              <div class="flex-1 overflow-y-auto scrollbar-chat p-6 font-mono text-sm text-foreground whitespace-pre-wrap bg-panel-muted/40">
+              <div class="flex-1 min-w-0 overflow-y-auto scrollbar-chat p-6 font-mono text-sm text-foreground whitespace-pre-wrap break-words bg-panel-muted/40">
                 <span v-if="!isPendingSelected && !isRunningSelected">
                   {{ buildOutput(selectedItem as ResultSnapshot) || $t('target.output.empty') }}
                 </span>
