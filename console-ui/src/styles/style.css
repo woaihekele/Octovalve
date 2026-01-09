@@ -432,22 +432,16 @@ body {
 
 .terminal-resizer {
   position: relative;
-  height: 0;
-  z-index: 30;
-}
-
-.terminal-resizer::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -6px;
   height: 8px;
+  margin-top: -3.5px;
+  margin-bottom: -4.5px;
+  z-index: 30;
   cursor: row-resize;
   background-color: transparent;
 }
 
-.terminal-resizer--active::before {
+.terminal-resizer:hover,
+.terminal-resizer--active {
   background-color: rgb(var(--color-accent) / 0.18);
 }
 

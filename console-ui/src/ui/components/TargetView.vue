@@ -50,7 +50,7 @@ const leftPaneWidthStorageKey = 'console-ui.target-split.left.width';
 const terminalHeightStorageKey = 'console-ui.target-terminal.height';
 const minLeftPaneWidth = 320;
 const minRightPaneWidth = 420;
-const columnResizerWidth = 6;
+const columnResizerWidth = 8;
 const minTerminalHeight = 240;
 const minContentHeight = 240;
 let resizeObserver: ResizeObserver | null = null;
@@ -91,7 +91,7 @@ const columnResizerStyle = computed(() => {
   }
   const fallback = containerWidth.value > 0 ? containerWidth.value / 3 : minLeftPaneWidth;
   const width = clampLeftPaneWidth(leftPaneWidth.value ?? fallback);
-  const offset = Math.round(width - columnResizerWidth / 2);
+  const offset = width - columnResizerWidth / 2 - 0.5;
   return { left: `${offset}px`, width: `${columnResizerWidth}px` };
 });
 const selectedIndex = computed(() => {
@@ -812,7 +812,7 @@ onBeforeUnmount(() => {
         <div
           v-if="!isFullScreen"
           class="absolute top-0 bottom-0 cursor-col-resize z-10 select-none bg-transparent"
-          :class="isResizingColumns ? 'bg-accent/20' : 'hover:bg-panel-muted/30'"
+          :class="isResizingColumns ? 'bg-accent/20' : 'hover:bg-accent/20'"
           :style="columnResizerStyle"
           @mousedown.prevent="startColumnResize"
         ></div>

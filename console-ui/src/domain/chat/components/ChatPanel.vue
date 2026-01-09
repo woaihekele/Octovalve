@@ -319,9 +319,8 @@ watch(
   height: 100%;
   width: 0;
   background: rgb(var(--color-panel));
-  border-left: 1px solid rgb(var(--color-border));
   transition: width 0.25s ease;
-  overflow: hidden;
+  overflow: visible;
   flex-shrink: 0;
 
   &--open {
@@ -335,7 +334,6 @@ watch(
   }
 
   &--drop-active {
-    border-left-color: rgba(var(--color-accent), 0.6);
     box-shadow: inset 0 0 0 1px rgba(var(--color-accent), 0.35);
   }
 
@@ -352,17 +350,37 @@ watch(
 
   &__resizer {
     position: absolute;
-    left: 0;
+    left: -4px;
     top: 0;
     bottom: 0;
-    width: 6px;
+    width: 8px;
     cursor: col-resize;
     z-index: 2;
     background: transparent;
 
-    &:hover {
-      background: rgba(255, 255, 255, 0.04);
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      background: rgb(var(--color-border));
+      transform: translateX(-50%);
+      pointer-events: none;
     }
+
+    &:hover {
+      background: rgb(var(--color-accent) / 0.18);
+    }
+  }
+
+  &--resizing &__resizer {
+    background: rgb(var(--color-accent) / 0.18);
+  }
+
+  &--drop-active &__resizer::after {
+    background: rgba(var(--color-accent), 0.6);
   }
 
   &__content {
@@ -373,9 +391,12 @@ watch(
     opacity: 0;
     transition: opacity 0.15s ease 0.1s;
     position: relative;
+    overflow: hidden;
+    pointer-events: none;
 
     .chat-panel--open & {
       opacity: 1;
+      pointer-events: auto;
     }
 
     .chat-panel--resizing & {
