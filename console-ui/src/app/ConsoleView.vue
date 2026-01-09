@@ -27,7 +27,7 @@ import {
 import { useChatStore } from '../domain/chat';
 import { storeToRefs } from 'pinia';
 import type { AuthMethod, AcpSessionSummary } from '../domain/chat/services/acpService';
-import type { SendMessageOptions } from '../domain/chat/types';
+import type { ChatSession, SendMessageOptions } from '../domain/chat/types';
 import { matchesShortcut } from '../shared/shortcuts';
 import ConsoleChatPane from '../ui/components/ConsoleChatPane.vue';
 import ConsoleLeftPane from '../ui/components/ConsoleLeftPane.vue';
@@ -670,9 +670,9 @@ const acpHistoryMap = computed(() => {
   }
   return map;
 });
-const acpHistorySessions = computed(() => {
+const acpHistorySessions = computed<ChatSession[]>(() => {
   const now = Date.now();
-  return acpHistorySummaries.value.map((summary) => {
+  return acpHistorySummaries.value.map((summary): ChatSession => {
     const existing = chatStore.sessions.find(
       (session) => session.provider === 'acp' && session.acpSessionId === summary.sessionId
     );

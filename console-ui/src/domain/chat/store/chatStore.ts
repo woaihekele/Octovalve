@@ -568,6 +568,19 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function deleteAcpHistorySession(sessionId: string) {
+    const active = activeSession.value;
+    const deletingActive = active?.provider === 'acp' && active.acpSessionId === sessionId;
+
+    if (deletingActive) {
+      await cancelAcp();
+      currentAssistantMessageId.value = null;
+      pendingAssistantContent = '';
+      pendingAssistantReasoning = '';
+      acpLoadedSessionId.value = null;
+    } else if (acpLoadedSessionId.value === sessionId) {
+      acpLoadedSessionId.value = null;
+    }
+
     await acpService.deleteSession(sessionId);
     acpHistorySummaries.value = acpHistorySummaries.value.filter(
       (item) => item.sessionId !== sessionId
@@ -576,7 +589,10 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value = sessions.value.filter(
       (session) => !(session.provider === 'acp' && session.acpSessionId === sessionId)
     );
-    if (activeId && !sessions.value.find((session) => session.id === activeId)) {
+    if (deletingActive) {
+      activeSessionId.value = null;
+      createSession();
+    } else if (activeId && !sessions.value.find((session) => session.id === activeId)) {
       activeSessionId.value = sessions.value[0]?.id ?? null;
       if (!activeSessionId.value && provider.value === 'acp') {
         createSession();
@@ -586,6 +602,15 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function clearAcpHistorySessions() {
+    const active = activeSession.value;
+    if (active?.provider === 'acp') {
+      await cancelAcp();
+      currentAssistantMessageId.value = null;
+      pendingAssistantContent = '';
+      pendingAssistantReasoning = '';
+      acpLoadedSessionId.value = null;
+    }
+
     const summaries = [...acpHistorySummaries.value];
     for (const item of summaries) {
       await acpService.deleteSession(item.sessionId);
