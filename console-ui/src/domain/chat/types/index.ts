@@ -4,6 +4,7 @@
  */
 
 export type MessageRole = 'user' | 'assistant' | 'system';
+export type ChatProvider = 'acp' | 'openai';
 
 export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'error' | 'cancelled';
 
