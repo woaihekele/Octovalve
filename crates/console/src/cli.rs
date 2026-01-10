@@ -1,5 +1,11 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum ExecMode {
+    Remote,
+    Local,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "console", version, about = "Octovalve console service")]
@@ -10,6 +16,8 @@ pub(crate) struct Args {
     pub(crate) listen_addr: String,
     #[arg(long, default_value_t = false)]
     pub(crate) log_to_stderr: bool,
+    #[arg(long, value_enum, default_value_t = ExecMode::Remote)]
+    pub(crate) exec_mode: ExecMode,
     #[arg(long, default_value = "target/release/remote-broker")]
     pub(crate) broker_bin: PathBuf,
     #[arg(long = "broker-bin-linux-x86_64", alias = "broker-bin-linux-x86-64")]
@@ -26,4 +34,6 @@ pub(crate) struct Args {
     pub(crate) remote_audit_dir: String,
     #[arg(long, default_value = "~/.octovalve/tunnel-control/console")]
     pub(crate) tunnel_control_dir: String,
+    #[arg(long, default_value = "127.0.0.1:19310")]
+    pub(crate) command_listen_addr: String,
 }

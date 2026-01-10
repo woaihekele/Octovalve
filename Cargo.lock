@@ -451,6 +451,7 @@ dependencies = [
  "md5",
  "portable-pty",
  "protocol",
+ "regex",
  "serde",
  "serde_json",
  "system-utils",

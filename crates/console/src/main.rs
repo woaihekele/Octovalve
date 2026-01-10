@@ -3,16 +3,18 @@ mod cli;
 mod config;
 mod control;
 mod events;
+mod local_exec;
 mod runtime;
 mod state;
 mod terminal;
 mod tunnel;
 
 use crate::bootstrap::{bootstrap_remote_broker, stop_remote_broker, BootstrapConfig};
-use crate::cli::Args;
+use crate::cli::{Args, ExecMode};
 use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
+use crate::local_exec::{spawn_local_exec, PolicyConfig};
 use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
@@ -49,6 +51,7 @@ struct AppState {
     event_tx: broadcast::Sender<ConsoleEvent>,
     bootstrap: BootstrapConfig,
     tunnel_manager: Option<Arc<TunnelManager>>,
+    exec_mode: ExecMode,
 }
 
 const CONSOLE_TUNNEL_CLIENT_ID: &str = "console";
@@ -63,12 +66,20 @@ async fn main() -> anyhow::Result<()> {
         config = %args.config.display(),
         broker_bin = %args.broker_bin.display(),
         broker_bin_linux_x86_64 = ?args.broker_bin_linux_x86_64,
+        exec_mode = ?args.exec_mode,
+        command_listen_addr = %args.command_listen_addr,
         "console starting"
     );
     let config = load_console_config(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
     let state = build_console_state(config)?;
-    let tunnel_targets = build_tunnel_targets(&state);
+    let exec_mode = args.exec_mode.clone();
+
+    let tunnel_targets = if matches!(exec_mode, ExecMode::Remote) {
+        build_tunnel_targets(&state)
+    } else {
+        Vec::new()
+    };
 
     let shutdown = CancellationToken::new();
     let bootstrap = BootstrapConfig {
@@ -84,17 +95,18 @@ async fn main() -> anyhow::Result<()> {
     let (event_tx, _) = broadcast::channel(512);
     spawn_target_ip_resolution(Arc::clone(&shared_state), event_tx.clone());
 
-    let tunnel_manager = if tunnel_targets.is_empty() {
-        None
-    } else {
+    let tunnel_manager = if matches!(exec_mode, ExecMode::Remote) && !tunnel_targets.is_empty() {
         let control_dir = expand_tilde(&args.tunnel_control_dir);
         Some(Arc::new(TunnelManager::new(tunnel_targets, control_dir)?))
+    } else {
+        None
     };
     let app_state = AppState {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
         bootstrap: bootstrap.clone(),
         tunnel_manager: tunnel_manager.clone(),
+        exec_mode: exec_mode.clone(),
     };
 
     let app = Router::new()
@@ -111,15 +123,36 @@ async fn main() -> anyhow::Result<()> {
         .with_state(app_state)
         .layer(middleware::from_fn(log_http_request));
     let tunnel_manager_handle = tunnel_manager.clone();
-    let worker_handles = spawn_target_workers(
-        Arc::clone(&shared_state),
-        bootstrap,
-        shutdown.clone(),
-        event_tx,
-        tunnel_manager,
-        CONSOLE_TUNNEL_CLIENT_ID.to_string(),
-    )
-    .await;
+    let worker_handles = match exec_mode {
+        ExecMode::Remote => {
+            spawn_target_workers(
+                Arc::clone(&shared_state),
+                bootstrap,
+                shutdown.clone(),
+                event_tx,
+                tunnel_manager,
+                CONSOLE_TUNNEL_CLIENT_ID.to_string(),
+            )
+            .await
+        }
+        ExecMode::Local => {
+            let policy = PolicyConfig::load(&args.broker_config).with_context(|| {
+                format!("failed to load policy {}", args.broker_config.display())
+            })?;
+            let listen_addr = args.command_listen_addr.parse().with_context(|| {
+                format!("invalid command_listen_addr {}", args.command_listen_addr)
+            })?;
+            spawn_local_exec(
+                listen_addr,
+                policy,
+                Arc::clone(&shared_state),
+                event_tx.clone(),
+            )
+            .await
+            .context("failed to start local exec server")?;
+            Vec::new()
+        }
+    };
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
@@ -282,6 +315,11 @@ async fn cancel_command(
 async fn reload_remote_brokers(
     State(state): State<AppState>,
 ) -> Result<Json<ActionResponse>, StatusCode> {
+    if matches!(state.exec_mode, ExecMode::Local) {
+        return Ok(Json(ActionResponse {
+            message: "exec_mode=local: remote broker reload skipped".to_string(),
+        }));
+    }
     let targets = {
         let state = state.state.read().await;
         state.target_specs()
