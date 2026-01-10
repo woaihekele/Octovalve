@@ -1,14 +1,14 @@
 use crate::config::{
     default_control_remote_addr, default_remote_addr, ConsoleConfig, ConsoleDefaults, TargetConfig,
 };
-use anyhow::Context;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
 use super::{ConsoleState, TargetSpec};
 
-const DEFAULT_BIND_HOST: &str = "127.0.0.1";
-const DEFAULT_CONTROL_PORT_OFFSET: u16 = 100;
+use protocol::config::{
+    control_local_addr, control_local_bind, control_local_port, derive_control_addr,
+};
 
 pub(crate) fn build_console_state(config: ConsoleConfig) -> anyhow::Result<ConsoleState> {
     let defaults = config.defaults.unwrap_or_default();
@@ -60,27 +60,17 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         .remote_addr
         .clone()
         .unwrap_or_else(default_remote_addr);
-    let remote_addr = target.remote_addr.unwrap_or(default_remote);
+    let remote_addr = target.remote_addr.clone().unwrap_or(default_remote);
 
     let control_remote_addr = target
         .control_remote_addr
+        .clone()
         .or_else(|| defaults.control_remote_addr.clone())
         .or_else(|| derive_control_addr(&remote_addr).ok())
         .unwrap_or_else(default_control_remote_addr);
 
-    let control_bind = target
-        .control_local_bind
-        .or_else(|| target.local_bind.clone())
-        .or_else(|| defaults.control_local_bind.clone())
-        .or_else(|| defaults.local_bind.clone())
-        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
-
-    let offset = defaults
-        .control_local_port_offset
-        .unwrap_or(DEFAULT_CONTROL_PORT_OFFSET);
-    let control_local_port = target
-        .control_local_port
-        .or_else(|| target.local_port.and_then(|port| port.checked_add(offset)));
+    let control_bind = control_local_bind(Some(defaults), &target);
+    let control_local_port = control_local_port(Some(defaults), &target);
 
     if target.ssh.is_some() && control_local_port.is_none() {
         anyhow::bail!(
@@ -89,7 +79,7 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         );
     }
 
-    let control_local_addr = control_local_port.map(|port| format!("{control_bind}:{port}"));
+    let control_local_addr = control_local_addr(Some(defaults), &target, control_local_port);
 
     let mut ssh_args = defaults.ssh_args.clone().unwrap_or_default();
     if let Some(extra) = target.ssh_args {
@@ -144,12 +134,6 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
     })
 }
 
-fn derive_control_addr(remote_addr: &str) -> anyhow::Result<String> {
-    let (host, port) = parse_host_port(remote_addr)?;
-    let control_port = port.saturating_add(1);
-    Ok(format!("{host}:{control_port}"))
-}
-
 pub(crate) fn parse_ssh_host(value: &str) -> Option<&str> {
     if value.is_empty() {
         return None;
@@ -160,16 +144,6 @@ pub(crate) fn parse_ssh_host(value: &str) -> Option<&str> {
             .map(|(_, host)| host)
             .unwrap_or(value),
     )
-}
-
-fn parse_host_port(addr: &str) -> anyhow::Result<(String, u16)> {
-    let (host, port) = addr
-        .rsplit_once(':')
-        .ok_or_else(|| anyhow::anyhow!("invalid address {addr}, expected host:port"))?;
-    let port = port
-        .parse::<u16>()
-        .with_context(|| format!("invalid port in address {addr}"))?;
-    Ok((host.to_string(), port))
 }
 
 #[cfg(test)]

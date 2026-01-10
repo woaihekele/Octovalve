@@ -13,9 +13,6 @@ use crate::services::profiles::{
 };
 use crate::types::{ProfilesFile, ProxyConfigStatus, StartupCheckResult};
 
-const DEFAULT_BIND_HOST: &str = "127.0.0.1";
-const DEFAULT_CONTROL_PORT_OFFSET: u16 = 100;
-
 #[derive(Debug, Deserialize)]
 struct BrokerConfig {
     #[serde(default)]
@@ -184,12 +181,14 @@ fn validate_proxy_config(config: &ProxyConfig) -> Vec<String> {
             ));
         }
         if target.ssh.is_some() {
-            let control_local_port = control_local_port(defaults, target);
+            let control_local_port = protocol::config::control_local_port(defaults, target);
             if control_local_port.is_none() {
                 errors.push(format!(
                     "target {name} 缺少 control_local_port（可用 local_port + offset 自动生成）。"
                 ));
-            } else if let Some(addr) = control_local_addr(defaults, target, control_local_port) {
+            } else if let Some(addr) =
+                protocol::config::control_local_addr(defaults, target, control_local_port)
+            {
                 if !control_addr_seen.insert(addr.clone()) {
                     errors.push(format!("target {name} 的 control_local_addr 重复：{addr}"));
                 }
@@ -231,34 +230,6 @@ fn is_example_config(config: &ProxyConfig) -> bool {
         }
     }
     false
-}
-
-fn control_local_port(
-    defaults: Option<&protocol::config::ProxyDefaults>,
-    target: &protocol::config::TargetConfig,
-) -> Option<u16> {
-    let offset = defaults
-        .and_then(|value| value.control_local_port_offset)
-        .unwrap_or(DEFAULT_CONTROL_PORT_OFFSET);
-    target
-        .control_local_port
-        .or_else(|| target.local_port.and_then(|port| port.checked_add(offset)))
-}
-
-fn control_local_addr(
-    defaults: Option<&protocol::config::ProxyDefaults>,
-    target: &protocol::config::TargetConfig,
-    port: Option<u16>,
-) -> Option<String> {
-    let port = port?;
-    let bind = target
-        .control_local_bind
-        .clone()
-        .or_else(|| target.local_bind.clone())
-        .or_else(|| defaults.and_then(|value| value.control_local_bind.clone()))
-        .or_else(|| defaults.and_then(|value| value.local_bind.clone()))
-        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
-    Some(format!("{bind}:{port}"))
 }
 
 fn format_toml_error(label: &str, path: &Path, raw: &str, err: toml::de::Error) -> String {
