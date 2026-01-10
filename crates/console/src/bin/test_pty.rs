@@ -137,7 +137,10 @@ fn build_remote_command(
         command.push(' ');
     }
     command.push_str(raw_command.trim());
-    format!("{shell_prefix}bash -lc {}", shell_escape(&command))
+    format!(
+        "{shell_prefix}bash --noprofile -lc {}",
+        shell_escape(&command)
+    )
 }
 
 fn build_env_prefix(pairs: &BTreeMap<String, String>) -> String {

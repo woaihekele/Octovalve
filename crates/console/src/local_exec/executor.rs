@@ -117,6 +117,7 @@ async fn execute_ssh_command(
         .ssh
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
+    let locale = resolve_exec_locale(target);
     let remote_cmd = build_remote_command(target, request);
     let mut cmd = Command::new("ssh");
     if let Some(password) = target.ssh_password.as_deref() {
@@ -128,6 +129,7 @@ async fn execute_ssh_command(
         cmd.arg("-T");
     }
     apply_ssh_options(&mut cmd, target.ssh_password.is_some());
+    apply_locale_env(&mut cmd, locale.as_deref());
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
     cmd.arg(remote_cmd);
@@ -205,7 +207,10 @@ fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String
         command.push(' ');
     }
     command.push_str(request.raw_command.trim());
-    format!("{shell_prefix}bash -lc {}", shell_escape(&command))
+    format!(
+        "{shell_prefix}bash --noprofile -lc {}",
+        shell_escape(&command)
+    )
 }
 
 fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
@@ -355,20 +360,22 @@ fn apply_ssh_options(cmd: &mut Command, has_password: bool) {
     }
 }
 
+fn apply_locale_env(cmd: &mut Command, locale: Option<&str>) {
+    let Some(locale) = locale else {
+        return;
+    };
+    cmd.env("LANG", locale);
+    cmd.env("LC_CTYPE", locale);
+    cmd.env("LC_ALL", locale);
+    cmd.arg("-o").arg("SendEnv=LANG,LC_CTYPE,LC_ALL");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn shell_escape_wraps_and_escapes() {
-        assert_eq!(shell_escape("plain"), "'plain'");
-        assert_eq!(shell_escape("has space"), "'has space'");
-        assert_eq!(shell_escape("a'b"), "'a'\"'\"'b'");
-    }
-
-    #[test]
-    fn build_remote_command_includes_env_and_cwd() {
-        let target = TargetSpec {
+    fn sample_target() -> TargetSpec {
+        TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
             hostname: None,
@@ -382,8 +389,11 @@ mod tests {
             control_local_bind: None,
             control_local_port: None,
             control_local_addr: None,
-        };
-        let request = CommandRequest {
+        }
+    }
+
+    fn sample_request() -> CommandRequest {
+        CommandRequest {
             id: "req-1".to_string(),
             client: "client".to_string(),
             target: "dev".to_string(),
@@ -395,9 +405,22 @@ mod tests {
             timeout_ms: None,
             max_output_bytes: None,
             pipeline: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn shell_escape_wraps_and_escapes() {
+        assert_eq!(shell_escape("plain"), "'plain'");
+        assert_eq!(shell_escape("has space"), "'has space'");
+        assert_eq!(shell_escape("a'b"), "'a'\"'\"'b'");
+    }
+
+    #[test]
+    fn build_remote_command_includes_env_and_cwd() {
+        let target = sample_target();
+        let request = sample_request();
         let cmd = build_remote_command(&target, &request);
-        assert!(cmd.contains("bash -lc "));
+        assert!(cmd.contains("bash --noprofile -lc "));
         assert!(cmd.contains("cd "));
         assert!(cmd.contains("/tmp/work dir"));
         assert!(cmd.contains("LANG="));
@@ -405,6 +428,14 @@ mod tests {
         assert!(cmd.contains("LC_ALL="));
         assert!(cmd.contains("FOO="));
         assert!(cmd.contains("echo hello"));
+    }
+
+    #[test]
+    fn build_remote_command_disables_profiles() {
+        let target = sample_target();
+        let request = sample_request();
+        let cmd = build_remote_command(&target, &request);
+        assert!(cmd.contains("bash --noprofile -lc "));
     }
 
     #[test]
