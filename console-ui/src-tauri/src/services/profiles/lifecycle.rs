@@ -22,15 +22,6 @@ fn ensure_broker_file(profile: &ProfileRecord) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn sync_legacy_proxy_config(app: &AppHandle, proxy_path: &Path) -> Result<(), String> {
-    let legacy_path = legacy_proxy_config_path(app)?;
-    if !proxy_path.exists() {
-        return Ok(());
-    }
-    let content = fs::read_to_string(proxy_path).unwrap_or_default();
-    write_config_file(&legacy_path, &content)
-}
-
 fn create_default_profile(
     app: &AppHandle,
     profiles_base: &Path,
@@ -158,7 +149,6 @@ pub fn prepare_profiles(
             &format!("proxy config example at {}", status.example_path),
         );
     }
-    let _ = sync_legacy_proxy_config(app, Path::new(&current.proxy_path));
     Ok((profiles, status))
 }
 

@@ -12,7 +12,6 @@ use crate::types::{ProfileRecord, ProfileRuntimeSettings};
 use super::index::{
     current_profile_entry, profile_entry_by_name, validate_profile_name, write_profiles_file,
 };
-use super::lifecycle::sync_legacy_proxy_config;
 use super::paths::{
     profile_broker_path, profile_dir_for, profile_proxy_path, profiles_dir, profiles_index_path,
 };
@@ -143,7 +142,6 @@ pub fn select_profile(
     status.path = entry.proxy_path.clone();
     status.present = Path::new(&entry.proxy_path).exists();
     drop(status);
-    let _ = sync_legacy_proxy_config(&app, Path::new(&entry.proxy_path));
     Ok(())
 }
 
