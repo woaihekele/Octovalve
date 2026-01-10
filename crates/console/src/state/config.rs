@@ -2,12 +2,12 @@ use crate::config::{
     default_control_remote_addr, default_remote_addr, ConsoleConfig, ConsoleDefaults, TargetConfig,
 };
 use std::collections::{HashMap, HashSet};
-use std::net::IpAddr;
 
 use super::{ConsoleState, TargetSpec};
 
 use protocol::config::{
     control_local_addr, control_local_bind, control_local_port, derive_control_addr,
+    resolve_target_host_info, resolve_terminal_locale,
 };
 
 pub(crate) fn build_console_state(config: ConsoleConfig) -> anyhow::Result<ConsoleState> {
@@ -82,23 +82,14 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
     let control_local_addr = control_local_addr(Some(defaults), &target, control_local_port);
 
     let mut ssh_args = defaults.ssh_args.clone().unwrap_or_default();
-    if let Some(extra) = target.ssh_args {
+    if let Some(extra) = target.ssh_args.clone() {
         ssh_args.extend(extra);
     }
     let ssh_password = target
         .ssh_password
+        .clone()
         .or_else(|| defaults.ssh_password.clone());
-    let terminal_locale = target
-        .terminal_locale
-        .or_else(|| defaults.terminal_locale.clone())
-        .and_then(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
+    let terminal_locale = resolve_terminal_locale(Some(defaults), &target);
     if ssh_password.is_some() {
         tracing::warn!(
             target = %target.name,
@@ -106,17 +97,7 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         );
     }
 
-    let ssh_host = target
-        .ssh
-        .as_deref()
-        .and_then(parse_ssh_host)
-        .map(|host| host.to_string());
-    let hostname = target.hostname.or_else(|| ssh_host.clone());
-    let ip = target.ip.or_else(|| {
-        ssh_host
-            .as_deref()
-            .and_then(|host| host.parse::<IpAddr>().ok().map(|_| host.to_string()))
-    });
+    let (hostname, ip) = resolve_target_host_info(&target);
 
     Ok(TargetSpec {
         name: target.name,
@@ -132,18 +113,6 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         control_local_port,
         control_local_addr,
     })
-}
-
-pub(crate) fn parse_ssh_host(value: &str) -> Option<&str> {
-    if value.is_empty() {
-        return None;
-    }
-    Some(
-        value
-            .rsplit_once('@')
-            .map(|(_, host)| host)
-            .unwrap_or(value),
-    )
 }
 
 #[cfg(test)]

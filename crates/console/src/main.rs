@@ -14,7 +14,7 @@ use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::runtime::spawn_target_workers;
-use crate::state::{build_console_state, parse_ssh_host, ConsoleState, ControlCommand, TargetInfo};
+use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
 use crate::tunnel::TargetRuntime;
 use anyhow::Context;
@@ -472,7 +472,11 @@ fn spawn_target_ip_resolution(
                     candidates.push(hostname.to_string());
                 }
             }
-            if let Some(ssh) = target.ssh.as_deref().and_then(parse_ssh_host) {
+            if let Some(ssh) = target
+                .ssh
+                .as_deref()
+                .and_then(protocol::config::parse_ssh_host)
+            {
                 let ssh = ssh.trim();
                 if !ssh.is_empty() && !candidates.iter().any(|host| host == ssh) {
                     candidates.push(ssh.to_string());
