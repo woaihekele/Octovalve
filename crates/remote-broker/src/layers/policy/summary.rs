@@ -11,23 +11,17 @@ pub(crate) fn deny_message(whitelist: &Whitelist, request: &CommandRequest) -> O
 }
 
 pub(crate) fn request_summary(request: &CommandRequest) -> String {
-    match &request.mode {
-        CommandMode::Shell => request.raw_command.clone(),
-        CommandMode::Argv => {
-            let pipeline = format_pipeline(&request.pipeline);
-            if pipeline.is_empty() {
-                request.raw_command.clone()
-            } else {
-                pipeline
-            }
-        }
+    let pipeline = format_pipeline(&request.pipeline);
+    if pipeline.is_empty() {
+        request.raw_command.clone()
+    } else {
+        pipeline
     }
 }
 
 pub(crate) fn format_mode(mode: &CommandMode) -> &'static str {
     match mode {
         CommandMode::Shell => "shell",
-        CommandMode::Argv => "argv",
     }
 }
 

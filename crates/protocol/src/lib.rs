@@ -20,7 +20,6 @@ impl CommandStage {
 #[serde(rename_all = "snake_case")]
 pub enum CommandMode {
     Shell,
-    Argv,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

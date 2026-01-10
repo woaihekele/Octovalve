@@ -37,4 +37,4 @@
 - Keep `remote-broker` listening on `127.0.0.1` and access via SSH tunnels.
 - For search tasks, prefer `rg` / `rg --files` if available.
 - When using `run_command`, ensure `cwd` exists on the remote target; a missing `cwd` causes spawn errors with empty stdout/stderr.
-- `shell` mode executes via `/bin/bash -lc`; `argv` mode resolves commands under `/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`. Missing binaries will also surface as spawn errors.
+- `shell` mode executes via `/bin/bash -lc`.

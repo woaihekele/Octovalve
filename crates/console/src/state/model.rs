@@ -23,6 +23,7 @@ pub(crate) struct TargetSpec {
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
     pub(crate) terminal_locale: Option<String>,
+    pub(crate) tty: bool,
     pub(crate) control_remote_addr: String,
     pub(crate) control_local_bind: Option<String>,
     pub(crate) control_local_port: Option<u16>,

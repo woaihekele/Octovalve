@@ -77,9 +77,9 @@ impl ProxyHandler {
             "mode".to_string(),
             json!({
                 "type": "string",
-                "enum": ["shell", "argv"],
+                "enum": ["shell"],
                 "default": "shell",
-                "description": "Execution mode: shell uses /bin/bash -lc, argv uses parsed pipeline."
+                "description": "Execution mode: shell uses /bin/bash -lc."
             }),
         );
         properties.insert(

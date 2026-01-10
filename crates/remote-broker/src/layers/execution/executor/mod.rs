@@ -1,5 +1,4 @@
 mod output;
-mod pipeline;
 mod process;
 mod shell;
 mod stream;
@@ -12,7 +11,6 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
-use self::pipeline::execute_pipeline;
 use self::shell::execute_shell;
 
 pub async fn execute_request(
@@ -32,12 +30,6 @@ pub async fn execute_request(
 
     if matches!(&request.mode, CommandMode::Shell) && request.raw_command.trim().is_empty() {
         let response = CommandResponse::error(request.id.clone(), "raw_command is empty");
-        write_result_record(output_dir, &response, started_at.elapsed()).await;
-        return response;
-    }
-
-    if matches!(&request.mode, CommandMode::Argv) && request.pipeline.is_empty() {
-        let response = CommandResponse::error(request.id.clone(), "pipeline is empty");
         write_result_record(output_dir, &response, started_at.elapsed()).await;
         return response;
     }
@@ -134,30 +126,15 @@ async fn execute_command(
     stderr_path: &Path,
     cancel: CancellationToken,
 ) -> anyhow::Result<ExecutionOutcome> {
-    match request.mode {
-        CommandMode::Shell => {
-            execute_shell(
-                &request.raw_command,
-                request.cwd.as_deref(),
-                request.env.as_ref(),
-                max_bytes,
-                stdout_path,
-                stderr_path,
-                cancel,
-            )
-            .await
-        }
-        CommandMode::Argv => {
-            execute_pipeline(
-                &request.pipeline,
-                request.cwd.as_deref(),
-                request.env.as_ref(),
-                max_bytes,
-                stdout_path,
-                stderr_path,
-                cancel,
-            )
-            .await
-        }
-    }
+    let _ = &request.mode;
+    execute_shell(
+        &request.raw_command,
+        request.cwd.as_deref(),
+        request.env.as_ref(),
+        max_bytes,
+        stdout_path,
+        stderr_path,
+        cancel,
+    )
+    .await
 }

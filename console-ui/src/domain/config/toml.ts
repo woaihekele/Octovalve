@@ -49,6 +49,12 @@ function pushIf(lines: string[], key: string, value: unknown) {
   if (value === null || value === undefined) {
     return;
   }
+  if (typeof value === 'boolean') {
+    if (value) {
+      lines.push(`${key} = true`);
+    }
+    return;
+  }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) {
       return;
@@ -85,6 +91,7 @@ function serializeTarget(target: ProxyTargetConfig): string[] {
   }
   pushIf(lines, 'ssh_password', target.ssh_password);
   pushIf(lines, 'terminal_locale', target.terminal_locale);
+  pushIf(lines, 'tty', target.tty);
   pushIf(lines, 'control_remote_addr', target.control_remote_addr);
   pushIf(lines, 'control_local_port', target.control_local_port);
   pushIf(lines, 'control_local_bind', target.control_local_bind);
@@ -156,4 +163,3 @@ export function serializeBrokerConfigToml(config: BrokerConfigEditor): string {
 
   return `${lines.join('\n')}\n`;
 }
-

@@ -222,6 +222,7 @@ function normalizeProxyForm(value: ProxyConfigEditor): ProxyConfigEditorForm {
     target.local_bind = normalizeInputString(target.local_bind);
     target.ssh_password = normalizeInputString(target.ssh_password);
     target.terminal_locale = normalizeInputString(target.terminal_locale);
+    target.tty = Boolean(target.tty);
     target.control_remote_addr = normalizeInputString(target.control_remote_addr);
     target.control_local_bind = normalizeInputString(target.control_local_bind);
     target.ssh_args = normalizeStringArray(target.ssh_args);
@@ -384,6 +385,7 @@ function addTarget() {
     control_local_port: nextPort + offset,
     ssh_password: '',
     ssh_args: [],
+    tty: false,
   });
   targetAdvancedOpen.value.push(false);
   selectedTargetIndex.value = proxyForm.value.targets.length - 1;
@@ -950,6 +952,14 @@ watch(
                                   v-model:value="selectedTarget.terminal_locale"
                                   size="small"
                                   :placeholder="$t('settings.config.fields.terminalLocalePlaceholder')"
+                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                />
+                              </div>
+                              <div class="flex items-center justify-between gap-3 md:col-span-2">
+                                <span class="text-xs text-foreground-muted">{{ $t('settings.config.fields.tty') }}</span>
+                                <NSwitch
+                                  v-model:value="selectedTarget.tty"
+                                  size="small"
                                   :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                                 />
                               </div>

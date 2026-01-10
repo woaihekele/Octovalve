@@ -32,9 +32,9 @@ export function buildMcpTools(targets: string[], defaultTarget?: string): Tool[]
             },
             mode: {
               type: 'string',
-              enum: ['shell', 'argv'],
+              enum: ['shell'],
               default: 'shell',
-              description: 'Execution mode: shell uses /bin/bash -lc, argv uses parsed pipeline.',
+              description: 'Execution mode: shell uses /bin/bash -lc.',
             },
             cwd: {
               type: 'string',

@@ -201,16 +201,11 @@ pub(super) fn format_result_output(result: &ResultSnapshot) -> String {
 }
 
 pub(super) fn request_summary(pending: &RequestSnapshot) -> String {
-    match pending.mode {
-        CommandMode::Shell => pending.raw_command.clone(),
-        CommandMode::Argv => {
-            let pipeline = format_pipeline(&pending.pipeline);
-            if pipeline.is_empty() {
-                pending.raw_command.clone()
-            } else {
-                pipeline
-            }
-        }
+    let pipeline = format_pipeline(&pending.pipeline);
+    if pipeline.is_empty() {
+        pending.raw_command.clone()
+    } else {
+        pipeline
     }
 }
 

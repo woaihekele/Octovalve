@@ -48,6 +48,7 @@ export interface ProxyTargetConfig {
   ssh_args?: string[] | null;
   ssh_password?: string | null;
   terminal_locale?: string | null;
+  tty?: boolean | null;
   control_remote_addr?: string | null;
   control_local_port?: number | null;
   control_local_bind?: string | null;
@@ -92,7 +93,7 @@ export interface TargetInfo {
   is_default?: boolean;
 }
 
-export type CommandMode = 'shell' | 'argv';
+export type CommandMode = 'shell';
 export type CommandStatus = 'approved' | 'denied' | 'error' | 'cancelled' | 'completed';
 
 export interface CommandStage {

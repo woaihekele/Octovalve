@@ -77,12 +77,14 @@ name = "example-target"
 desc = "主开发机"
 ssh = "devops@192.168.2.162"
 # ssh_password = "你的密码"
+# tty = true
 local_port = 19311
 
 [[targets]]
 name = "dev163"
 desc = "备用开发机"
 ssh = "devops@192.168.2.163"
+# tty = true
 local_port = 19312
 ```
 
@@ -148,7 +150,7 @@ cargo run -p remote-broker -- \
 - `command`：命令字符串。
 - `intent`：必填，说明为什么要执行该命令（用于审计）。
 - `target`：必填，目标名称（在 `octovalve-proxy` 配置中定义）。
-- `mode`：`shell` 或 `argv`，默认 `shell`（`shell` 使用 `/bin/bash -lc` 执行）。
+- `mode`：`shell`（使用 `/bin/bash -lc` 执行）。
 - 其他可选参数：`cwd`、`timeout_ms`、`max_output_bytes`、`env`。
 
 ## 常用只读命令（建议加入白名单）
@@ -270,7 +272,7 @@ console：
 - 无内置认证，请确保远端服务仅监听 `127.0.0.1`，由本地代理通过 SSH 隧道访问。
 - SSH 连接由 console/octovalve-proxy 内置管理并使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
 - `--auto-approve` 与 TUI 手动审批均只会硬拒绝 `denied` 列表中的命令。
-- `argv` 模式直接执行可执行文件，不经过 shell；`shell` 模式使用 `/bin/bash -lc`。
+- 仅支持 `shell` 模式（`/bin/bash -lc`）。
 - 建议使用非 root 用户运行并关注审计日志。
 
 ## 输出保存
