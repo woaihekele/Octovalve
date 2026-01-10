@@ -13,6 +13,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-std"] }
 uuid = { workspace = true }
+acp-types = { path = "../acp-types" }
 
 codex-app-server-protocol = { git = "https://github.com/openai/codex.git", package = "codex-app-server-protocol", rev = "565488c15b8969694ec52cda3d6fcc99655a972f" }
 codex-protocol = { git = "https://github.com/openai/codex.git", package = "codex-protocol", rev = "565488c15b8969694ec52cda3d6fcc99655a972f" }

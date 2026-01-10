@@ -30,6 +30,7 @@ urlencoding = "2.1"
 uuid = { version = "1.8", features = ["v4"] }
 protocol = { path = "../../crates/protocol" }
 acp-codex = { path = "../../crates/acp-codex" }
+acp-types = { path = "../../crates/acp-types" }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

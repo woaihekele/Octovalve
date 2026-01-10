@@ -1,9 +1,9 @@
 mod app_server;
 mod cli;
 mod handlers;
-mod sessions;
 mod protocol;
 mod server;
+mod sessions;
 mod state;
 mod utils;
 mod writer;

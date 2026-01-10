@@ -226,9 +226,7 @@ fn is_within_workspace(cwd: &str, workspace_root: &Path) -> bool {
     match cwd_path.canonicalize() {
         Ok(target) => target.starts_with(&workspace_root),
         Err(err) => {
-            eprintln!(
-                "[acp-codex] cwd canonicalize failed: {cwd_display}: {err}"
-            );
+            eprintln!("[acp-codex] cwd canonicalize failed: {cwd_display}: {err}");
             true
         }
     }
@@ -264,7 +262,10 @@ fn normalize_title(raw: &str) -> String {
     if trimmed.len() <= max_len {
         trimmed.to_string()
     } else {
-        format!("{}...", trimmed.chars().take(max_len - 3).collect::<String>())
+        format!(
+            "{}...",
+            trimmed.chars().take(max_len - 3).collect::<String>()
+        )
     }
 }
 

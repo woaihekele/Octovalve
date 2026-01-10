@@ -6,6 +6,7 @@ version = 4
 name = "acp-codex"
 version = "0.1.0"
 dependencies = [
+ "acp-types",
  "anyhow",
  "async-trait",
  "base64 0.22.1",
@@ -17,6 +18,14 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "acp-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2618,6 +2627,7 @@ name = "octovalve-console"
 version = "0.1.0"
 dependencies = [
  "acp-codex",
+ "acp-types",
  "futures-util",
  "humantime",
  "libc",
