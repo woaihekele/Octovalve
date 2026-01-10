@@ -63,6 +63,7 @@ pub(super) async fn execute_request(
         request,
         max_bytes,
         cancel.clone(),
+        target.tty,
     ));
     let outcome = tokio::select! {
         result = &mut exec_fut => result,
@@ -110,6 +111,7 @@ async fn execute_ssh_command(
     request: &CommandRequest,
     max_bytes: usize,
     cancel: CancellationToken,
+    tty: bool,
 ) -> anyhow::Result<ExecutionOutcome> {
     let ssh = target
         .ssh
@@ -120,7 +122,11 @@ async fn execute_ssh_command(
     if let Some(password) = target.ssh_password.as_deref() {
         apply_askpass_env(&mut cmd, password)?;
     }
-    cmd.arg("-T");
+    if tty {
+        cmd.arg("-tt");
+    } else {
+        cmd.arg("-T");
+    }
     apply_ssh_options(&mut cmd, target.ssh_password.is_some());
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
@@ -163,6 +169,7 @@ async fn execute_ssh_command(
         stderr_bytes,
         stderr_truncated,
         cancelled,
+        tty,
     ))
 }
 
@@ -231,9 +238,22 @@ fn build_execution_outcome(
     stderr_bytes: Vec<u8>,
     stderr_truncated: bool,
     cancelled: bool,
+    tty: bool,
 ) -> ExecutionOutcome {
-    let stdout = format_output(&stdout_bytes, stdout_truncated);
-    let stderr = format_output(&stderr_bytes, stderr_truncated);
+    let (stdout, stderr) = if tty {
+        let merged = merge_pty_output(
+            stdout_bytes,
+            stdout_truncated,
+            stderr_bytes,
+            stderr_truncated,
+        );
+        (merged, None)
+    } else {
+        (
+            format_output(&stdout_bytes, stdout_truncated),
+            format_output(&stderr_bytes, stderr_truncated),
+        )
+    };
     let result = ExecutionResult {
         exit_code,
         stdout,
@@ -244,6 +264,27 @@ fn build_execution_outcome(
     } else {
         ExecutionOutcome::Completed(result)
     }
+}
+
+fn merge_pty_output(
+    stdout_bytes: Vec<u8>,
+    stdout_truncated: bool,
+    stderr_bytes: Vec<u8>,
+    stderr_truncated: bool,
+) -> Option<String> {
+    if stdout_bytes.is_empty() && stderr_bytes.is_empty() {
+        return None;
+    }
+    let mut merged = stdout_bytes;
+    if !stderr_bytes.is_empty() {
+        if !merged.is_empty() {
+            merged.extend_from_slice(b"\n[stderr]\n");
+        } else {
+            merged.extend_from_slice(b"[stderr]\n");
+        }
+        merged.extend_from_slice(&stderr_bytes);
+    }
+    format_output(&merged, stdout_truncated || stderr_truncated)
 }
 
 fn format_output(bytes: &[u8], truncated: bool) -> Option<String> {
@@ -329,5 +370,28 @@ mod tests {
         let out = format_output(b"hello", true).expect("output");
         assert!(out.contains("hello"));
         assert!(out.contains("[output truncated]"));
+    }
+
+    #[test]
+    fn pty_merges_stderr_into_stdout() {
+        let outcome = build_execution_outcome(
+            Some(0),
+            b"out".to_vec(),
+            false,
+            b"err".to_vec(),
+            false,
+            false,
+            true,
+        );
+        match outcome {
+            ExecutionOutcome::Completed(result) => {
+                let stdout = result.stdout.expect("stdout");
+                assert!(result.stderr.is_none());
+                assert!(stdout.contains("out"));
+                assert!(stdout.contains("[stderr]"));
+                assert!(stdout.contains("err"));
+            }
+            _ => panic!("unexpected outcome"),
+        }
     }
 }
