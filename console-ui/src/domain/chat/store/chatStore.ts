@@ -26,6 +26,7 @@ import { fetchTargets } from '../../../services/api';
 import type { TargetInfo } from '../../../shared/types';
 import { i18n } from '../../../i18n';
 import { appendReasoningBlock, concatAcpTextChunk, ensureToolCallBlock } from './acpTimeline';
+import { createSaveScheduler, loadChatSnapshot, saveChatSnapshot } from './chatPersistence';
 
 const t = i18n.global.t;
 const TOOL_CALL_CONCURRENCY_LIMIT = 10;
@@ -46,6 +47,15 @@ export const useChatStore = defineStore('chat', () => {
   const config = ref<ChatConfig>({
     greeting: t('chat.greeting'),
   });
+  const storage = typeof window !== 'undefined' ? window.localStorage : null;
+  const saveScheduler = storage
+    ? createSaveScheduler(() => {
+        saveChatSnapshot(storage, {
+          sessions: sessions.value,
+          activeSessionId: activeSessionId.value,
+        });
+      })
+    : null;
 
   // Provider state
   const provider = ref<ChatProvider>('openai');
@@ -503,20 +513,15 @@ export const useChatStore = defineStore('chat', () => {
 
   // Persistence
   function loadFromStorage() {
-    try {
-      const stored = localStorage.getItem('octovalve-chat-sessions');
-      if (stored) {
-        const data = JSON.parse(stored);
-        const rawSessions = (data.sessions ?? []) as ChatSession[];
-        sessions.value = rawSessions.map((s) => ({
-          ...s,
-          provider: (s as any).provider === 'acp' ? 'acp' : 'openai',
-        }));
-        activeSessionId.value = data.activeSessionId ?? null;
-      }
-    } catch (e) {
-      console.warn('Failed to load chat sessions from storage:', e);
+    if (!storage) {
+      return;
     }
+    const snapshot = loadChatSnapshot(storage);
+    if (!snapshot) {
+      return;
+    }
+    sessions.value = snapshot.sessions;
+    activeSessionId.value = snapshot.activeSessionId;
   }
 
   async function refreshAcpHistorySummaries() {
@@ -642,38 +647,20 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function saveToStorage() {
-    try {
-      const sanitizedSessions = sessions.value.map((session) => ({
-        ...session,
-        messages: session.messages.map((message) => ({
-          ...message,
-          images: undefined,
-        })),
-      }));
-      localStorage.setItem(
-        'octovalve-chat-sessions',
-        JSON.stringify({
-          sessions: sanitizedSessions,
-          activeSessionId: activeSessionId.value,
-        })
-      );
-    } catch (e) {
-      console.warn('Failed to save chat sessions to storage:', e);
+    if (!storage) {
+      return;
     }
+    saveChatSnapshot(storage, {
+      sessions: sessions.value,
+      activeSessionId: activeSessionId.value,
+    });
   }
 
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleSaveToStorage() {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    if (!saveScheduler) {
       return;
     }
-    if (saveTimer) {
-      return;
-    }
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      saveToStorage();
-    }, 400);
+    saveScheduler.schedule();
   }
 
   function isFinalToolCallStatus(status: ToolCall['status']) {
