@@ -175,13 +175,18 @@ async fn execute_ssh_command(
 
 fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String {
     let mut env_pairs: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(locale) = resolve_exec_locale(target) {
-        env_pairs.insert("LANG".to_string(), locale.to_string());
-    }
     if let Some(env) = request.env.as_ref() {
         for (key, value) in env {
             env_pairs.insert(key.to_string(), value.to_string());
         }
+    }
+
+    let mut shell_prefix = String::new();
+    if let Some(locale) = resolve_exec_locale(target) {
+        let escaped = shell_escape(&locale);
+        shell_prefix.push_str(&format!(
+            "LANG={escaped} LC_CTYPE={escaped} LC_ALL={escaped} "
+        ));
     }
 
     let env_prefix = build_env_prefix(&env_pairs);
@@ -200,7 +205,7 @@ fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String
         command.push(' ');
     }
     command.push_str(request.raw_command.trim());
-    format!("bash -lc {}", shell_escape(&command))
+    format!("{shell_prefix}bash -lc {}", shell_escape(&command))
 }
 
 fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
@@ -367,10 +372,12 @@ mod tests {
             pipeline: Vec::new(),
         };
         let cmd = build_remote_command(&target, &request);
-        assert!(cmd.starts_with("bash -lc "));
+        assert!(cmd.contains("bash -lc "));
         assert!(cmd.contains("cd "));
         assert!(cmd.contains("/tmp/work dir"));
         assert!(cmd.contains("LANG="));
+        assert!(cmd.contains("LC_CTYPE="));
+        assert!(cmd.contains("LC_ALL="));
         assert!(cmd.contains("FOO="));
         assert!(cmd.contains("echo hello"));
     }
