@@ -174,20 +174,32 @@ function formatSshDestination(user: string, host: string): string {
   return nextUser ? `${nextUser}@${nextHost}` : nextHost;
 }
 
-function getTargetSshUser(target: ProxyTargetForm): string {
+function getTargetSshUser(target: ProxyTargetForm | null): string {
+  if (!target) {
+    return '';
+  }
   return parseSshDestination(normalizeInputString(target.ssh)).user;
 }
 
-function getTargetSshHost(target: ProxyTargetForm): string {
+function getTargetSshHost(target: ProxyTargetForm | null): string {
+  if (!target) {
+    return '';
+  }
   return parseSshDestination(normalizeInputString(target.ssh)).host;
 }
 
-function setTargetSshUser(target: ProxyTargetForm, user: string) {
+function setTargetSshUser(target: ProxyTargetForm | null, user: string) {
+  if (!target) {
+    return;
+  }
   const parsed = parseSshDestination(normalizeInputString(target.ssh));
   target.ssh = formatSshDestination(user, parsed.host);
 }
 
-function setTargetSshHost(target: ProxyTargetForm, host: string) {
+function setTargetSshHost(target: ProxyTargetForm | null, host: string) {
+  if (!target) {
+    return;
+  }
   const parsed = parseSshDestination(normalizeInputString(target.ssh));
   target.ssh = formatSshDestination(parsed.user, host);
 }

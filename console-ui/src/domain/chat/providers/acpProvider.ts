@@ -18,20 +18,25 @@ import {
 } from '../pipeline/chatPipeline';
 import type {
   AcpEvent,
+  AcpContentBlock,
   AcpSessionSummary,
   AgentCapabilities,
   AuthMethod,
+  ContextItem,
 } from '../services/acpService';
 import { concatAcpTextChunk, ensureToolCallBlock } from '../store/acpTimeline';
 
 type AcpService = {
-  start: (cwd: string, args?: string) => Promise<{ authMethods: AuthMethod[]; agentCapabilities?: AgentCapabilities }>;
+  start: (
+    cwd: string,
+    args?: string
+  ) => Promise<{ authMethods: AuthMethod[]; agentCapabilities?: AgentCapabilities | null }>;
   authenticate: (methodId: string) => Promise<void>;
   newSession: (cwd: string) => Promise<{ sessionId: string }>;
   loadSession: (sessionId: string) => Promise<{ history: unknown }>;
   listSessions: () => Promise<{ sessions?: AcpSessionSummary[] }>;
   deleteSession: (sessionId: string) => Promise<void>;
-  prompt: (prompt: unknown[], context?: Array<{ type: string; [key: string]: unknown }>) => Promise<void>;
+  prompt: (prompt: AcpContentBlock[], context?: ContextItem[]) => Promise<void>;
   cancel: () => Promise<void>;
   stop: () => Promise<void>;
   onEvent: (callback: (event: AcpEvent) => void) => Promise<() => void>;

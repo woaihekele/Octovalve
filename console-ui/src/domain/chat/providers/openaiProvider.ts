@@ -14,13 +14,19 @@ import {
   toDisplayImages,
   toOpenAiContentParts,
 } from '../pipeline/chatPipeline';
-import type { ChatStreamEvent, OpenAiConfig, OpenAiContentPart } from '../services/openaiService';
+import type {
+  ChatMessage as OpenAiChatMessage,
+  ChatStreamEvent,
+  OpenAiConfig,
+  OpenAiContentPart,
+  Tool,
+} from '../services/openaiService';
 
 type OpenaiService = {
   init: (config: OpenAiConfig) => Promise<void>;
-  setTools: (tools: unknown[]) => Promise<void>;
+  setTools: (tools: Tool[]) => Promise<void>;
   clearMessages: () => Promise<void>;
-  addMessage: (message: unknown) => Promise<void>;
+  addMessage: (message: OpenAiChatMessage) => Promise<void>;
   send: () => Promise<void>;
   cancel: () => Promise<void>;
   onStream: (handler: (event: ChatStreamEvent) => void) => Promise<() => void>;
