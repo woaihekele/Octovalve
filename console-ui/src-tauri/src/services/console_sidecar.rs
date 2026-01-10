@@ -89,9 +89,11 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     };
     let mut envs = HashMap::new();
     envs.insert("PATH".to_string(), build_console_path());
-    if let Some(locale) = resolve_default_locale(app) {
+    let language = resolve_app_language(app);
+    if let Some(locale) = resolve_default_locale(&language) {
         envs.insert("OCTOVALVE_TERMINAL_LOCALE".to_string(), locale);
     }
+    envs.insert("OCTOVALVE_APP_LANGUAGE".to_string(), language);
 
     let mut console_args = vec![
         "--config".to_string(),
@@ -248,15 +250,17 @@ fn normalize_port(port: u16, fallback: u16) -> u16 {
     }
 }
 
-fn resolve_default_locale(app: &AppHandle) -> Option<String> {
-    let language = app
-        .state::<AppLanguageState>()
+fn resolve_app_language(app: &AppHandle) -> String {
+    app.state::<AppLanguageState>()
         .0
         .lock()
         .unwrap()
         .clone()
-        .unwrap_or_else(|| DEFAULT_APP_LANGUAGE.to_string());
-    match language.as_str() {
+        .unwrap_or_else(|| DEFAULT_APP_LANGUAGE.to_string())
+}
+
+fn resolve_default_locale(language: &str) -> Option<String> {
+    match language {
         "zh-CN" => Some("zh_CN.utf8".to_string()),
         "en-US" => Some("en_US.utf8".to_string()),
         _ => None,

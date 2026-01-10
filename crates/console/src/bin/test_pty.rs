@@ -62,13 +62,38 @@ fn resolve_locale(explicit: Option<String>) -> Option<String> {
             return Some(trimmed.to_string());
         }
     }
-    let fallback = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok()?;
-    let trimmed = fallback.trim();
+    if let Some(locale) = env_locale("OCTOVALVE_TERMINAL_LOCALE") {
+        return Some(locale);
+    }
+    if let Some(locale) = env_language_locale("OCTOVALVE_APP_LANGUAGE") {
+        return Some(locale);
+    }
+    if let Some(locale) = env_language_locale("LANG") {
+        return Some(locale);
+    }
+    Some("en_US.utf8".to_string())
+}
+
+fn env_locale(key: &str) -> Option<String> {
+    let value = std::env::var(key).ok()?;
+    let trimmed = value.trim();
     if trimmed.is_empty() {
         None
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn env_language_locale(key: &str) -> Option<String> {
+    let value = std::env::var(key).ok()?;
+    let trimmed = value.trim().to_lowercase();
+    if trimmed.starts_with("zh") {
+        return Some("zh_CN.utf8".to_string());
+    }
+    if trimmed.starts_with("en") {
+        return Some("en_US.utf8".to_string());
+    }
+    None
 }
 
 fn parse_env_pairs(values: &[String]) -> anyhow::Result<BTreeMap<String, String>> {

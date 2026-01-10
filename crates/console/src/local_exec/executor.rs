@@ -218,13 +218,38 @@ fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
     if target_locale.is_some() {
         return target_locale;
     }
-    let fallback = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok()?;
-    let trimmed = fallback.trim();
+    if let Some(locale) = env_locale("OCTOVALVE_TERMINAL_LOCALE") {
+        return Some(locale);
+    }
+    if let Some(locale) = env_language_locale("OCTOVALVE_APP_LANGUAGE") {
+        return Some(locale);
+    }
+    if let Some(locale) = env_language_locale("LANG") {
+        return Some(locale);
+    }
+    Some("en_US.utf8".to_string())
+}
+
+fn env_locale(key: &str) -> Option<String> {
+    let value = std::env::var(key).ok()?;
+    let trimmed = value.trim();
     if trimmed.is_empty() {
         None
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn env_language_locale(key: &str) -> Option<String> {
+    let value = std::env::var(key).ok()?;
+    let trimmed = value.trim().to_lowercase();
+    if trimmed.starts_with("zh") {
+        return Some("zh_CN.utf8".to_string());
+    }
+    if trimmed.starts_with("en") {
+        return Some("en_US.utf8".to_string());
+    }
+    None
 }
 
 fn build_env_prefix(pairs: &BTreeMap<String, String>) -> String {
@@ -473,6 +498,34 @@ mod tests {
             std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", value);
         } else {
             std::env::remove_var("OCTOVALVE_TERMINAL_LOCALE");
+        }
+        assert_eq!(resolved.as_deref(), Some("zh_CN.utf8"));
+    }
+
+    #[test]
+    fn resolve_exec_locale_uses_app_language() {
+        let target = TargetSpec {
+            name: "dev".to_string(),
+            desc: "dev".to_string(),
+            hostname: None,
+            ip: None,
+            ssh: None,
+            ssh_args: Vec::new(),
+            ssh_password: None,
+            terminal_locale: None,
+            tty: false,
+            control_remote_addr: "127.0.0.1:19308".to_string(),
+            control_local_bind: None,
+            control_local_port: None,
+            control_local_addr: None,
+        };
+        let backup = std::env::var("OCTOVALVE_APP_LANGUAGE").ok();
+        std::env::set_var("OCTOVALVE_APP_LANGUAGE", "zh-CN");
+        let resolved = resolve_exec_locale(&target);
+        if let Some(value) = backup {
+            std::env::set_var("OCTOVALVE_APP_LANGUAGE", value);
+        } else {
+            std::env::remove_var("OCTOVALVE_APP_LANGUAGE");
         }
         assert_eq!(resolved.as_deref(), Some("zh_CN.utf8"));
     }
