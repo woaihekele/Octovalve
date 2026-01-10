@@ -10,8 +10,8 @@ use crate::clients::acp_types::{
     AcpInitResponse, AcpSessionInfo, ContentBlock, ContextItem, ListSessionsResult,
     LoadSessionResult,
 };
-use crate::services::console_sidecar::build_console_path;
 use crate::paths::resolve_octovalve_proxy_bin;
+use crate::services::console_sidecar::{build_console_path, DEFAULT_COMMAND_ADDR};
 use crate::services::logging::append_log_line;
 use crate::services::profiles::{expand_tilde_path, octovalve_dir};
 use crate::state::{AppLogState, ProxyConfigState};
@@ -20,10 +20,7 @@ fn ensure_npm_env(app: &AppHandle, log_path: &Path) {
     let base = match octovalve_dir(app) {
         Ok(dir) => dir.join("npm"),
         Err(err) => {
-            let _ = append_log_line(
-                log_path,
-                &format!("[acp_start] npm env skipped: {err}"),
-            );
+            let _ = append_log_line(log_path, &format!("[acp_start] npm env skipped: {err}"));
             return;
         }
     };
@@ -33,10 +30,7 @@ fn ensure_npm_env(app: &AppHandle, log_path: &Path) {
     let prefix_bin = prefix.join("bin");
     let prefix_modules = prefix_lib.join("node_modules");
     if let Err(err) = std::fs::create_dir_all(&cache) {
-        let _ = append_log_line(
-            log_path,
-            &format!("[acp_start] npm cache dir error: {err}"),
-        );
+        let _ = append_log_line(log_path, &format!("[acp_start] npm cache dir error: {err}"));
     }
     if let Err(err) = std::fs::create_dir_all(&prefix) {
         let _ = append_log_line(
@@ -129,9 +123,7 @@ fn build_cli_config(args: Vec<String>) -> Result<CliConfig, String> {
                 sandbox_mode = Some(value.replace('_', "-"));
             }
             "-c" | "--config" => {
-                let value = iter
-                    .next()
-                    .ok_or_else(|| "-c 缺少配置值".to_string())?;
+                let value = iter.next().ok_or_else(|| "-c 缺少配置值".to_string())?;
                 apply_config_override(&value, &mut approval_policy, &mut sandbox_mode);
                 app_server_args.push(arg);
                 app_server_args.push(value);
@@ -160,6 +152,10 @@ fn build_mcp_cli_override(proxy_bin: &Path, proxy_config: &Path) -> Result<Strin
     let args = vec![
         format_config_literal("--config")?,
         format_config_literal(config_value.as_ref())?,
+        format_config_literal("--exec-mode")?,
+        format_config_literal("console")?,
+        format_config_literal("--command-addr")?,
+        format_config_literal(DEFAULT_COMMAND_ADDR)?,
     ];
     let args_literal = format!("[{}]", args.join(", "));
     Ok(format!(
@@ -172,6 +168,10 @@ fn build_mcp_servers(proxy_bin: &Path, proxy_config: &Path) -> Vec<serde_json::V
     let args = vec![
         "--config".to_string(),
         proxy_config.to_string_lossy().to_string(),
+        "--exec-mode".to_string(),
+        "console".to_string(),
+        "--command-addr".to_string(),
+        DEFAULT_COMMAND_ADDR.to_string(),
     ];
     vec![json!({
         "name": "octovalve",
@@ -287,10 +287,7 @@ pub async fn acp_authenticate(app: AppHandle, method_id: String) -> Result<(), S
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
 
     client
@@ -304,10 +301,7 @@ pub async fn acp_new_session(app: AppHandle, cwd: String) -> Result<AcpSessionIn
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
     let result = client
         .new_session(&resolved_cwd.to_string_lossy())
@@ -327,10 +321,7 @@ pub async fn acp_load_session(
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
     client
         .load_session(&session_id)
@@ -344,10 +335,7 @@ pub async fn acp_list_sessions(app: AppHandle) -> Result<ListSessionsResult, Str
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
     client.list_sessions().await.map_err(|e| {
         let _ = append_log_line(&log_path, &format!("[acp_list_sessions] error: {}", e));
@@ -359,10 +347,7 @@ pub async fn acp_delete_session(app: AppHandle, session_id: String) -> Result<()
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
     client
         .delete_session(&session_id)
@@ -384,10 +369,7 @@ pub async fn acp_prompt(
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
 
     let _ = append_log_line(&log_path, "[acp_prompt] calling client.prompt...");
@@ -403,10 +385,7 @@ pub async fn acp_cancel(app: AppHandle) -> Result<(), String> {
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or("ACP client not started")?
+        guard.as_ref().cloned().ok_or("ACP client not started")?
     };
     client.cancel().await.map_err(|e| e.to_string())
 }

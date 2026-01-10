@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 use tokio::time::timeout;
 
 use octovalve_console::clients::acp_types::{
@@ -205,7 +205,8 @@ fn main() -> Result<(), String> {
                                         saw_retry = true;
                                         retry_max_attempts = Some(max_attempts);
                                         if let Some(prev) = retry_last_attempt {
-                                            if attempt != prev.saturating_add(1) && attempt != prev {
+                                            if attempt != prev.saturating_add(1) && attempt != prev
+                                            {
                                                 eprintln!(
                                                     "\n[retry] unexpected attempt change: prev={} now={}",
                                                     prev, attempt
@@ -226,13 +227,18 @@ fn main() -> Result<(), String> {
                                         {
                                             eprintln!("\n[session_error] {}", msg);
                                         } else {
-                                            eprintln!("\n[session_error] {:?}", update.get("error"));
+                                            eprintln!(
+                                                "\n[session_error] {:?}",
+                                                update.get("error")
+                                            );
                                         }
                                     }
                                     "task_complete" => {
                                         eprintln!(
                                             "\n[session_complete_update] stop_reason={:?}",
-                                            update.get("stopReason").or_else(|| update.get("stop_reason"))
+                                            update
+                                                .get("stopReason")
+                                                .or_else(|| update.get("stop_reason"))
                                         );
                                     }
                                     "available_commands_update" => {
@@ -347,11 +353,7 @@ impl LoopbackClient {
         response
     }
 
-    async fn send_request_async(
-        &self,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<(), String> {
+    async fn send_request_async(&self, method: &str, params: Option<Value>) -> Result<(), String> {
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = JsonRpcRequest::new(id, method, params);
         let request_json = serde_json::to_string(&request).map_err(|e| e.to_string())?;
@@ -413,7 +415,10 @@ async fn read_loop(
     let mut buffer = String::new();
     loop {
         buffer.clear();
-        let bytes = reader.read_line(&mut buffer).await.map_err(|e| e.to_string())?;
+        let bytes = reader
+            .read_line(&mut buffer)
+            .await
+            .map_err(|e| e.to_string())?;
         if bytes == 0 {
             break;
         }

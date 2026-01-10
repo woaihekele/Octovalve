@@ -43,10 +43,7 @@ pub async fn acp_list_sessions(app: tauri::AppHandle) -> Result<ListSessionsResu
 }
 
 #[tauri::command]
-pub async fn acp_delete_session(
-    app: tauri::AppHandle,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn acp_delete_session(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
     acp::acp_delete_session(app, session_id).await
 }
 

@@ -11,7 +11,7 @@ use acp_codex::CliConfig;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::AbortHandle;
 use tokio::time::timeout;
 
@@ -53,7 +53,10 @@ impl AcpClient {
         let log_path_clone = log_path.clone();
         let server_task = tokio::spawn(async move {
             if let Err(err) = acp_codex::run_with_io(config, server_read, server_write).await {
-                log_line(&log_path_clone, &format!("[acp-codex] server exited: {err}"));
+                log_line(
+                    &log_path_clone,
+                    &format!("[acp-codex] server exited: {err}"),
+                );
             }
         });
         let server_abort = server_task.abort_handle();
@@ -227,10 +230,7 @@ impl AcpClient {
         );
         let mut pending_guard = pending.lock().await;
         for (_, sender) in pending_guard.drain() {
-            let _ = sender.send(Err(AcpError(format!(
-                "ACP reader exited: {}",
-                reason
-            ))));
+            let _ = sender.send(Err(AcpError(format!("ACP reader exited: {}", reason))));
         }
         Ok(())
     }

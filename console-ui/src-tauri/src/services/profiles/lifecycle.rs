@@ -110,7 +110,11 @@ pub fn prepare_profiles(
             log_path,
             &format!(
                 "profile {} proxy_path={} (resolved={}) broker_path={} (resolved={})",
-                profile.name, profile.proxy_path, proxy_resolved, profile.broker_path, broker_resolved
+                profile.name,
+                profile.proxy_path,
+                proxy_resolved,
+                profile.broker_path,
+                broker_resolved
             ),
         );
     }

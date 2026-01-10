@@ -18,6 +18,8 @@ use crate::services::profiles::{
 };
 use crate::state::{ConsoleSidecar, ConsoleSidecarState, ProfilesState};
 
+pub(crate) const DEFAULT_COMMAND_ADDR: &str = "127.0.0.1:19310";
+
 fn format_command_output(line: &[u8]) -> String {
     String::from_utf8_lossy(line)
         .trim_end_matches(&['\r', '\n'][..])
@@ -90,6 +92,10 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     let mut console_args = vec![
         "--config".to_string(),
         proxy_config.to_string_lossy().to_string(),
+        "--exec-mode".to_string(),
+        "local".to_string(),
+        "--command-listen-addr".to_string(),
+        DEFAULT_COMMAND_ADDR.to_string(),
         "--remote-dir".to_string(),
         remote_dir,
         "--remote-listen-addr".to_string(),
