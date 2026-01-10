@@ -74,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
     let state = build_console_state(config)?;
     let exec_mode = args.exec_mode.clone();
+    let local_audit_dir = expand_tilde(&args.local_audit_dir);
 
     let tunnel_targets = if matches!(exec_mode, ExecMode::Remote) {
         build_tunnel_targets(&state)
@@ -145,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
             spawn_local_exec(
                 listen_addr,
                 policy,
+                local_audit_dir,
                 Arc::clone(&shared_state),
                 event_tx.clone(),
             )

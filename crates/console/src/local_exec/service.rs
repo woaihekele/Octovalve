@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
@@ -15,6 +16,8 @@ use crate::state::{ConsoleState, ControlCommand, TargetSpec};
 
 use super::events::{PendingRequest, ServerEvent};
 use super::executor::execute_request;
+use super::history;
+use super::output::spawn_write_result_record;
 use super::policy::{request_summary, LimitsConfig, Whitelist};
 use super::snapshots::{
     build_queue_snapshots, result_snapshot_from_response, running_snapshot_from_pending,
@@ -26,27 +29,31 @@ pub(crate) struct TargetServiceHandle {
     pub(crate) server_tx: mpsc::Sender<ServerEvent>,
     pub(crate) command_tx: mpsc::Sender<ControlCommand>,
     pub(crate) snapshot: ServiceSnapshot,
+    pub(crate) output_dir: Arc<PathBuf>,
 }
 
 pub(super) fn spawn_service(
     target: TargetSpec,
     whitelist: Arc<Whitelist>,
     limits: Arc<LimitsConfig>,
+    output_dir: Arc<PathBuf>,
     state: Arc<RwLock<ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
 ) -> TargetServiceHandle {
     let (server_tx, server_rx) = mpsc::channel::<ServerEvent>(128);
     let (command_tx, command_rx) = mpsc::channel::<ControlCommand>(128);
     let (result_tx, result_rx) = mpsc::channel::<ResultSnapshot>(128);
+    let history = history::load_history(&output_dir, limits.max_output_bytes, HISTORY_LIMIT);
     let snapshot = ServiceSnapshot {
         queue: Vec::new(),
         running: Vec::new(),
-        history: Vec::new(),
-        last_result: None,
+        history: history.clone(),
+        last_result: history.first().cloned(),
     };
     let target_name = target.name.clone();
+    let service_output_dir = Arc::clone(&output_dir);
     tokio::spawn(async move {
-        let service_state = ServiceState::new(Vec::new(), HISTORY_LIMIT);
+        let service_state = ServiceState::new(history, HISTORY_LIMIT);
         service_loop(
             target_name,
             target,
@@ -57,6 +64,7 @@ pub(super) fn spawn_service(
             service_state,
             whitelist,
             limits,
+            service_output_dir,
             state,
             event_tx,
         )
@@ -66,6 +74,7 @@ pub(super) fn spawn_service(
         server_tx,
         command_tx,
         snapshot,
+        output_dir,
     }
 }
 
@@ -79,6 +88,7 @@ async fn service_loop(
     mut service_state: ServiceState,
     whitelist: Arc<Whitelist>,
     limits: Arc<LimitsConfig>,
+    output_dir: Arc<PathBuf>,
     state: Arc<RwLock<ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
 ) {
@@ -103,6 +113,7 @@ async fn service_loop(
                     &result_tx,
                     &whitelist,
                     &limits,
+                    &output_dir,
                     &state,
                     &event_tx,
                 )
@@ -167,6 +178,7 @@ async fn handle_command(
     result_tx: &mpsc::Sender<ResultSnapshot>,
     whitelist: &Arc<Whitelist>,
     limits: &Arc<LimitsConfig>,
+    output_dir: &Arc<PathBuf>,
     console_state: &Arc<RwLock<ConsoleState>>,
     event_tx: &broadcast::Sender<ConsoleEvent>,
 ) {
@@ -189,6 +201,7 @@ async fn handle_command(
                     result_tx,
                     whitelist,
                     limits,
+                    output_dir,
                     console_state,
                     event_tx,
                 );
@@ -218,6 +231,7 @@ async fn handle_command(
                     result_snapshot_from_response(&pending, &response, finished_at);
                 let _ = pending.respond_to.send(response.clone());
                 let _ = result_tx.send(result_snapshot).await;
+                spawn_write_result_record(Arc::clone(output_dir), response, Duration::from_secs(0));
             }
         }
         ControlCommand::Cancel(id) => {
@@ -264,6 +278,7 @@ fn start_execution(
     result_tx: &mpsc::Sender<ResultSnapshot>,
     whitelist: &Arc<Whitelist>,
     limits: &Arc<LimitsConfig>,
+    output_dir: &Arc<PathBuf>,
     console_state: &Arc<RwLock<ConsoleState>>,
     event_tx: &broadcast::Sender<ConsoleEvent>,
 ) {
@@ -289,11 +304,15 @@ fn start_execution(
     let whitelist = Arc::clone(whitelist);
     let limits = Arc::clone(limits);
     let target = target.clone();
+    let output_dir = Arc::clone(output_dir);
     tokio::spawn(async move {
+        let started_at = Instant::now();
         let response =
             execute_request(&target, &pending.request, &whitelist, &limits, cancel_token).await;
+        let duration = started_at.elapsed();
         let finished_at = SystemTime::now();
         let result_snapshot = result_snapshot_from_response(&pending, &response, finished_at);
+        spawn_write_result_record(Arc::clone(&output_dir), response.clone(), duration);
         let _ = pending.respond_to.send(response);
         let _ = result_tx.send(result_snapshot).await;
     });

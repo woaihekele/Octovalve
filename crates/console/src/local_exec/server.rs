@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Context;
 use bytes::Bytes;
@@ -11,7 +11,9 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use protocol::{CommandRequest, CommandResponse};
 
+use super::audit::{spawn_write_request_record, spawn_write_request_record_value, RequestRecord};
 use super::events::{PendingRequest, ServerEvent};
+use super::output::spawn_write_result_record;
 use super::policy::{deny_message, request_summary, Whitelist};
 use super::service::TargetServiceHandle;
 
@@ -114,8 +116,17 @@ async fn handle_connection(
                 peer = %addr,
                 reason = %message,
             );
+            let output_dir = Arc::clone(&handle.output_dir);
+            let received_at = SystemTime::now();
+            let record = RequestRecord::from_request(&request, &addr.to_string(), received_at);
+            spawn_write_request_record_value(Arc::clone(&output_dir), record);
             let response =
                 CommandResponse::denied(request.id.clone(), format!("denied by policy: {message}"));
+            spawn_write_result_record(
+                Arc::clone(&output_dir),
+                response.clone(),
+                Duration::from_secs(0),
+            );
             let payload = serde_json::to_vec(&response)?;
             let _ = framed.send(Bytes::from(payload)).await;
             continue;
@@ -129,6 +140,7 @@ async fn handle_connection(
             queued_at: Instant::now(),
             respond_to,
         };
+        spawn_write_request_record(Arc::clone(&handle.output_dir), &pending);
         if handle
             .server_tx
             .send(ServerEvent::Request(pending))
@@ -156,6 +168,7 @@ impl Clone for TargetServiceHandle {
             server_tx: self.server_tx.clone(),
             command_tx: self.command_tx.clone(),
             snapshot: self.snapshot.clone(),
+            output_dir: self.output_dir.clone(),
         }
     }
 }

@@ -1,5 +1,8 @@
+mod audit;
 mod events;
 mod executor;
+mod history;
+mod output;
 mod policy;
 mod process;
 mod server;
@@ -9,6 +12,7 @@ mod stream;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::broadcast;
@@ -25,11 +29,14 @@ use service::TargetServiceHandle;
 pub(crate) async fn spawn_local_exec(
     listen_addr: SocketAddr,
     policy: PolicyConfig,
+    audit_root: PathBuf,
     state: Arc<RwLock<ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
 ) -> anyhow::Result<()> {
     let whitelist = Arc::new(Whitelist::from_config(&policy.whitelist)?);
     let limits = Arc::new(policy.limits);
+    let audit_root = Arc::new(audit_root);
+    std::fs::create_dir_all(&*audit_root)?;
 
     let targets = {
         let guard = state.read().await;
@@ -52,10 +59,13 @@ pub(crate) async fn spawn_local_exec(
             emit_target_update(&target.name, &state, &event_tx).await;
             continue;
         }
+        let output_dir = Arc::new(target_audit_dir(&audit_root, &target.name));
+        std::fs::create_dir_all(&*output_dir)?;
         let handle = service::spawn_service(
             target.clone(),
             Arc::clone(&whitelist),
             Arc::clone(&limits),
+            Arc::clone(&output_dir),
             Arc::clone(&state),
             event_tx.clone(),
         );
@@ -71,6 +81,11 @@ pub(crate) async fn spawn_local_exec(
 
     server::spawn_command_server(listen_addr, services, Arc::clone(&whitelist)).await?;
     Ok(())
+}
+
+fn target_audit_dir(root: &Path, target: &str) -> PathBuf {
+    let sanitized = target.replace(['/', '\\'], "_");
+    root.join(sanitized)
 }
 
 pub(crate) async fn send_control_command(
