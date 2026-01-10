@@ -1,4 +1,4 @@
-use crate::cli::Args;
+use crate::cli::{Args, ExecMode};
 use crate::config::{load_proxy_config, ProxyConfig};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -41,6 +41,8 @@ pub(crate) struct ProxyState {
     target_order: Vec<String>,
     default_target: Option<String>,
     tunnel_manager: Option<Arc<TunnelManager>>,
+    exec_mode: ExecMode,
+    command_addr: String,
 }
 
 #[derive(Serialize)]
@@ -71,6 +73,12 @@ impl ProxyState {
     }
 
     pub(crate) fn target_addr(&self, name: &str) -> anyhow::Result<String> {
+        if matches!(self.exec_mode, ExecMode::Console) {
+            if !self.targets.contains_key(name) {
+                return Err(anyhow::anyhow!("unknown target: {name}"));
+            }
+            return Ok(self.command_addr.clone());
+        }
         let target = self
             .targets
             .get(name)
@@ -87,13 +95,24 @@ impl ProxyState {
                 desc: target.desc.clone(),
                 last_seen: target.last_seen.map(format_time),
                 ssh: target.ssh.clone(),
-                remote_addr: target.remote_addr.clone(),
-                local_addr: target.local_addr.clone(),
+                remote_addr: if matches!(self.exec_mode, ExecMode::Console) {
+                    self.command_addr.clone()
+                } else {
+                    target.remote_addr.clone()
+                },
+                local_addr: if matches!(self.exec_mode, ExecMode::Console) {
+                    self.command_addr.clone()
+                } else {
+                    target.local_addr.clone()
+                },
             })
             .collect()
     }
 
     pub(crate) fn forward_spec(&self, name: &str) -> anyhow::Result<Option<ForwardSpec>> {
+        if matches!(self.exec_mode, ExecMode::Console) {
+            return Ok(None);
+        }
         let target = self
             .targets
             .get(name)
@@ -118,6 +137,9 @@ impl ProxyState {
     }
 
     pub(crate) fn tunnel_targets(&self) -> Vec<TunnelTargetSpec> {
+        if matches!(self.exec_mode, ExecMode::Console) {
+            return Vec::new();
+        }
         self.target_order
             .iter()
             .filter_map(|name| self.targets.get(name))
@@ -185,6 +207,8 @@ fn build_state_from_config(
     config: ProxyConfig,
 ) -> anyhow::Result<(ProxyState, ProxyRuntimeDefaults)> {
     let defaults = config.defaults.unwrap_or_default();
+    let exec_mode = args.exec_mode;
+    let command_addr = args.command_addr.clone();
     let default_remote = defaults
         .remote_addr
         .unwrap_or_else(|| DEFAULT_REMOTE_ADDR.to_string());
@@ -216,18 +240,24 @@ fn build_state_from_config(
                 );
             }
         }
-        let remote_addr = target.remote_addr.unwrap_or_else(|| default_remote.clone());
+        let remote_addr = if matches!(exec_mode, ExecMode::Console) {
+            command_addr.clone()
+        } else {
+            target.remote_addr.unwrap_or_else(|| default_remote.clone())
+        };
         let local_bind = target.local_bind.unwrap_or_else(|| default_bind.clone());
-        let local_port = if target.ssh.is_some() {
+        let local_port = if matches!(exec_mode, ExecMode::Remote) && target.ssh.is_some() {
             Some(
                 target
                     .local_port
                     .ok_or_else(|| anyhow::anyhow!("target {} missing local_port", target.name))?,
             )
         } else {
-            None
+            target.local_port
         };
-        let local_addr = if let Some(port) = local_port {
+        let local_addr = if matches!(exec_mode, ExecMode::Console) {
+            command_addr.clone()
+        } else if let Some(port) = local_port {
             format!("{local_bind}:{port}")
         } else {
             remote_addr.clone()
@@ -247,24 +277,31 @@ fn build_state_from_config(
             );
         }
 
-        let mut runtime = TargetRuntime {
+        let status = if matches!(exec_mode, ExecMode::Console) {
+            TargetStatus::Ready
+        } else if target.ssh.is_none() {
+            TargetStatus::Ready
+        } else {
+            TargetStatus::Down
+        };
+        let runtime = TargetRuntime {
             name: target.name.clone(),
             desc: target.desc,
             ssh: target.ssh,
             ssh_args,
             ssh_password,
             remote_addr,
-            local_bind: local_port.map(|_| local_bind),
+            local_bind: if matches!(exec_mode, ExecMode::Remote) {
+                local_port.map(|_| local_bind)
+            } else {
+                None
+            },
             local_port,
             local_addr,
-            status: TargetStatus::Down,
+            status,
             last_seen: None,
             last_error: None,
         };
-
-        if runtime.ssh.is_none() {
-            runtime.status = TargetStatus::Ready;
-        }
 
         order.push(runtime.name.clone());
         targets.insert(runtime.name.clone(), runtime);
@@ -281,6 +318,8 @@ fn build_state_from_config(
         target_order: order,
         default_target: config.default_target,
         tunnel_manager: None,
+        exec_mode,
+        command_addr,
     };
 
     let defaults = ProxyRuntimeDefaults {
@@ -288,4 +327,86 @@ fn build_state_from_config(
         max_output_bytes,
     };
     Ok((state, defaults))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::ExecMode;
+    use protocol::config::TargetConfig;
+    use std::path::PathBuf;
+
+    fn base_args(exec_mode: ExecMode) -> Args {
+        Args {
+            config: PathBuf::from("config.toml"),
+            client_id: "proxy".to_string(),
+            exec_mode,
+            command_addr: "127.0.0.1:19310".to_string(),
+            tunnel_control_dir: "~/.octovalve/tunnel-control/proxy".to_string(),
+            timeout_ms: 30_000,
+            max_output_bytes: 1024 * 1024,
+        }
+    }
+
+    #[test]
+    fn console_mode_allows_missing_local_port() {
+        let args = base_args(ExecMode::Console);
+        let config = ProxyConfig {
+            default_target: None,
+            defaults: None,
+            targets: vec![TargetConfig {
+                name: "dev".to_string(),
+                desc: "dev".to_string(),
+                hostname: None,
+                ip: None,
+                ssh: Some("devops@127.0.0.1".to_string()),
+                remote_addr: None,
+                local_port: None,
+                local_bind: None,
+                ssh_args: None,
+                ssh_password: None,
+                terminal_locale: None,
+                tty: false,
+                control_remote_addr: None,
+                control_local_port: None,
+                control_local_bind: None,
+            }],
+        };
+        let (mut state, _) = build_state_from_config(&args, config).expect("state");
+        assert_eq!(state.target_addr("dev").expect("addr"), "127.0.0.1:19310");
+        assert!(state.forward_spec("dev").expect("forward").is_none());
+        assert!(state.tunnel_targets().is_empty());
+        let targets = state.list_targets();
+        assert_eq!(targets[0].local_addr, "127.0.0.1:19310");
+    }
+
+    #[test]
+    fn remote_mode_requires_local_port_for_ssh() {
+        let args = base_args(ExecMode::Remote);
+        let config = ProxyConfig {
+            default_target: None,
+            defaults: None,
+            targets: vec![TargetConfig {
+                name: "dev".to_string(),
+                desc: "dev".to_string(),
+                hostname: None,
+                ip: None,
+                ssh: Some("devops@127.0.0.1".to_string()),
+                remote_addr: None,
+                local_port: None,
+                local_bind: None,
+                ssh_args: None,
+                ssh_password: None,
+                terminal_locale: None,
+                tty: false,
+                control_remote_addr: None,
+                control_local_port: None,
+                control_local_bind: None,
+            }],
+        };
+        let err = build_state_from_config(&args, config)
+            .err()
+            .expect("expected error");
+        assert!(err.to_string().contains("missing local_port"));
+    }
 }

@@ -125,7 +125,7 @@ impl ProxyHandler {
         Tool {
             name: "run_command".into(),
             description: Some(
-                "Forward command execution to a remote broker with manual approval. When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)".into(),
+                "Forward command execution to the console executor with manual approval. When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)".into(),
             ),
             input_schema: Arc::new(input_schema),
             output_schema: None,
