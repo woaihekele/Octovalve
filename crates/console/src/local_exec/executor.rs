@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -7,13 +8,18 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use protocol::{CommandRequest, CommandResponse};
+use system_utils::path::expand_tilde;
 use system_utils::ssh::apply_askpass_env;
+use tracing::warn;
 
 use crate::state::TargetSpec;
 
 use super::policy::{LimitsConfig, Whitelist};
 use super::process::{apply_process_group, terminate_child};
 use super::stream::read_stream_capture;
+
+const DEFAULT_SSH_CONTROL_DIR: &str = "~/.octovalve/ssh-control";
+const DEFAULT_SSH_CONTROL_PERSIST: &str = "60s";
 
 pub(super) async fn execute_request(
     target: &TargetSpec,
@@ -129,6 +135,9 @@ async fn execute_ssh_command(
         cmd.arg("-T");
     }
     apply_ssh_options(&mut cmd, target.ssh_password.is_some());
+    if let Some(control_path) = resolve_control_path(target) {
+        apply_control_master(&mut cmd, &control_path);
+    }
     apply_locale_env(&mut cmd, locale.as_deref());
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
@@ -360,6 +369,53 @@ fn apply_ssh_options(cmd: &mut Command, has_password: bool) {
     }
 }
 
+fn resolve_control_path(target: &TargetSpec) -> Option<PathBuf> {
+    let ssh = target.ssh.as_deref()?.trim();
+    if ssh.is_empty() {
+        return None;
+    }
+    let control_dir = resolve_control_dir()?;
+    Some(control_path_for_target(&control_dir, target, ssh))
+}
+
+fn resolve_control_dir() -> Option<PathBuf> {
+    let value = std::env::var("OCTOVALVE_SSH_CONTROL_DIR")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_SSH_CONTROL_DIR.to_string());
+    let dir = expand_tilde(&value);
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        warn!(error = %err, path = %dir.display(), "failed to create ssh control dir");
+        return None;
+    }
+    Some(dir)
+}
+
+fn control_path_for_target(control_dir: &Path, target: &TargetSpec, ssh: &str) -> PathBuf {
+    let fingerprint = format!("{}|{}", target.name, ssh);
+    let digest = md5::compute(fingerprint.as_bytes());
+    let filename = format!("cm-{:x}", digest);
+    control_dir.join(filename)
+}
+
+fn control_master_args(control_path: &Path) -> [String; 6] {
+    [
+        "-o".to_string(),
+        "ControlMaster=auto".to_string(),
+        "-o".to_string(),
+        format!("ControlPersist={}", DEFAULT_SSH_CONTROL_PERSIST),
+        "-o".to_string(),
+        format!("ControlPath={}", control_path.display()),
+    ]
+}
+
+fn apply_control_master(cmd: &mut Command, control_path: &Path) {
+    for arg in control_master_args(control_path) {
+        cmd.arg(arg);
+    }
+}
+
 fn apply_locale_env(cmd: &mut Command, locale: Option<&str>) {
     let Some(locale) = locale else {
         return;
@@ -428,6 +484,27 @@ mod tests {
         assert!(cmd.contains("LC_ALL="));
         assert!(cmd.contains("FOO="));
         assert!(cmd.contains("echo hello"));
+    }
+
+    #[test]
+    fn control_path_is_stable_per_target() {
+        let target = sample_target();
+        let dir = PathBuf::from("/tmp/ssh-control");
+        let ssh = target.ssh.as_deref().unwrap_or_default();
+        let first = control_path_for_target(&dir, &target, ssh);
+        let second = control_path_for_target(&dir, &target, ssh);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn control_master_args_include_path() {
+        let path = PathBuf::from("/tmp/ssh-control/cm-test");
+        let args = control_master_args(&path);
+        assert!(args.iter().any(|arg| arg == "ControlMaster=auto"));
+        assert!(args.iter().any(|arg| arg == "ControlPersist=60s"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "ControlPath=/tmp/ssh-control/cm-test"));
     }
 
     #[test]
