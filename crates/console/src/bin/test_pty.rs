@@ -26,7 +26,12 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let env_pairs = parse_env_pairs(&args.env)?;
     let locale = resolve_locale(args.locale);
-    let remote_cmd = build_remote_command(&args.command, args.cwd.as_deref(), &env_pairs, locale);
+    let remote_cmd = build_remote_command(
+        &args.command,
+        args.cwd.as_deref(),
+        &env_pairs,
+        locale.as_deref(),
+    );
     if args.print {
         println!("remote_cmd={remote_cmd}");
     }
@@ -40,6 +45,7 @@ fn main() -> anyhow::Result<()> {
     cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
     cmd.arg("-o").arg("ConnectTimeout=10");
     cmd.arg("-o").arg("BatchMode=yes");
+    apply_locale_env(&mut cmd, locale.as_deref());
     cmd.arg(args.ssh);
     cmd.arg(remote_cmd);
     cmd.stdin(Stdio::null());
@@ -115,7 +121,7 @@ fn build_remote_command(
     raw_command: &str,
     cwd: Option<&str>,
     env_pairs: &BTreeMap<String, String>,
-    locale: Option<String>,
+    locale: Option<&str>,
 ) -> String {
     let mut shell_prefix = String::new();
     if let Some(locale) = locale {
@@ -169,4 +175,56 @@ fn shell_escape(value: &str) -> String {
     }
     escaped.push('\'');
     escaped
+}
+
+fn apply_locale_env(cmd: &mut Command, locale: Option<&str>) {
+    let Some(locale) = locale else {
+        return;
+    };
+    cmd.env("LANG", locale);
+    cmd.env("LC_CTYPE", locale);
+    cmd.env("LC_ALL", locale);
+    cmd.arg("-o").arg("SendEnv=LANG,LC_CTYPE,LC_ALL");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_remote_command_includes_locale() {
+        let cmd = build_remote_command("whoami", None, &BTreeMap::new(), Some("en_US.utf8"));
+        assert!(cmd.contains("LANG="));
+        assert!(cmd.contains("LC_CTYPE="));
+        assert!(cmd.contains("LC_ALL="));
+        assert!(cmd.contains("bash --noprofile -lc "));
+    }
+
+    #[test]
+    fn apply_locale_env_sets_sendenv() {
+        let mut cmd = Command::new("ssh");
+        apply_locale_env(&mut cmd, Some("en_US.utf8"));
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|value| value.to_string_lossy().to_string())
+            .collect();
+        assert!(args.contains(&"-o".to_string()));
+        assert!(args.contains(&"SendEnv=LANG,LC_CTYPE,LC_ALL".to_string()));
+        let envs: Vec<(String, String)> = cmd
+            .get_envs()
+            .filter_map(|(key, value)| {
+                value.map(|value| {
+                    (
+                        key.to_string_lossy().to_string(),
+                        value.to_string_lossy().to_string(),
+                    )
+                })
+            })
+            .collect();
+        assert!(envs.iter().any(|(k, v)| k == "LANG" && v == "en_US.utf8"));
+        assert!(envs
+            .iter()
+            .any(|(k, v)| k == "LC_CTYPE" && v == "en_US.utf8"));
+        assert!(envs.iter().any(|(k, v)| k == "LC_ALL" && v == "en_US.utf8"));
+    }
 }
