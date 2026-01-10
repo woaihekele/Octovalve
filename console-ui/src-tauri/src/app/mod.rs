@@ -12,6 +12,7 @@ pub fn run() {
         .manage(crate::state::TerminalSessions(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
+        .manage(crate::state::AppLanguageState(std::sync::Mutex::new(None)))
         .manage(crate::clients::AcpClientState::default())
         .manage(crate::clients::McpClientState::default())
         .manage(crate::clients::OpenAiClientState(tokio::sync::Mutex::new(
@@ -38,6 +39,7 @@ pub fn run() {
             crate::commands::console::restart_console,
             crate::commands::console::validate_startup_config,
             crate::commands::console::log_ui_event,
+            crate::commands::console::set_app_language,
             crate::commands::console::proxy_fetch_targets,
             crate::commands::console::proxy_fetch_snapshot,
             crate::commands::console::proxy_approve,

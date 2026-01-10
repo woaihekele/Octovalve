@@ -175,7 +175,7 @@ async fn execute_ssh_command(
 
 fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String {
     let mut env_pairs: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(locale) = target.terminal_locale.as_deref() {
+    if let Some(locale) = resolve_exec_locale(target) {
         env_pairs.insert("LANG".to_string(), locale.to_string());
     }
     if let Some(env) = request.env.as_ref() {
@@ -201,6 +201,25 @@ fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String
     }
     command.push_str(request.raw_command.trim());
     format!("bash -lc {}", shell_escape(&command))
+}
+
+fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
+    let target_locale = target
+        .terminal_locale
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    if target_locale.is_some() {
+        return target_locale;
+    }
+    let fallback = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok()?;
+    let trimmed = fallback.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn build_env_prefix(pairs: &BTreeMap<String, String>) -> String {
@@ -393,5 +412,61 @@ mod tests {
             }
             _ => panic!("unexpected outcome"),
         }
+    }
+
+    #[test]
+    fn resolve_exec_locale_prefers_target() {
+        let target = TargetSpec {
+            name: "dev".to_string(),
+            desc: "dev".to_string(),
+            hostname: None,
+            ip: None,
+            ssh: None,
+            ssh_args: Vec::new(),
+            ssh_password: None,
+            terminal_locale: Some("en_US.utf8".to_string()),
+            tty: false,
+            control_remote_addr: "127.0.0.1:19308".to_string(),
+            control_local_bind: None,
+            control_local_port: None,
+            control_local_addr: None,
+        };
+        let backup = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok();
+        std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", "zh_CN.utf8");
+        let resolved = resolve_exec_locale(&target);
+        if let Some(value) = backup {
+            std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", value);
+        } else {
+            std::env::remove_var("OCTOVALVE_TERMINAL_LOCALE");
+        }
+        assert_eq!(resolved.as_deref(), Some("en_US.utf8"));
+    }
+
+    #[test]
+    fn resolve_exec_locale_uses_env_fallback() {
+        let target = TargetSpec {
+            name: "dev".to_string(),
+            desc: "dev".to_string(),
+            hostname: None,
+            ip: None,
+            ssh: None,
+            ssh_args: Vec::new(),
+            ssh_password: None,
+            terminal_locale: None,
+            tty: false,
+            control_remote_addr: "127.0.0.1:19308".to_string(),
+            control_local_bind: None,
+            control_local_port: None,
+            control_local_addr: None,
+        };
+        let backup = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok();
+        std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", "zh_CN.utf8");
+        let resolved = resolve_exec_locale(&target);
+        if let Some(value) = backup {
+            std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", value);
+        } else {
+            std::env::remove_var("OCTOVALVE_TERMINAL_LOCALE");
+        }
+        assert_eq!(resolved.as_deref(), Some("zh_CN.utf8"));
     }
 }

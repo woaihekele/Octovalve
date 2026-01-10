@@ -6,6 +6,7 @@ import type {
   BrokerConfigEditor,
   ConfigFilePayload,
   ConsoleEvent,
+  AppLanguage,
   ProfileRuntimeSettings,
   ProfilesStatus,
   ProxyConfigEditor,
@@ -53,6 +54,13 @@ export type TerminalErrorEvent = {
   session_id: string;
   message: string;
 };
+
+export async function setAppLanguage(language: AppLanguage) {
+  if (!TAURI_AVAILABLE) {
+    return;
+  }
+  await invoke('set_app_language', { language });
+}
 
 export type ConsoleLogChunk = {
   content: string;

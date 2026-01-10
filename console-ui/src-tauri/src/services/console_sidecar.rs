@@ -16,9 +16,10 @@ use crate::services::logging::append_log_line;
 use crate::services::profiles::{
     current_profile_entry, resolve_broker_config_path, sync_proxy_config_runtime_ports,
 };
-use crate::state::{ConsoleSidecar, ConsoleSidecarState, ProfilesState};
+use crate::state::{AppLanguageState, ConsoleSidecar, ConsoleSidecarState, ProfilesState};
 
 pub(crate) const DEFAULT_COMMAND_ADDR: &str = "127.0.0.1:19310";
+const DEFAULT_APP_LANGUAGE: &str = "en-US";
 
 fn format_command_output(line: &[u8]) -> String {
     String::from_utf8_lossy(line)
@@ -88,6 +89,9 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     };
     let mut envs = HashMap::new();
     envs.insert("PATH".to_string(), build_console_path());
+    if let Some(locale) = resolve_default_locale(app) {
+        envs.insert("OCTOVALVE_TERMINAL_LOCALE".to_string(), locale);
+    }
 
     let mut console_args = vec![
         "--config".to_string(),
@@ -241,5 +245,20 @@ fn normalize_port(port: u16, fallback: u16) -> u16 {
         fallback
     } else {
         port
+    }
+}
+
+fn resolve_default_locale(app: &AppHandle) -> Option<String> {
+    let language = app
+        .state::<AppLanguageState>()
+        .0
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| DEFAULT_APP_LANGUAGE.to_string());
+    match language.as_str() {
+        "zh-CN" => Some("zh_CN.utf8".to_string()),
+        "en-US" => Some("en_US.utf8".to_string()),
+        _ => None,
     }
 }

@@ -19,6 +19,7 @@ import {
   readAppLog,
   readConsoleLog,
   restartConsole,
+  setAppLanguage,
   selectProfile,
   validateStartupConfig,
   type ConsoleConnectionStatus,
@@ -1511,7 +1512,9 @@ watch(
   () => effectiveLanguage.value,
   (value) => {
     locale.value = value;
-  }
+    void setAppLanguage(value);
+  },
+  { immediate: true }
 );
 
 watch(

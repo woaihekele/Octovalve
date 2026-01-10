@@ -27,3 +27,5 @@ pub struct TerminalSessions(pub Mutex<HashMap<String, TerminalSession>>);
 pub struct AppLogState {
     pub app_log: PathBuf,
 }
+
+pub struct AppLanguageState(pub Mutex<Option<String>>);

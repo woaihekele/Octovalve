@@ -12,7 +12,7 @@ use crate::services::console_sidecar::{start_console, stop_console};
 use crate::services::console_ws::start_console_stream as start_console_stream_service;
 use crate::services::logging::append_log_line;
 use crate::services::startup_check;
-use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
+use crate::state::{AppLanguageState, AppLogState, ProfilesState, ProxyConfigState};
 use crate::types::{LogChunk, StartupCheckResult};
 
 fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -139,6 +139,19 @@ pub async fn log_ui_event(message: String, state: State<'_, AppLogState>) -> Res
     tauri::async_runtime::spawn_blocking(move || append_log_line(&log_path, &message))
         .await
         .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn set_app_language(
+    language: String,
+    state: State<'_, AppLanguageState>,
+) -> Result<(), String> {
+    let normalized = match language.as_str() {
+        "zh-CN" | "en-US" => language,
+        _ => "en-US".to_string(),
+    };
+    *state.0.lock().unwrap() = Some(normalized);
+    Ok(())
 }
 
 #[tauri::command]
