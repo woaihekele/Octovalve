@@ -7,6 +7,7 @@ import type {
   ToolCall,
 } from '../types';
 import type { TargetInfo } from '../../../shared/types';
+import { buildMcpTools } from '../../../shared/mcpTools';
 import {
   buildPromptBlocks,
   toDisplayFiles,
@@ -502,49 +503,7 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
   }
 
   function buildOpenaiTools(targets: string[], defaultTarget?: string) {
-    const targetProperty: Record<string, unknown> = {
-      type: 'string',
-      description: 'Target name defined in octovalve-proxy config.',
-    };
-    if (targets.length > 0) {
-      targetProperty.enum = targets;
-    }
-    if (defaultTarget) {
-      targetProperty.default = defaultTarget;
-    }
-    const baseTools = [
-      {
-        type: 'function',
-        function: {
-          name: 'run_command',
-          description: 'Run a command on the specified target via octovalve.',
-          parameters: {
-            type: 'object',
-            properties: {
-              command: { type: 'string', description: 'Command to execute.' },
-              target: targetProperty,
-            },
-            required: ['command'],
-          },
-        },
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'run_command_in_shell',
-          description: 'Run a command via shell on the specified target via octovalve.',
-          parameters: {
-            type: 'object',
-            properties: {
-              command: { type: 'string', description: 'Command to execute.' },
-              target: targetProperty,
-            },
-            required: ['command'],
-          },
-        },
-      },
-    ];
-    return baseTools;
+    return buildMcpTools(targets, defaultTarget);
   }
 
   async function refreshOpenaiTools(targets: TargetInfo[]) {
