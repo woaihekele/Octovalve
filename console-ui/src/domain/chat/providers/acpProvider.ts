@@ -258,7 +258,19 @@ export function createAcpProvider(context: AcpProviderContext, deps: AcpProvider
     context.sessions.value = context.sessions.value.filter((session) => session.provider !== 'acp');
     if (context.provider.value === 'acp') {
       context.activeSessionId.value = null;
-      context.createSession();
+      const newSession = context.createSession();
+      if (context.acpInitialized.value) {
+        try {
+          const cwd = context.acpCwd.value ?? '.';
+          const info = await deps.acpService.newSession(cwd);
+          newSession.acpSessionId = info.sessionId;
+          context.acpLoadedSessionId.value = info.sessionId;
+          newSession.updatedAt = Date.now();
+        } catch (e) {
+          console.warn('[acpProvider] clear sessions: new session failed:', e);
+          context.setError(`Failed to create ACP session: ${e}`);
+        }
+      }
     } else if (
       context.activeSessionId.value &&
       !context.sessions.value.find((s) => s.id === context.activeSessionId.value)

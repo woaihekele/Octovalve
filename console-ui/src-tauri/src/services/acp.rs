@@ -152,8 +152,6 @@ fn build_mcp_cli_override(proxy_bin: &Path, proxy_config: &Path) -> Result<Strin
     let args = vec![
         format_config_literal("--config")?,
         format_config_literal(config_value.as_ref())?,
-        format_config_literal("--exec-mode")?,
-        format_config_literal("console")?,
         format_config_literal("--command-addr")?,
         format_config_literal(DEFAULT_COMMAND_ADDR)?,
     ];
@@ -168,8 +166,6 @@ fn build_mcp_servers(proxy_bin: &Path, proxy_config: &Path) -> Vec<serde_json::V
     let args = vec![
         "--config".to_string(),
         proxy_config.to_string_lossy().to_string(),
-        "--exec-mode".to_string(),
-        "console".to_string(),
         "--command-addr".to_string(),
         DEFAULT_COMMAND_ADDR.to_string(),
     ];
@@ -239,9 +235,28 @@ pub async fn acp_start(
         );
         e
     })?;
+    let _ = append_log_line(
+        &log_path,
+        &format!(
+            "[acp_start] proxy_bin={} proxy_config={}",
+            proxy_bin.display(),
+            proxy_config_path.display()
+        ),
+    );
     let mcp_servers = build_mcp_servers(&proxy_bin, &proxy_config_path);
+    let _ = append_log_line(
+        &log_path,
+        &format!(
+            "[acp_start] mcp_servers={}",
+            serde_json::to_string(&mcp_servers).unwrap_or_else(|_| "<error>".to_string())
+        ),
+    );
     let mut acp_args = parse_acp_args(acp_args)?;
     let mcp_override = build_mcp_cli_override(&proxy_bin, &proxy_config_path)?;
+    let _ = append_log_line(
+        &log_path,
+        &format!("[acp_start] mcp_override={}", mcp_override),
+    );
     acp_args.push("-c".to_string());
     acp_args.push(mcp_override);
     let cli_config = build_cli_config(acp_args)?;
@@ -297,6 +312,11 @@ pub async fn acp_authenticate(app: AppHandle, method_id: String) -> Result<(), S
 }
 
 pub async fn acp_new_session(app: AppHandle, cwd: String) -> Result<AcpSessionInfo, String> {
+    let log_path = app.state::<AppLogState>().app_log.clone();
+    let _ = append_log_line(
+        &log_path,
+        &format!("[acp_new_session] called with cwd: {}", cwd),
+    );
     let resolved_cwd = resolve_acp_cwd(&app, &cwd)?;
     let client = {
         let state = app.state::<AcpClientState>();
@@ -306,7 +326,14 @@ pub async fn acp_new_session(app: AppHandle, cwd: String) -> Result<AcpSessionIn
     let result = client
         .new_session(&resolved_cwd.to_string_lossy())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let _ = append_log_line(&log_path, &format!("[acp_new_session] error: {}", e));
+            e.to_string()
+        })?;
+    let _ = append_log_line(
+        &log_path,
+        &format!("[acp_new_session] session_id={}", result.session_id),
+    );
     Ok(AcpSessionInfo {
         session_id: result.session_id,
         modes: vec![],
@@ -382,12 +409,50 @@ pub async fn acp_prompt(
 }
 
 pub async fn acp_cancel(app: AppHandle) -> Result<(), String> {
+    let log_path = app.state::<AppLogState>().app_log.clone();
+    let _ = append_log_line(&log_path, "[acp_cancel] request interrupt");
     let client = {
         let state = app.state::<AcpClientState>();
         let guard = state.0.lock().await;
         guard.as_ref().cloned().ok_or("ACP client not started")?
     };
-    client.cancel().await.map_err(|e| e.to_string())
+    client.cancel().await.map_err(|e| {
+        let _ = append_log_line(&log_path, &format!("[acp_cancel] error: {}", e));
+        e.to_string()
+    })?;
+    let _ = append_log_line(&log_path, "[acp_cancel] interrupt sent");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn mcp_override_does_not_include_exec_mode() {
+        let proxy_bin = PathBuf::from("/tmp/octovalve-proxy");
+        let proxy_config = PathBuf::from("/tmp/local-proxy-config.toml");
+        let value = build_mcp_cli_override(&proxy_bin, &proxy_config).unwrap();
+        assert!(value.contains("mcp_servers.octovalve="));
+        assert!(value.contains("--command-addr"));
+        assert!(!value.contains("exec-mode"));
+    }
+
+    #[test]
+    fn mcp_servers_args_exclude_exec_mode() {
+        let proxy_bin = PathBuf::from("/tmp/octovalve-proxy");
+        let proxy_config = PathBuf::from("/tmp/local-proxy-config.toml");
+        let servers = build_mcp_servers(&proxy_bin, &proxy_config);
+        let args = servers[0].get("args").and_then(|value| value.as_array()).unwrap();
+        let args_text = args
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(args_text.contains("--command-addr"));
+        assert!(!args_text.contains("exec-mode"));
+    }
 }
 
 pub async fn acp_stop(state: State<'_, AcpClientState>) -> Result<(), String> {
