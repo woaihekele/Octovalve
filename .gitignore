@@ -9,3 +9,5 @@ gen/
 .windsurf/
 console-ui/src-tauri/remote-broker/
 console-ui/src-tauri/resources/
+websitie/
+websitie-gh-pages/
