@@ -1,21 +1,20 @@
-# Octovalve 远程命令代理
+# Octovalve 本地审批命令代理
 
-本项目提供本地 MCP stdio 代理与远端审批执行服务。模型只连接本地 stdio，本地代理自动维护 SSH 隧道，将
-`run_command` 请求转发至对应远端，远端在 TUI 中人工审批后执行并返回结果。可选的 `console` 服务用于
-自动引导远端 `remote-broker` 并聚合多目标状态（为后续前端 UI 做准备）。
+本项目提供本地 MCP stdio 代理与本地审批执行服务。模型只连接本地 stdio，`octovalve-proxy`
+将 `run_command` 请求转发给本地 `console`，由 console 进行人工审批并通过 SSH 在目标机器执行，
+再将结果返回给 MCP client。
 
 ## 组件
-- octovalve-proxy：MCP stdio server，提供 `run_command` 工具并转发请求（内置 SSH 隧道管理）。
-- remote-broker：TUI 审批服务，人工确认后执行命令并返回结果。
-- console：本地控制服务，自动启动/同步远端 `remote-broker`，提供 HTTP 控制接口（内置 SSH 隧道管理）。
-- protocol：本地与远端共享的请求/响应结构体。
+- octovalve-proxy：MCP stdio server，提供 `run_command` 工具并转发请求。
+- console：本地审批/执行服务，维护目标状态并通过 SSH 执行命令。
+- protocol：本地组件间共享的请求/响应结构体。
+- console-ui：可选的本地控制台 UI（Tauri + Vue）。
 
 ## 环境要求
 - Rust 1.88（见 `rust-toolchain.toml`）。
-- 可选：`zig` + `cargo-zigbuild`（本机是 macOS，但远端是 Linux 时用来跨平台构建 `remote-broker`）。
 
-## 快速开始（推荐：console 自动引导）
-1) 在本地准备 `config/config.toml`（console 会自动同步到远端）：
+## 快速开始
+1) 准备审批规则配置（whitelist/limits）：`config/config.toml`
 
 ```toml
 auto_approve_allowed = true
@@ -46,19 +45,7 @@ timeout_secs = 30
 max_output_bytes = 1048576
 ```
 
-2) 构建远端可执行文件：
-
-```bash
-# 如果本机与远端同为 Linux：
-cargo build -p remote-broker --release
-
-# macOS -> Linux（CentOS 7 等）：推荐使用 musl 交叉编译
-cargo install cargo-zigbuild
-zig version
-cargo zigbuild -p remote-broker --release --target x86_64-unknown-linux-musl
-```
-
-3) 在本地准备 `octovalve-proxy` 配置（示例见 `config/local-proxy-config.toml`）：
+2) 准备目标配置（示例见 `config/local-proxy-config.toml`）：
 
 ```toml
 default_target = "example-target"
@@ -66,11 +53,8 @@ default_target = "example-target"
 [defaults]
 timeout_ms = 30000
 max_output_bytes = 1048576
-local_bind = "127.0.0.1"
-remote_addr = "127.0.0.1:19307"
 # terminal_locale = "zh_CN.UTF-8"
-# console 默认使用 control 端口 = remote_addr + 1（即 19308）
-# control_local_port 默认使用 local_port + 100（例如 19311 -> 19411）
+# ssh_args = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
 
 [[targets]]
 name = "example-target"
@@ -78,41 +62,27 @@ desc = "主开发机"
 ssh = "devops@192.168.2.162"
 # ssh_password = "你的密码"
 # tty = true
-local_port = 19311
-
-[[targets]]
-name = "dev163"
-desc = "备用开发机"
-ssh = "devops@192.168.2.163"
-# tty = true
-local_port = 19312
 ```
 
-4) 启动 console（会自动同步/启动远端 `remote-broker`）：
+3) 启动 console（本地审批 + SSH 执行）：
 
 ```bash
-# 使用 Linux musl 二进制时：
 cargo run -p console -- \
   --config config/local-proxy-config.toml \
-  --broker-bin target/x86_64-unknown-linux-musl/release/remote-broker
-
-# 同平台时可直接使用 target/release/remote-broker
+  --broker-config config/config.toml
 ```
 
-console 默认监听 `127.0.0.1:19309`，并将远端部署到 `~/.octovalve`：
-- 远端二进制：`~/.octovalve/remote-broker`
-- 远端配置：`~/.octovalve/config.toml`
-- 远端日志：`~/.octovalve/remote-broker.log`
-- 审计目录：`~/.octovalve/logs`
-- console 退出时会尝试停止对应远端 `remote-broker`。
+console 默认监听：
+- HTTP/WS：`127.0.0.1:19309`
+- 命令通道：`127.0.0.1:19310`
 
-5) 启动本地代理（自动建立并维持隧道）：
+4) 启动本地代理：
 
 ```bash
 cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
 ```
 
-6) 将 MCP 客户端配置指向 `octovalve-proxy`（stdio 模式）。
+5) 将 MCP 客户端配置指向 `octovalve-proxy`（stdio 模式）。
 
 Codex CLI 示例（`~/.codex/config.toml`）：
 
@@ -133,17 +103,6 @@ args = ["run", "-p", "octovalve-proxy", "--",
         "--config", "~/.octovalve/local-proxy-config.toml",
         "--client-id", "codex-1"]
 env = { RUST_LOG = "info" }
-```
-
-## 手动启动 remote-broker（不使用 console）
-在远端运行：
-
-```bash
-cargo run -p remote-broker -- \
-  --listen-addr 127.0.0.1:19307 \
-  --control-addr 127.0.0.1:19308 \
-  --config config/config.toml \
-  --audit-dir logs
 ```
 
 ## run_command 参数
@@ -172,7 +131,7 @@ cargo run -p remote-broker -- \
 - `ps -ef`、`uname -a`、`df -h`、`free -m`
 
 ## list_targets
-返回本地配置的目标列表，包含 `name/desc/last_seen/ssh/remote_addr/local_addr`。
+返回本地配置的目标列表，包含 `name/desc/last_seen/ssh/status/last_error`。
 
 ## Console API（可选）
 - `GET /health`：健康检查
@@ -183,13 +142,8 @@ cargo run -p remote-broker -- \
   - `targets_snapshot`：初始全量目标列表
   - `target_updated`：单目标状态更新
 
-## 内置隧道管理
-octovalve-proxy 与 console 内置 SSH 隧道管理，无需单独启动 tunnel-daemon。
-
-默认控制 socket 目录：console 为 `~/.octovalve/tunnel-control/console`，octovalve-proxy 为 `~/.octovalve/tunnel-control/proxy`，可通过 `--tunnel-control-dir` 覆盖。
-
 ## Console UI（Tauri）
-可选的本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
+本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
 
 准备环境：
 - Node.js + npm
@@ -206,18 +160,11 @@ npm run tauri dev
 npm run tauri:build:dmg
 ```
 
-说明：
-- `tauri.bundle.active` 默认关闭，打包需使用 `tauri:build:dmg`。
-- 构建前会自动编译 console/remote-broker 并准备 sidecar。
-- DMG 构建会额外准备 Linux x86_64 版 `remote-broker`，用于同步到远端。
-  - 需要安装 `cargo-zigbuild` 与 `zig`，或设置：
-    - `OCTOVALVE_LINUX_BROKER_X86_64=/path/to/remote-broker`
-
 运行时说明：
-- 应用启动会自动拉起 console（内置隧道管理，Linux 版 remote-broker 作为资源打包）。
+- 应用启动会自动拉起 console（sidecar）。
 - 首次启动会在 `~/.octovalve/` 生成 `local-proxy-config.toml.example`。
   - 复制为 `local-proxy-config.toml` 并修改后重启应用。
-- `remote-broker-config.toml` 仍保存在应用配置目录（console 启动时生成）。
+- `remote-broker-config.toml` 仍保存在应用配置目录（用于审批规则配置）。
   - macOS 默认路径：`~/Library/Application Support/com.octovalve.console/`
 
 ## 密码登录说明
@@ -226,65 +173,35 @@ console/octovalve-proxy 会通过 `SSH_ASKPASS` 临时脚本（`~/.octovalve/ssh
 如果服务器要求 keyboard-interactive/2FA，SSH_ASKPASS 无法完成交互认证，请改用 SSH key 或调整认证方式。
 
 ## CLI 选项
-remote-broker：
-- `--listen-addr`（默认：`127.0.0.1:19307`）
-- `--control-addr`（默认：`127.0.0.1:19308`）
-- `--config`（默认：`config/config.toml`）
-- `--audit-dir`（默认：`logs`）
-- `--auto-approve`（默认：关闭，自动批准并跳过 TUI）
-- `--log-to-stderr`（默认：关闭，TUI 模式建议保持关闭）
-- `--headless`（默认：关闭，关闭 TUI 但保留审批与控制通道）
-- `--idle-exit-secs`（默认：`60`，无控制/数据连接持续该时长后退出，设为 `0` 关闭）
-
 octovalve-proxy：
 - `--config`（默认：`config/local-proxy-config.toml`）
 - `--client-id`（默认：`octovalve-proxy`）
+- `--command-addr`（默认：`127.0.0.1:19310`）
 - `--timeout-ms`（默认：`30000`）
 - `--max-output-bytes`（默认：`1048576`）
-- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control/proxy`）
 
 console：
 - `--config`（目标配置，沿用 `config/local-proxy-config.toml`）
 - `--listen-addr`（默认：`127.0.0.1:19309`）
-- `--broker-bin`（要同步到远端的 `remote-broker` 路径）
-- `--broker-bin-linux-x86_64`（远端为 Linux x86_64 时使用的 `remote-broker` 路径）
-- `--broker-config`（要同步到远端的配置，默认 `config/config.toml`）
-- `--remote-dir`（远端目录，默认 `~/.octovalve`）
-- `--remote-listen-addr`（默认：`127.0.0.1:19307`）
-- `--remote-control-addr`（默认：`127.0.0.1:19308`）
-- `--remote-audit-dir`（默认：`~/.octovalve/logs`）
-- `--tunnel-control-dir`（默认：`~/.octovalve/tunnel-control/console`）
-
-## TUI 操作
-- 左侧为上下两栏：`Pending/History`（历史默认保留最近 50 条）。
-- 快捷键（非全屏）：
-  - `A` 批准执行（仅 Pending）
-  - `D` 拒绝（仅 Pending）
-  - `Tab` 切换焦点（Pending/History）
-  - `R` 进入结果全屏
-  - `Q` 退出（二次确认）
-- 全屏结果滚动：
-  - `j/k` 上下滚动，`gg/G` 顶/底
-  - `Ctrl+f/b` 翻页
-  - `R` 或 `Esc` 退出全屏
+- `--command-listen-addr`（默认：`127.0.0.1:19310`）
+- `--broker-config`（审批规则配置，默认 `config/config.toml`）
+- `--local-audit-dir`（本地审计目录，默认 `~/.octovalve/logs/local`）
+- `--log-to-stderr`（默认：关闭）
 
 ## 安全说明
-- 无内置认证，请确保远端服务仅监听 `127.0.0.1`，由本地代理通过 SSH 隧道访问。
-- SSH 连接由 console/octovalve-proxy 内置管理并使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
-- `--auto-approve` 与 TUI 手动审批均只会硬拒绝 `denied` 列表中的命令。
+- 无内置认证，请确保 console 仅监听 `127.0.0.1`。
+- SSH 连接使用 `BatchMode=yes`，避免交互式口令阻塞；如需首次连接自动接受主机指纹，可在 `ssh_args` 中加入 `StrictHostKeyChecking=accept-new`。
 - 仅支持 `shell` 模式（`/bin/bash -lc`）。
 - 建议使用非 root 用户运行并关注审计日志。
 
 ## 输出保存
-每次请求都会在远端保存完整输出与请求/结果信息：
-- `logs/requests/<id>.request.json`
-- `logs/requests/<id>.result.json`
-- `logs/requests/<id>.stdout`
-- `logs/requests/<id>.stderr`
+每次请求都会在本地审计目录保存完整输出与请求/结果信息（默认：`~/.octovalve/logs/local/<target>`）：
+- `<id>.request.json`
+- `<id>.result.json`
+- `<id>.stdout`
+- `<id>.stderr`
 
 `request.json` 会包含 `intent`、`mode`、`raw_command`、`pipeline` 等完整请求字段。
-审计信息仍写入 `logs/audit.log`，包含请求元信息与命令。
-重启 `remote-broker` 会从 `logs/requests` 自动恢复最近的历史记录。
 
 ## 测试
 
@@ -292,4 +209,3 @@ console：
 cargo test
 ```
 
-- 实施计划：`docs/implementation-plan.md`

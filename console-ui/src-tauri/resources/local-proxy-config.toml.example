@@ -6,12 +6,12 @@
 # 3) Restart the Octovalve app.
 #
 # Notes:
-# - This config defines how the console connects to remote brokers via SSH.
+# - This config defines SSH targets used by the local console executor.
 # - Prefer SSH key authentication; use ssh_password only if necessary.
-# - broker_config_path lets the console sidecar load a custom broker config file.
+# - broker_config_path lets the console sidecar load a custom rules config file.
 #   Supports absolute paths, "~", or paths relative to this file.
 
-# Optional broker config path override.
+# Optional rules config path override.
 # broker_config_path = "~/.octovalve/remote-broker-config.toml"
 
 # Default target name used when no target is specified explicitly.
@@ -22,16 +22,12 @@ default_target = "example"
 timeout_ms = 30000
 # Maximum bytes returned for stdout/stderr.
 max_output_bytes = 1048576
-# Local bind address for forwarded ports.
-local_bind = "127.0.0.1"
-# Remote broker listen address on the target machine.
-remote_addr = "127.0.0.1:19307"
-# Remote broker control channel address on the target machine.
-control_remote_addr = "127.0.0.1:19308"
 # Extra SSH options applied to every target.
 ssh_args = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
 # Optional SSH password (prefer key-based auth).
 # ssh_password = "password"
+# Optional locale injected into the remote shell.
+# terminal_locale = "zh_CN.UTF-8"
 
 [[targets]]
 # Unique target name used in the UI and CLI.
@@ -43,14 +39,9 @@ ssh = "user@host"
 # Optional explicit host metadata.
 # hostname = "host"
 # ip = "1.2.3.4"
-# Local forwarded port for the broker data channel.
-local_port = 19311
-# Local forwarded port for the broker control channel.
-control_local_port = 19411
+# Execute in PTY mode (merges stdout/stderr).
+# tty = true
 # Optional per-target overrides.
-# remote_addr = "127.0.0.1:19307"
-# control_remote_addr = "127.0.0.1:19308"
-# local_bind = "127.0.0.1"
-# control_local_bind = "127.0.0.1"
 # ssh_args = ["-i", "/path/to/key"]
 # ssh_password = "password"
+# terminal_locale = "en_US.UTF-8"

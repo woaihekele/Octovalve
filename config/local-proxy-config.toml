@@ -3,18 +3,18 @@ default_target = "example-target"
 [defaults]
 timeout_ms = 30000
 max_output_bytes = 1048576
-local_bind = "127.0.0.1"
-remote_addr = "127.0.0.1:19307"
+# terminal_locale = "zh_CN.UTF-8"
+# ssh_args = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
 
 [[targets]]
 name = "example-target"
 desc = "主开发机"
 ssh = "devops@192.168.2.162"
 # ssh_password = "你的密码"
-local_port = 19311
+# tty = true
 
 [[targets]]
 name = "dev163"
 desc = "备用开发机"
 ssh = "devops@192.168.2.163"
-local_port = 19312
+# tty = true
