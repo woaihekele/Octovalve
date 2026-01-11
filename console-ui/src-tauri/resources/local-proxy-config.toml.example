@@ -34,11 +34,8 @@ ssh_args = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
 name = "example"
 # Description shown in the UI.
 desc = "Example target (replace with your machine)"
-# SSH user and host.
+# SSH user and host (required).
 ssh = "user@host"
-# Optional explicit host metadata.
-# hostname = "host"
-# ip = "1.2.3.4"
 # Execute in PTY mode (merges stdout/stderr).
 # tty = true
 # Optional per-target overrides.

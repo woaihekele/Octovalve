@@ -64,6 +64,8 @@ ssh = "devops@192.168.2.162"
 # tty = true
 ```
 
+说明：`ssh` 必须包含用户名（`user@host`），不会自动填默认用户。
+
 3) 启动 console（本地审批 + SSH 执行）：
 
 ```bash
