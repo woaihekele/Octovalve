@@ -23,7 +23,6 @@ mod tests {
 [[targets]]
 name = "dev"
 ssh = "devops@127.0.0.1"
-local_port = 19311
 "#;
         let parsed: Result<ProxyConfig, _> = toml::from_str(input);
         assert!(parsed.is_err());

@@ -5,9 +5,6 @@ pub(crate) use protocol::config::{
 use std::path::PathBuf;
 use tracing::warn;
 
-const DEFAULT_REMOTE_ADDR: &str = "127.0.0.1:19307";
-const DEFAULT_CONTROL_REMOTE_ADDR: &str = "127.0.0.1:19308";
-
 pub(crate) fn load_console_config(path: &PathBuf) -> anyhow::Result<ConsoleConfig> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read config {}", path.display()))?;
@@ -17,12 +14,4 @@ pub(crate) fn load_console_config(path: &PathBuf) -> anyhow::Result<ConsoleConfi
         warn!("config has no targets; console will start without workers");
     }
     Ok(config)
-}
-
-pub(crate) fn default_remote_addr() -> String {
-    DEFAULT_REMOTE_ADDR.to_string()
-}
-
-pub(crate) fn default_control_remote_addr() -> String {
-    DEFAULT_CONTROL_REMOTE_ADDR.to_string()
 }

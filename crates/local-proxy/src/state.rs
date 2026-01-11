@@ -1,21 +1,16 @@
-use crate::cli::{Args, ExecMode};
+use crate::cli::Args;
 use crate::config::{load_proxy_config, ProxyConfig};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::SystemTime;
-use tunnel_manager::{TunnelManager, TunnelTargetSpec};
-use tunnel_protocol::{ForwardPurpose, ForwardSpec};
-
-const DEFAULT_REMOTE_ADDR: &str = "127.0.0.1:19307";
-const DEFAULT_BIND_HOST: &str = "127.0.0.1";
 
 pub(crate) struct ProxyRuntimeDefaults {
     pub(crate) timeout_ms: u64,
     pub(crate) max_output_bytes: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum TargetStatus {
     Ready,
     Down,
@@ -27,10 +22,6 @@ pub(crate) struct TargetRuntime {
     pub(crate) ssh: Option<String>,
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
-    pub(crate) remote_addr: String,
-    pub(crate) local_bind: Option<String>,
-    pub(crate) local_port: Option<u16>,
-    pub(crate) local_addr: String,
     pub(crate) status: TargetStatus,
     pub(crate) last_seen: Option<SystemTime>,
     pub(crate) last_error: Option<String>,
@@ -40,8 +31,6 @@ pub(crate) struct ProxyState {
     targets: HashMap<String, TargetRuntime>,
     target_order: Vec<String>,
     default_target: Option<String>,
-    tunnel_manager: Option<Arc<TunnelManager>>,
-    exec_mode: ExecMode,
     command_addr: String,
 }
 
@@ -51,8 +40,8 @@ pub(crate) struct TargetListEntry {
     pub(crate) desc: String,
     pub(crate) last_seen: Option<String>,
     pub(crate) ssh: Option<String>,
-    pub(crate) remote_addr: String,
-    pub(crate) local_addr: String,
+    pub(crate) status: TargetStatus,
+    pub(crate) last_error: Option<String>,
 }
 
 impl ProxyState {
@@ -60,30 +49,15 @@ impl ProxyState {
         self.target_order.clone()
     }
 
-    pub(crate) fn set_tunnel_manager(&mut self, manager: Option<Arc<TunnelManager>>) {
-        self.tunnel_manager = manager;
-    }
-
-    pub(crate) fn tunnel_manager(&self) -> Option<Arc<TunnelManager>> {
-        self.tunnel_manager.clone()
-    }
-
     pub(crate) fn default_target(&self) -> Option<String> {
         self.default_target.clone()
     }
 
     pub(crate) fn target_addr(&self, name: &str) -> anyhow::Result<String> {
-        if matches!(self.exec_mode, ExecMode::Console) {
-            if !self.targets.contains_key(name) {
-                return Err(anyhow::anyhow!("unknown target: {name}"));
-            }
-            return Ok(self.command_addr.clone());
+        if !self.targets.contains_key(name) {
+            return Err(anyhow::anyhow!("unknown target: {name}"));
         }
-        let target = self
-            .targets
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("unknown target: {name}"))?;
-        Ok(target.local_addr.clone())
+        Ok(self.command_addr.clone())
     }
 
     pub(crate) fn list_targets(&mut self) -> Vec<TargetListEntry> {
@@ -95,86 +69,10 @@ impl ProxyState {
                 desc: target.desc.clone(),
                 last_seen: target.last_seen.map(format_time),
                 ssh: target.ssh.clone(),
-                remote_addr: if matches!(self.exec_mode, ExecMode::Console) {
-                    self.command_addr.clone()
-                } else {
-                    target.remote_addr.clone()
-                },
-                local_addr: if matches!(self.exec_mode, ExecMode::Console) {
-                    self.command_addr.clone()
-                } else {
-                    target.local_addr.clone()
-                },
+                status: target.status,
+                last_error: target.last_error.clone(),
             })
             .collect()
-    }
-
-    pub(crate) fn forward_spec(&self, name: &str) -> anyhow::Result<Option<ForwardSpec>> {
-        if matches!(self.exec_mode, ExecMode::Console) {
-            return Ok(None);
-        }
-        let target = self
-            .targets
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("unknown target: {name}"))?;
-        if target.ssh.is_none() {
-            return Ok(None);
-        }
-        let bind = target
-            .local_bind
-            .clone()
-            .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
-        let port = target
-            .local_port
-            .ok_or_else(|| anyhow::anyhow!("missing local_port for target {name}"))?;
-        Ok(Some(ForwardSpec {
-            target: target.name.clone(),
-            purpose: ForwardPurpose::Data,
-            local_bind: bind,
-            local_port: port,
-            remote_addr: target.remote_addr.clone(),
-        }))
-    }
-
-    pub(crate) fn tunnel_targets(&self) -> Vec<TunnelTargetSpec> {
-        if matches!(self.exec_mode, ExecMode::Console) {
-            return Vec::new();
-        }
-        self.target_order
-            .iter()
-            .filter_map(|name| self.targets.get(name))
-            .filter_map(|target| {
-                let ssh = target.ssh.clone()?;
-                let Some(local_port) = target.local_port else {
-                    return None;
-                };
-                let local_bind = target
-                    .local_bind
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
-                let forward = ForwardSpec {
-                    target: target.name.clone(),
-                    purpose: ForwardPurpose::Data,
-                    local_bind,
-                    local_port,
-                    remote_addr: target.remote_addr.clone(),
-                };
-                Some(TunnelTargetSpec {
-                    name: target.name.clone(),
-                    ssh,
-                    ssh_args: target.ssh_args.clone(),
-                    ssh_password: target.ssh_password.clone(),
-                    allowed_forwards: vec![forward],
-                })
-            })
-            .collect()
-    }
-
-    pub(crate) fn note_tunnel_ready(&mut self, name: &str) {
-        if let Some(target) = self.targets.get_mut(name) {
-            target.status = TargetStatus::Ready;
-            target.last_error = None;
-        }
     }
 
     pub(crate) fn note_success(&mut self, name: &str) {
@@ -207,14 +105,7 @@ fn build_state_from_config(
     config: ProxyConfig,
 ) -> anyhow::Result<(ProxyState, ProxyRuntimeDefaults)> {
     let defaults = config.defaults.unwrap_or_default();
-    let exec_mode = args.exec_mode;
     let command_addr = args.command_addr.clone();
-    let default_remote = defaults
-        .remote_addr
-        .unwrap_or_else(|| DEFAULT_REMOTE_ADDR.to_string());
-    let default_bind = defaults
-        .local_bind
-        .unwrap_or_else(|| DEFAULT_BIND_HOST.to_string());
 
     let timeout_ms = defaults.timeout_ms.unwrap_or(args.timeout_ms);
     let max_output_bytes = defaults.max_output_bytes.unwrap_or(args.max_output_bytes);
@@ -240,29 +131,6 @@ fn build_state_from_config(
                 );
             }
         }
-        let remote_addr = if matches!(exec_mode, ExecMode::Console) {
-            command_addr.clone()
-        } else {
-            target.remote_addr.unwrap_or_else(|| default_remote.clone())
-        };
-        let local_bind = target.local_bind.unwrap_or_else(|| default_bind.clone());
-        let local_port = if matches!(exec_mode, ExecMode::Remote) && target.ssh.is_some() {
-            Some(
-                target
-                    .local_port
-                    .ok_or_else(|| anyhow::anyhow!("target {} missing local_port", target.name))?,
-            )
-        } else {
-            target.local_port
-        };
-        let local_addr = if matches!(exec_mode, ExecMode::Console) {
-            command_addr.clone()
-        } else if let Some(port) = local_port {
-            format!("{local_bind}:{port}")
-        } else {
-            remote_addr.clone()
-        };
-
         let mut ssh_args = defaults.ssh_args.clone().unwrap_or_default();
         if let Some(extra) = target.ssh_args {
             ssh_args.extend(extra);
@@ -277,27 +145,13 @@ fn build_state_from_config(
             );
         }
 
-        let status = if matches!(exec_mode, ExecMode::Console) {
-            TargetStatus::Ready
-        } else if target.ssh.is_none() {
-            TargetStatus::Ready
-        } else {
-            TargetStatus::Down
-        };
+        let status = TargetStatus::Ready;
         let runtime = TargetRuntime {
             name: target.name.clone(),
             desc: target.desc,
             ssh: target.ssh,
             ssh_args,
             ssh_password,
-            remote_addr,
-            local_bind: if matches!(exec_mode, ExecMode::Remote) {
-                local_port.map(|_| local_bind)
-            } else {
-                None
-            },
-            local_port,
-            local_addr,
             status,
             last_seen: None,
             last_error: None,
@@ -317,8 +171,6 @@ fn build_state_from_config(
         targets,
         target_order: order,
         default_target: config.default_target,
-        tunnel_manager: None,
-        exec_mode,
         command_addr,
     };
 
@@ -332,25 +184,22 @@ fn build_state_from_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::ExecMode;
     use protocol::config::TargetConfig;
     use std::path::PathBuf;
 
-    fn base_args(exec_mode: ExecMode) -> Args {
+    fn base_args() -> Args {
         Args {
             config: PathBuf::from("config.toml"),
             client_id: "proxy".to_string(),
-            exec_mode,
             command_addr: "127.0.0.1:19310".to_string(),
-            tunnel_control_dir: "~/.octovalve/tunnel-control/proxy".to_string(),
             timeout_ms: 30_000,
             max_output_bytes: 1024 * 1024,
         }
     }
 
     #[test]
-    fn console_mode_allows_missing_local_port() {
-        let args = base_args(ExecMode::Console);
+    fn resolves_target_addr_to_command_addr() {
+        let args = base_args();
         let config = ProxyConfig {
             default_target: None,
             defaults: None,
@@ -360,53 +209,15 @@ mod tests {
                 hostname: None,
                 ip: None,
                 ssh: Some("devops@127.0.0.1".to_string()),
-                remote_addr: None,
-                local_port: None,
-                local_bind: None,
                 ssh_args: None,
                 ssh_password: None,
                 terminal_locale: None,
                 tty: false,
-                control_remote_addr: None,
-                control_local_port: None,
-                control_local_bind: None,
             }],
         };
         let (mut state, _) = build_state_from_config(&args, config).expect("state");
         assert_eq!(state.target_addr("dev").expect("addr"), "127.0.0.1:19310");
-        assert!(state.forward_spec("dev").expect("forward").is_none());
-        assert!(state.tunnel_targets().is_empty());
         let targets = state.list_targets();
-        assert_eq!(targets[0].local_addr, "127.0.0.1:19310");
-    }
-
-    #[test]
-    fn remote_mode_requires_local_port_for_ssh() {
-        let args = base_args(ExecMode::Remote);
-        let config = ProxyConfig {
-            default_target: None,
-            defaults: None,
-            targets: vec![TargetConfig {
-                name: "dev".to_string(),
-                desc: "dev".to_string(),
-                hostname: None,
-                ip: None,
-                ssh: Some("devops@127.0.0.1".to_string()),
-                remote_addr: None,
-                local_port: None,
-                local_bind: None,
-                ssh_args: None,
-                ssh_password: None,
-                terminal_locale: None,
-                tty: false,
-                control_remote_addr: None,
-                control_local_port: None,
-                control_local_bind: None,
-            }],
-        };
-        let err = build_state_from_config(&args, config)
-            .err()
-            .expect("expected error");
-        assert!(err.to_string().contains("missing local_port"));
+        assert_eq!(targets[0].status, TargetStatus::Ready);
     }
 }

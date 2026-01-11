@@ -878,10 +878,6 @@ mod tests {
             ssh_password: None,
             terminal_locale: Some("en_US.UTF-8".to_string()),
             tty: false,
-            control_remote_addr: "127.0.0.1:19308".to_string(),
-            control_local_bind: None,
-            control_local_port: None,
-            control_local_addr: None,
         }
     }
 
@@ -1059,10 +1055,6 @@ mod tests {
             ssh_password: None,
             terminal_locale: Some("en_US.utf8".to_string()),
             tty: false,
-            control_remote_addr: "127.0.0.1:19308".to_string(),
-            control_local_bind: None,
-            control_local_port: None,
-            control_local_addr: None,
         };
         let backup = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok();
         std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", "zh_CN.utf8");
@@ -1087,10 +1079,6 @@ mod tests {
             ssh_password: None,
             terminal_locale: None,
             tty: false,
-            control_remote_addr: "127.0.0.1:19308".to_string(),
-            control_local_bind: None,
-            control_local_port: None,
-            control_local_addr: None,
         };
         let backup = std::env::var("OCTOVALVE_TERMINAL_LOCALE").ok();
         std::env::set_var("OCTOVALVE_TERMINAL_LOCALE", "zh_CN.utf8");
@@ -1115,10 +1103,6 @@ mod tests {
             ssh_password: None,
             terminal_locale: None,
             tty: false,
-            control_remote_addr: "127.0.0.1:19308".to_string(),
-            control_local_bind: None,
-            control_local_port: None,
-            control_local_addr: None,
         };
         let backup = std::env::var("OCTOVALVE_APP_LANGUAGE").ok();
         std::env::set_var("OCTOVALVE_APP_LANGUAGE", "zh-CN");

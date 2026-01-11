@@ -1,4 +1,3 @@
-mod bootstrap;
 mod cli;
 mod config;
 mod control;
@@ -7,18 +6,14 @@ mod local_exec;
 mod runtime;
 mod state;
 mod terminal;
-mod tunnel;
 
-use crate::bootstrap::{bootstrap_remote_broker, stop_remote_broker, BootstrapConfig};
-use crate::cli::{Args, ExecMode};
+use crate::cli::Args;
 use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::local_exec::{spawn_local_exec, PolicyConfig};
-use crate::runtime::spawn_target_workers;
 use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
-use crate::tunnel::TargetRuntime;
 use anyhow::Context;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -41,20 +36,13 @@ use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
-use tunnel_manager::{TunnelManager, TunnelTargetSpec};
-use tunnel_protocol::{ForwardPurpose, ForwardSpec};
+use tracing::info;
 
 #[derive(Clone)]
 struct AppState {
     state: Arc<RwLock<crate::state::ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
-    bootstrap: BootstrapConfig,
-    tunnel_manager: Option<Arc<TunnelManager>>,
-    exec_mode: ExecMode,
 }
-
-const CONSOLE_TUNNEL_CLIENT_ID: &str = "console";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -64,58 +52,26 @@ async fn main() -> anyhow::Result<()> {
     info!(
         listen_addr = %args.listen_addr,
         config = %args.config.display(),
-        broker_bin = %args.broker_bin.display(),
-        broker_bin_linux_x86_64 = ?args.broker_bin_linux_x86_64,
-        exec_mode = ?args.exec_mode,
         command_listen_addr = %args.command_listen_addr,
         "console starting"
     );
     let config = load_console_config(&args.config)
         .with_context(|| format!("failed to load config {}", args.config.display()))?;
     let state = build_console_state(config)?;
-    let exec_mode = args.exec_mode.clone();
     let local_audit_dir = expand_tilde(&args.local_audit_dir);
-
-    let tunnel_targets = if matches!(exec_mode, ExecMode::Remote) {
-        build_tunnel_targets(&state)
-    } else {
-        Vec::new()
-    };
-
     let shutdown = CancellationToken::new();
-    let bootstrap = BootstrapConfig {
-        local_bin: args.broker_bin.clone(),
-        local_bin_linux_x86_64: args.broker_bin_linux_x86_64.clone(),
-        local_config: args.broker_config.clone(),
-        remote_dir: args.remote_dir.clone(),
-        remote_listen_addr: args.remote_listen_addr.clone(),
-        remote_control_addr: args.remote_control_addr.clone(),
-        remote_audit_dir: args.remote_audit_dir.clone(),
-    };
     let shared_state = Arc::new(RwLock::new(state));
     let (event_tx, _) = broadcast::channel(512);
     spawn_target_ip_resolution(Arc::clone(&shared_state), event_tx.clone());
-
-    let tunnel_manager = if matches!(exec_mode, ExecMode::Remote) && !tunnel_targets.is_empty() {
-        let control_dir = expand_tilde(&args.tunnel_control_dir);
-        Some(Arc::new(TunnelManager::new(tunnel_targets, control_dir)?))
-    } else {
-        None
-    };
     let app_state = AppState {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
-        bootstrap: bootstrap.clone(),
-        tunnel_manager: tunnel_manager.clone(),
-        exec_mode: exec_mode.clone(),
     };
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/targets", get(list_targets))
         .route("/targets/:name/snapshot", get(get_snapshot))
-        .route("/targets/reload-brokers", post(reload_remote_brokers))
-        .route("/tunnels/cleanup", post(cleanup_tunnels))
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
         .route("/targets/:name/cancel", post(cancel_command))
@@ -123,38 +79,21 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .with_state(app_state)
         .layer(middleware::from_fn(log_http_request));
-    let tunnel_manager_handle = tunnel_manager.clone();
-    let worker_handles = match exec_mode {
-        ExecMode::Remote => {
-            spawn_target_workers(
-                Arc::clone(&shared_state),
-                bootstrap,
-                shutdown.clone(),
-                event_tx,
-                tunnel_manager,
-                CONSOLE_TUNNEL_CLIENT_ID.to_string(),
-            )
-            .await
-        }
-        ExecMode::Local => {
-            let policy = PolicyConfig::load(&args.broker_config).with_context(|| {
-                format!("failed to load policy {}", args.broker_config.display())
-            })?;
-            let listen_addr = args.command_listen_addr.parse().with_context(|| {
-                format!("invalid command_listen_addr {}", args.command_listen_addr)
-            })?;
-            spawn_local_exec(
-                listen_addr,
-                policy,
-                local_audit_dir,
-                Arc::clone(&shared_state),
-                event_tx.clone(),
-            )
-            .await
-            .context("failed to start local exec server")?;
-            Vec::new()
-        }
-    };
+    let policy = PolicyConfig::load(&args.broker_config).with_context(|| {
+        format!("failed to load policy {}", args.broker_config.display())
+    })?;
+    let listen_addr = args.command_listen_addr.parse().with_context(|| {
+        format!("invalid command_listen_addr {}", args.command_listen_addr)
+    })?;
+    spawn_local_exec(
+        listen_addr,
+        policy,
+        local_audit_dir,
+        Arc::clone(&shared_state),
+        event_tx.clone(),
+    )
+    .await
+    .context("failed to start local exec server")?;
 
     let listener = TcpListener::bind(&args.listen_addr)
         .await
@@ -163,15 +102,8 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown(shutdown.clone()))
         .await?;
-    info!("console shutting down, waiting for workers");
+    info!("console shutting down");
     shutdown.cancel();
-    for handle in worker_handles {
-        let _ = handle.await;
-    }
-    if let Some(manager) = tunnel_manager_handle {
-        manager.shutdown().await;
-    }
-    info!("console workers stopped");
     Ok(())
 }
 
@@ -314,79 +246,6 @@ async fn cancel_command(
     }))
 }
 
-async fn reload_remote_brokers(
-    State(state): State<AppState>,
-) -> Result<Json<ActionResponse>, StatusCode> {
-    if matches!(state.exec_mode, ExecMode::Local) {
-        return Ok(Json(ActionResponse {
-            message: "exec_mode=local: remote broker reload skipped".to_string(),
-        }));
-    }
-    let targets = {
-        let state = state.state.read().await;
-        state.target_specs()
-    };
-    if targets.is_empty() {
-        return Ok(Json(ActionResponse {
-            message: "no targets to reload".to_string(),
-        }));
-    }
-    let bootstrap = state.bootstrap.clone();
-    let mut failures = Vec::new();
-    for spec in targets {
-        let runtime = runtime_from_spec(spec);
-        if let Err(err) = stop_remote_broker(&runtime, &bootstrap).await {
-            failures.push(format!("{} stop failed: {err}", runtime.name));
-        }
-        if let Err(err) = bootstrap_remote_broker(&runtime, &bootstrap).await {
-            failures.push(format!("{} start failed: {err}", runtime.name));
-        }
-    }
-    if failures.is_empty() {
-        Ok(Json(ActionResponse {
-            message: "remote brokers reloaded".to_string(),
-        }))
-    } else {
-        warn!(event = "remote_broker.reload_failed", errors = ?failures, "remote broker reload failed");
-        Err(StatusCode::SERVICE_UNAVAILABLE)
-    }
-}
-
-async fn cleanup_tunnels(
-    State(state): State<AppState>,
-) -> Result<Json<ActionResponse>, StatusCode> {
-    let manager = state.tunnel_manager.clone();
-    let Some(manager) = manager else {
-        return Ok(Json(ActionResponse {
-            message: "tunnel manager not active".to_string(),
-        }));
-    };
-    info!(
-        event = "tunnel.cleanup.requested",
-        "tunnel cleanup requested"
-    );
-    manager.shutdown().await;
-    info!(
-        event = "tunnel.cleanup.completed",
-        "tunnel cleanup completed"
-    );
-    Ok(Json(ActionResponse {
-        message: "tunnels cleaned".to_string(),
-    }))
-}
-
-fn runtime_from_spec(spec: crate::state::TargetSpec) -> TargetRuntime {
-    TargetRuntime {
-        name: spec.name,
-        ssh: spec.ssh,
-        ssh_args: spec.ssh_args,
-        ssh_password: spec.ssh_password,
-        control_remote_addr: spec.control_remote_addr,
-        control_local_bind: spec.control_local_bind,
-        control_local_port: spec.control_local_port,
-        control_local_addr: spec.control_local_addr,
-    }
-}
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_ws(socket, state))
@@ -459,38 +318,6 @@ async fn wait_for_shutdown(shutdown: CancellationToken) {
     let _ = tokio::signal::ctrl_c().await;
     info!("shutdown signal received");
     shutdown.cancel();
-}
-
-fn build_tunnel_targets(state: &ConsoleState) -> Vec<TunnelTargetSpec> {
-    state
-        .target_specs()
-        .into_iter()
-        .filter_map(|target| {
-            let ssh = target.ssh.clone()?;
-            let Some(local_bind) = target.control_local_bind.clone() else {
-                warn!(target = %target.name, "missing control_local_bind; skipping tunnel target");
-                return None;
-            };
-            let Some(local_port) = target.control_local_port else {
-                warn!(target = %target.name, "missing control_local_port; skipping tunnel target");
-                return None;
-            };
-            let allowed_forwards = vec![ForwardSpec {
-                target: target.name.clone(),
-                purpose: ForwardPurpose::Control,
-                local_bind,
-                local_port,
-                remote_addr: target.control_remote_addr.clone(),
-            }];
-            Some(TunnelTargetSpec {
-                name: target.name,
-                ssh,
-                ssh_args: target.ssh_args,
-                ssh_password: target.ssh_password,
-                allowed_forwards,
-            })
-        })
-        .collect()
 }
 
 fn spawn_target_ip_resolution(

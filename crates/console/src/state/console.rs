@@ -122,11 +122,6 @@ impl ConsoleState {
             pending_count: *self.session.pending_count.get(&target.name).unwrap_or(&0),
             last_seen: self.connection.last_seen.get(&target.name).map(format_time),
             last_error: self.connection.last_error.get(&target.name).cloned(),
-            control_addr: target
-                .control_local_addr
-                .clone()
-                .unwrap_or_else(|| target.control_remote_addr.clone()),
-            local_addr: target.control_local_addr.clone(),
             terminal_available: target
                 .ssh
                 .as_deref()

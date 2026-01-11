@@ -18,7 +18,6 @@ use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tunnel_manager::TunnelManager;
 use uuid::Uuid;
 
 pub(crate) struct ProxyHandler {
@@ -26,7 +25,6 @@ pub(crate) struct ProxyHandler {
     client_id: String,
     default_timeout_ms: u64,
     default_max_output_bytes: u64,
-    tunnel_manager: Option<Arc<TunnelManager>>,
     server_info: ServerInfo,
 }
 
@@ -35,7 +33,6 @@ impl ProxyHandler {
         state: Arc<RwLock<ProxyState>>,
         client_id: String,
         defaults: ProxyRuntimeDefaults,
-        tunnel_manager: Option<Arc<TunnelManager>>,
         server_info: ServerInfo,
     ) -> Self {
         Self {
@@ -43,7 +40,6 @@ impl ProxyHandler {
             client_id,
             default_timeout_ms: defaults.timeout_ms,
             default_max_output_bytes: defaults.max_output_bytes,
-            tunnel_manager,
             server_info,
         }
     }
@@ -198,32 +194,11 @@ impl ServerHandler for ProxyHandler {
                     let pipeline = parse_pipeline(&args.command)
                         .map_err(|err| McpError::invalid_params(err, None))?;
 
-                    let forward = {
+                    let addr = {
                         let state = self.state.read().await;
                         state
-                            .forward_spec(&args.target)
-                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?
-                    };
-                    let addr = if let Some(forward) = forward {
-                        let manager = self.tunnel_manager.as_ref().ok_or_else(|| {
-                            McpError::invalid_params("tunnel manager not available", None)
-                        })?;
-                        let local_addr = manager
-                            .ensure_forward(&self.client_id, &forward)
-                            .await
-                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?;
-                        {
-                            let mut state = self.state.write().await;
-                            state.note_tunnel_ready(&args.target);
-                        }
-                        local_addr
-                    } else {
-                        let mut state = self.state.write().await;
-                        let addr = state
                             .target_addr(&args.target)
-                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?;
-                        state.note_tunnel_ready(&args.target);
-                        addr
+                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?
                     };
 
                     let mode = args.mode.unwrap_or(CommandMode::Shell);

@@ -6,10 +6,7 @@ members = [
   "crates/console",
   "crates/protocol",
   "crates/local-proxy",
-  "crates/remote-broker",
   "crates/system-utils",
-  "crates/tunnel-manager",
-  "crates/tunnel-protocol",
 ]
 
 [workspace.package]

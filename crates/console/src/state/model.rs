@@ -24,10 +24,6 @@ pub(crate) struct TargetSpec {
     pub(crate) ssh_password: Option<String>,
     pub(crate) terminal_locale: Option<String>,
     pub(crate) tty: bool,
-    pub(crate) control_remote_addr: String,
-    pub(crate) control_local_bind: Option<String>,
-    pub(crate) control_local_port: Option<u16>,
-    pub(crate) control_local_addr: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -40,8 +36,6 @@ pub(crate) struct TargetInfo {
     pub(crate) pending_count: usize,
     pub(crate) last_seen: Option<String>,
     pub(crate) last_error: Option<String>,
-    pub(crate) control_addr: String,
-    pub(crate) local_addr: Option<String>,
     pub(crate) terminal_available: bool,
     pub(crate) is_default: bool,
 }
