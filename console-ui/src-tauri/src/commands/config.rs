@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tauri::{Manager, State};
+use tauri::State;
 
 use crate::services::config::{read_config_file, write_config_file, DEFAULT_PROXY_EXAMPLE};
 use crate::state::ProxyConfigState;

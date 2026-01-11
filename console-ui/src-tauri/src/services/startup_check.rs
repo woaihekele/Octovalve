@@ -136,12 +136,12 @@ fn default_broker_path(app: &AppHandle) -> PathBuf {
 fn validate_broker_config(path: &Path) -> Result<(), String> {
     let raw = if path.exists() {
         fs::read_to_string(path)
-            .map_err(|err| format!("读取远端配置失败：{} ({})", path.display(), err))?
+            .map_err(|err| format!("读取规则配置失败：{} ({})", path.display(), err))?
     } else {
         DEFAULT_BROKER_CONFIG.to_string()
     };
     toml::from_str::<BrokerConfig>(&raw)
-        .map_err(|err| format_toml_error("远端配置", path, &raw, err))?;
+        .map_err(|err| format_toml_error("规则配置", path, &raw, err))?;
     Ok(())
 }
 
@@ -152,10 +152,7 @@ fn validate_proxy_config(config: &ProxyConfig) -> Vec<String> {
         return errors;
     }
 
-    let defaults = config.defaults.as_ref();
     let mut seen = HashSet::new();
-    let mut control_addr_seen = HashSet::new();
-
     for target in &config.targets {
         let name = target.name.trim();
         if name.is_empty() {
@@ -173,25 +170,6 @@ fn validate_proxy_config(config: &ProxyConfig) -> Vec<String> {
                 errors.push(format!(
                     "target {name} 的 ssh 只能是单一目标，参数请放到 ssh_args。"
                 ));
-            }
-        }
-        if target.ssh.is_some() && target.local_port.is_none() {
-            errors.push(format!(
-                "target {name} 缺少 local_port（ssh 模式必须填写）。"
-            ));
-        }
-        if target.ssh.is_some() {
-            let control_local_port = protocol::config::control_local_port(defaults, target);
-            if control_local_port.is_none() {
-                errors.push(format!(
-                    "target {name} 缺少 control_local_port（可用 local_port + offset 自动生成）。"
-                ));
-            } else if let Some(addr) =
-                protocol::config::control_local_addr(defaults, target, control_local_port)
-            {
-                if !control_addr_seen.insert(addr.clone()) {
-                    errors.push(format!("target {name} 的 control_local_addr 重复：{addr}"));
-                }
             }
         }
     }

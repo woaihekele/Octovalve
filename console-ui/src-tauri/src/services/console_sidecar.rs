@@ -53,7 +53,7 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
     }
     envs.insert("OCTOVALVE_APP_LANGUAGE".to_string(), language);
 
-    let mut console_args = vec![
+    let console_args = vec![
         "--config".to_string(),
         proxy_config.to_string_lossy().to_string(),
         "--command-listen-addr".to_string(),
