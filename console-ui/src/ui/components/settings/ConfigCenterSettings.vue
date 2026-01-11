@@ -818,6 +818,7 @@ watch(
                             v-model:value="proxyForm.broker_config_path"
                             size="small"
                             :placeholder="$t('settings.config.fields.brokerConfigPathPlaceholder')"
+                            :input-props="textInputProps"
                             :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                           />
                         </div>
@@ -973,11 +974,13 @@ watch(
                                 v-model:value="value.command"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.argRuleCommandPlaceholder')"
+                                :input-props="textInputProps"
                               />
                               <NInput
                                 v-model:value="value.pattern"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.argRulePatternPlaceholder')"
+                                :input-props="textInputProps"
                               />
                             </div>
                           </template>
