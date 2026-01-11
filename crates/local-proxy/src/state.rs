@@ -206,8 +206,6 @@ mod tests {
             targets: vec![TargetConfig {
                 name: "dev".to_string(),
                 desc: "dev".to_string(),
-                hostname: None,
-                ip: None,
                 ssh: Some("devops@127.0.0.1".to_string()),
                 ssh_args: None,
                 ssh_password: None,

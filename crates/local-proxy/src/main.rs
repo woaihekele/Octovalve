@@ -45,12 +45,7 @@ async fn main() -> anyhow::Result<()> {
         protocol_version: ProtocolVersion::V_2025_06_18,
     };
 
-    let handler = ProxyHandler::new(
-        Arc::clone(&state),
-        args.client_id,
-        defaults,
-        server_details,
-    );
+    let handler = ProxyHandler::new(Arc::clone(&state), args.client_id, defaults, server_details);
     let server = handler
         .serve_with_ct(stdio(), shutdown.clone())
         .await

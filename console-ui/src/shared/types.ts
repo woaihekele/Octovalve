@@ -28,8 +28,6 @@ export interface ProxyDefaultsConfig {
 export interface ProxyTargetConfig {
   name: string;
   desc: string;
-  hostname?: string | null;
-  ip?: string | null;
   ssh?: string | null;
   ssh_args?: string[] | null;
   ssh_password?: string | null;
@@ -63,9 +61,8 @@ export interface BrokerConfigEditor {
 
 export interface TargetInfo {
   name: string;
-  hostname?: string | null;
-  ip?: string | null;
   desc: string;
+  ssh?: string | null;
   status: TargetStatus;
   pending_count: number;
   last_seen?: string | null;

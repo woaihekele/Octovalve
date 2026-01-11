@@ -109,13 +109,21 @@ const selectedItem = computed<SnapshotItem | null>(() => {
 });
 const isPendingSelected = computed(() => (selectedItem.value ? isPendingItem(selectedItem.value) : false));
 const isRunningSelected = computed(() => (selectedItem.value ? isRunningItem(selectedItem.value) : false));
-const hostDisplay = computed(() => {
-  const hostname = props.target.hostname?.trim();
-  const ip = props.target.ip?.trim();
-  if (hostname && ip && hostname !== ip) {
-    return `${hostname} / ${ip}`;
+function resolveSshHost(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return '';
   }
-  return hostname || ip || 'unknown';
+  const at = trimmed.lastIndexOf('@');
+  if (at > 0 && at < trimmed.length - 1) {
+    return trimmed.slice(at + 1);
+  }
+  return trimmed;
+}
+
+const hostDisplay = computed(() => {
+  const host = resolveSshHost(props.target.ssh);
+  return host || 'unknown';
 });
 
 watch(

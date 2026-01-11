@@ -17,8 +17,6 @@ pub(crate) enum TargetStatus {
 pub(crate) struct TargetSpec {
     pub(crate) name: String,
     pub(crate) desc: String,
-    pub(crate) hostname: Option<String>,
-    pub(crate) ip: Option<String>,
     pub(crate) ssh: Option<String>,
     pub(crate) ssh_args: Vec<String>,
     pub(crate) ssh_password: Option<String>,
@@ -29,9 +27,8 @@ pub(crate) struct TargetSpec {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct TargetInfo {
     pub(crate) name: String,
-    pub(crate) hostname: Option<String>,
-    pub(crate) ip: Option<String>,
     pub(crate) desc: String,
+    pub(crate) ssh: Option<String>,
     pub(crate) status: TargetStatus,
     pub(crate) pending_count: usize,
     pub(crate) last_seen: Option<String>,

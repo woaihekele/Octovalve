@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::{ConsoleState, TargetSpec};
 
-use protocol::config::{resolve_target_host_info, resolve_terminal_locale};
+use protocol::config::{parse_ssh_destination, resolve_terminal_locale};
 
 pub(crate) fn build_console_state(config: ConsoleConfig) -> anyhow::Result<ConsoleState> {
     let defaults = config.defaults.unwrap_or_default();
@@ -21,12 +21,11 @@ pub(crate) fn build_console_state(config: ConsoleConfig) -> anyhow::Result<Conso
 
         let resolved = resolve_target(&defaults, target)?;
         if let Some(ssh) = resolved.ssh.as_ref() {
-            if ssh.split_whitespace().count() > 1 {
-                anyhow::bail!(
-                    "target {} ssh must be a single destination; use ssh_args for options",
-                    resolved.name
-                );
+            if parse_ssh_destination(ssh).is_none() {
+                anyhow::bail!("target {} ssh must be in the form user@host", resolved.name);
             }
+        } else {
+            anyhow::bail!("target {} missing ssh destination", resolved.name);
         }
         order.push(resolved.name.clone());
         targets.insert(resolved.name.clone(), resolved);
@@ -58,13 +57,9 @@ fn resolve_target(defaults: &ConsoleDefaults, target: TargetConfig) -> anyhow::R
         );
     }
 
-    let (hostname, ip) = resolve_target_host_info(&target);
-
     Ok(TargetSpec {
         name: target.name,
         desc: target.desc,
-        hostname,
-        ip,
         ssh: target.ssh,
         ssh_args,
         ssh_password,
@@ -82,14 +77,15 @@ mod tests {
         let config = ConsoleConfig {
             default_target: None,
             defaults: Some(ConsoleDefaults {
-                ssh_args: Some(vec!["-o".to_string(), "StrictHostKeyChecking=no".to_string()]),
+                ssh_args: Some(vec![
+                    "-o".to_string(),
+                    "StrictHostKeyChecking=no".to_string(),
+                ]),
                 ..Default::default()
             }),
             targets: vec![TargetConfig {
                 name: "dev".to_string(),
                 desc: "dev".to_string(),
-                hostname: None,
-                ip: None,
                 ssh: Some("devops@127.0.0.1".to_string()),
                 ssh_args: Some(vec!["-p".to_string(), "2222".to_string()]),
                 ssh_password: None,
@@ -108,5 +104,27 @@ mod tests {
                 "2222".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn requires_user_in_ssh_destination() {
+        let config = ConsoleConfig {
+            default_target: None,
+            defaults: None,
+            targets: vec![TargetConfig {
+                name: "dev".to_string(),
+                desc: "dev".to_string(),
+                ssh: Some("127.0.0.1".to_string()),
+                ssh_args: None,
+                ssh_password: None,
+                terminal_locale: None,
+                tty: false,
+            }],
+        };
+        let err = build_console_state(config)
+            .err()
+            .expect("expected error")
+            .to_string();
+        assert!(err.contains("user@host"));
     }
 }

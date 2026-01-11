@@ -98,6 +98,12 @@ const brokerConfigModel = computed({
   set: (value: string) => emit('update:brokerConfigText', value),
 });
 
+const textInputProps = {
+  autocapitalize: 'off',
+  autocorrect: 'off',
+  spellcheck: false,
+};
+
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
@@ -176,8 +182,6 @@ function normalizeProxyForm(value: ProxyConfigEditor): ProxyConfigEditorForm {
   defaults.ssh_args = normalizeStringArray(defaults.ssh_args);
   const targets = (value.targets ?? []) as ProxyTargetForm[];
   for (const target of targets) {
-    target.hostname = normalizeInputString(target.hostname);
-    target.ip = normalizeInputString(target.ip);
     target.ssh = normalizeInputString(target.ssh);
     target.ssh_password = normalizeInputString(target.ssh_password);
     target.terminal_locale = normalizeInputString(target.terminal_locale);
@@ -327,8 +331,6 @@ function addTarget() {
     name: '',
     desc: '',
     ssh: '',
-    hostname: '',
-    ip: '',
     ssh_password: '',
     ssh_args: [],
     tty: false,
@@ -687,6 +689,7 @@ watch(
                                 v-model:value="selectedTarget.name"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.namePlaceholder')"
+                                :input-props="textInputProps"
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                               />
                             </div>
@@ -696,6 +699,7 @@ watch(
                                 :value="getTargetSshHost(selectedTarget)"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.sshHostPlaceholder')"
+                                :input-props="textInputProps"
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                                 @update:value="(v) => setTargetSshHost(selectedTarget, v)"
                               />
@@ -706,6 +710,7 @@ watch(
                                 :value="getTargetSshUser(selectedTarget)"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.sshUserPlaceholder')"
+                                :input-props="textInputProps"
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                                 @update:value="(v) => setTargetSshUser(selectedTarget, v)"
                               />
@@ -718,6 +723,7 @@ watch(
                                 show-password-on="click"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.passwordPlaceholder')"
+                                :input-props="textInputProps"
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                               />
                             </div>
@@ -729,6 +735,7 @@ watch(
                                 :autosize="{ minRows: 2, maxRows: 4 }"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.descPlaceholder')"
+                                :input-props="textInputProps"
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                               />
                             </div>
@@ -757,28 +764,13 @@ watch(
                                       :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                                     />
                                   </div>
-                                  <div class="flex flex-col gap-1">
-                                    <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.hostname') }}</div>
-                                    <NInput
-                                      v-model:value="selectedTarget.hostname"
-                                      size="small"
-                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                    />
-                                  </div>
-                                  <div class="flex flex-col gap-1">
-                                    <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.ip') }}</div>
-                                    <NInput
-                                      v-model:value="selectedTarget.ip"
-                                      size="small"
-                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                    />
-                                  </div>
                                   <div class="flex flex-col gap-1 md:col-span-2">
                                     <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.terminalLocale') }}</div>
                                     <NInput
                                       v-model:value="selectedTarget.terminal_locale"
                                       size="small"
                                       :placeholder="$t('settings.config.fields.terminalLocalePlaceholder')"
+                                      :input-props="textInputProps"
                                       :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                                     />
                                   </div>
@@ -870,6 +862,7 @@ watch(
                             show-password-on="click"
                             size="small"
                             :placeholder="$t('settings.config.fields.passwordPlaceholder')"
+                            :input-props="textInputProps"
                             :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                           />
                         </div>
@@ -879,6 +872,7 @@ watch(
                             v-model:value="proxyForm.defaults.terminal_locale"
                             size="small"
                             :placeholder="$t('settings.config.fields.terminalLocalePlaceholder')"
+                            :input-props="textInputProps"
                             :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                           />
                         </div>

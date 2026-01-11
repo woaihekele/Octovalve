@@ -63,25 +63,6 @@ impl ConsoleState {
         }
     }
 
-    pub(crate) fn update_target_ip(&mut self, name: &str, ip: String) -> Option<TargetInfo> {
-        if ip.trim().is_empty() {
-            return None;
-        }
-        let should_update = self
-            .cache
-            .targets
-            .get(name)
-            .map(|target| target.ip.is_none())
-            .unwrap_or(false);
-        if !should_update {
-            return None;
-        }
-        if let Some(target) = self.cache.targets.get_mut(name) {
-            target.ip = Some(ip);
-        }
-        self.target_info(name)
-    }
-
     pub(crate) fn list_targets(&self) -> Vec<TargetInfo> {
         self.cache
             .order
@@ -111,9 +92,8 @@ impl ConsoleState {
         let target = self.cache.targets.get(name)?;
         Some(TargetInfo {
             name: target.name.clone(),
-            hostname: target.hostname.clone(),
-            ip: target.ip.clone(),
             desc: target.desc.clone(),
+            ssh: target.ssh.clone(),
             status: *self
                 .connection
                 .status

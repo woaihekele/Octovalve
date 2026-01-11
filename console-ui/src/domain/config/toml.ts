@@ -78,8 +78,6 @@ function serializeTarget(target: ProxyTargetConfig): string[] {
   lines.push(`name = ${tomlString(target.name ?? '')}`);
   lines.push(`desc = ${tomlString(target.desc ?? '')}`);
 
-  pushIf(lines, 'hostname', target.hostname);
-  pushIf(lines, 'ip', target.ip);
   pushIf(lines, 'ssh', target.ssh);
 
   const sshArgs = target.ssh_args ?? [];

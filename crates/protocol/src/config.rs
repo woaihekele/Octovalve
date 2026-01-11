@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProxyConfig {
@@ -21,8 +20,6 @@ pub struct ProxyDefaults {
 pub struct TargetConfig {
     pub name: String,
     pub desc: String,
-    pub hostname: Option<String>,
-    pub ip: Option<String>,
     pub ssh: Option<String>,
     pub ssh_args: Option<Vec<String>>,
     pub ssh_password: Option<String>,
@@ -43,16 +40,21 @@ impl Default for ProxyDefaults {
     }
 }
 
-pub fn parse_ssh_host(value: &str) -> Option<&str> {
-    if value.is_empty() {
+pub fn parse_ssh_destination(value: &str) -> Option<(String, String)> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
         return None;
     }
-    Some(
-        value
-            .rsplit_once('@')
-            .map(|(_, host)| host)
-            .unwrap_or(value),
-    )
+    if trimmed.split_whitespace().count() > 1 {
+        return None;
+    }
+    let (user, host) = trimmed.rsplit_once('@')?;
+    let user = user.trim();
+    let host = host.trim();
+    if user.is_empty() || host.is_empty() {
+        return None;
+    }
+    Some((user.to_string(), host.to_string()))
 }
 
 pub fn resolve_terminal_locale(
@@ -73,21 +75,6 @@ pub fn resolve_terminal_locale(
     target_locale.or(default_locale)
 }
 
-pub fn resolve_target_host_info(target: &TargetConfig) -> (Option<String>, Option<String>) {
-    let ssh_host = target
-        .ssh
-        .as_deref()
-        .and_then(parse_ssh_host)
-        .map(|host| host.to_string());
-    let hostname = target.hostname.clone().or_else(|| ssh_host.clone());
-    let ip = target.ip.clone().or_else(|| {
-        ssh_host
-            .as_deref()
-            .and_then(|host| host.parse::<IpAddr>().ok().map(|_| host.to_string()))
-    });
-    (hostname, ip)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,8 +88,6 @@ mod tests {
         let target = TargetConfig {
             name: "dev".to_string(),
             desc: "dev".to_string(),
-            hostname: None,
-            ip: None,
             ssh: None,
             ssh_args: None,
             ssh_password: None,
@@ -116,20 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn resolves_host_info_from_ssh() {
-        let target = TargetConfig {
-            name: "dev".to_string(),
-            desc: "dev".to_string(),
-            hostname: None,
-            ip: None,
-            ssh: Some("user@127.0.0.1".to_string()),
-            ssh_args: None,
-            ssh_password: None,
-            terminal_locale: None,
-            tty: false,
-        };
-        let (hostname, ip) = resolve_target_host_info(&target);
-        assert_eq!(hostname.as_deref(), Some("127.0.0.1"));
-        assert_eq!(ip.as_deref(), Some("127.0.0.1"));
+    fn parse_ssh_destination_requires_user_and_host() {
+        assert!(parse_ssh_destination("devops@127.0.0.1").is_some());
+        assert!(parse_ssh_destination("127.0.0.1").is_none());
+        assert!(parse_ssh_destination("devops@").is_none());
+        assert!(parse_ssh_destination("@host").is_none());
     }
 }

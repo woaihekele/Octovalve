@@ -162,15 +162,11 @@ fn validate_proxy_config(config: &ProxyConfig) -> Vec<String> {
         if !seen.insert(name.to_string()) {
             errors.push(format!("target 名称重复：{name}"));
         }
-        if let Some(ssh) = target.ssh.as_deref() {
-            if ssh.trim().is_empty() {
-                errors.push(format!("target {name} 的 ssh 不能为空。"));
-            }
-            if ssh.split_whitespace().count() > 1 {
-                errors.push(format!(
-                    "target {name} 的 ssh 只能是单一目标，参数请放到 ssh_args。"
-                ));
-            }
+        let ssh = target.ssh.as_deref().map(str::trim).unwrap_or("");
+        if ssh.is_empty() {
+            errors.push(format!("target {name} 缺少 ssh（必须为 user@host）。"));
+        } else if protocol::config::parse_ssh_destination(ssh).is_none() {
+            errors.push(format!("target {name} 的 ssh 必须为 user@host。"));
         }
     }
 

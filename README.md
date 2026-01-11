@@ -135,7 +135,7 @@ env = { RUST_LOG = "info" }
 
 ## Console API（可选）
 - `GET /health`：健康检查
-- `GET /targets`：目标列表（含 `name/hostname/ip/desc/status/pending_count`）
+- `GET /targets`：目标列表（含 `name/desc/ssh/status/pending_count`）
 - `GET /targets/:name/snapshot`：获取快照
 - `POST /targets/:name/approve` / `deny`：审批/拒绝
 - `GET /ws`：WebSocket 推送

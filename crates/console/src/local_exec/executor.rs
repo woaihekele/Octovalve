@@ -871,8 +871,6 @@ mod tests {
         TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
-            hostname: None,
-            ip: None,
             ssh: Some("dev@host".to_string()),
             ssh_args: Vec::new(),
             ssh_password: None,
@@ -1048,8 +1046,6 @@ mod tests {
         let target = TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
-            hostname: None,
-            ip: None,
             ssh: None,
             ssh_args: Vec::new(),
             ssh_password: None,
@@ -1072,8 +1068,6 @@ mod tests {
         let target = TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
-            hostname: None,
-            ip: None,
             ssh: None,
             ssh_args: Vec::new(),
             ssh_password: None,
@@ -1096,8 +1090,6 @@ mod tests {
         let target = TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
-            hostname: None,
-            ip: None,
             ssh: None,
             ssh_args: Vec::new(),
             ssh_password: None,

@@ -55,6 +55,18 @@ function statusClass(target: TargetInfo) {
   if (status === 'connecting') return 'bg-warning';
   return 'bg-danger';
 }
+
+function resolveTargetHost(target: TargetInfo) {
+  const ssh = target.ssh?.trim();
+  if (!ssh) {
+    return target.desc;
+  }
+  const at = ssh.lastIndexOf('@');
+  if (at > 0 && at < ssh.length - 1) {
+    return ssh.slice(at + 1);
+  }
+  return ssh;
+}
 </script>
 
 <template>
@@ -85,7 +97,7 @@ function statusClass(target: TargetInfo) {
           </div>
           <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">
             <span class="truncate">
-              {{ target.hostname || target.ip || target.desc }}
+              {{ resolveTargetHost(target) }}
             </span>
           </div>
           <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">

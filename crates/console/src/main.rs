@@ -29,7 +29,6 @@ use axum::routing::post;
 use axum::{Json, Router};
 use clap::Parser;
 use serde::Deserialize;
-use std::net::IpAddr;
 use std::sync::Arc;
 use system_utils::path::expand_tilde;
 use tokio::net::TcpListener;
@@ -62,7 +61,6 @@ async fn main() -> anyhow::Result<()> {
     let shutdown = CancellationToken::new();
     let shared_state = Arc::new(RwLock::new(state));
     let (event_tx, _) = broadcast::channel(512);
-    spawn_target_ip_resolution(Arc::clone(&shared_state), event_tx.clone());
     let app_state = AppState {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
@@ -79,12 +77,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .with_state(app_state)
         .layer(middleware::from_fn(log_http_request));
-    let policy = PolicyConfig::load(&args.broker_config).with_context(|| {
-        format!("failed to load policy {}", args.broker_config.display())
-    })?;
-    let listen_addr = args.command_listen_addr.parse().with_context(|| {
-        format!("invalid command_listen_addr {}", args.command_listen_addr)
-    })?;
+    let policy = PolicyConfig::load(&args.broker_config)
+        .with_context(|| format!("failed to load policy {}", args.broker_config.display()))?;
+    let listen_addr = args
+        .command_listen_addr
+        .parse()
+        .with_context(|| format!("invalid command_listen_addr {}", args.command_listen_addr))?;
     spawn_local_exec(
         listen_addr,
         policy,
@@ -246,7 +244,6 @@ async fn cancel_command(
     }))
 }
 
-
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_ws(socket, state))
 }
@@ -318,76 +315,4 @@ async fn wait_for_shutdown(shutdown: CancellationToken) {
     let _ = tokio::signal::ctrl_c().await;
     info!("shutdown signal received");
     shutdown.cancel();
-}
-
-fn spawn_target_ip_resolution(
-    state: Arc<RwLock<ConsoleState>>,
-    event_tx: broadcast::Sender<ConsoleEvent>,
-) {
-    tokio::spawn(async move {
-        let targets = {
-            let guard = state.read().await;
-            guard.target_specs()
-        };
-        for target in targets {
-            if target.ip.is_some() {
-                continue;
-            }
-            let mut candidates = Vec::new();
-            if let Some(hostname) = target.hostname.as_deref().map(str::trim) {
-                if !hostname.is_empty() {
-                    candidates.push(hostname.to_string());
-                }
-            }
-            if let Some(ssh) = target
-                .ssh
-                .as_deref()
-                .and_then(protocol::config::parse_ssh_host)
-            {
-                let ssh = ssh.trim();
-                if !ssh.is_empty() && !candidates.iter().any(|host| host == ssh) {
-                    candidates.push(ssh.to_string());
-                }
-            }
-            let mut resolved = None;
-            for host in candidates {
-                if let Some(ip) = resolve_host_ip(&host).await {
-                    resolved = Some(ip);
-                    break;
-                }
-            }
-            let Some(ip) = resolved else {
-                continue;
-            };
-            let updated = {
-                let mut guard = state.write().await;
-                guard.update_target_ip(&target.name, ip)
-            };
-            if let Some(target) = updated {
-                let _ = event_tx.send(ConsoleEvent::TargetUpdated { target });
-            }
-        }
-    });
-}
-
-async fn resolve_host_ip(host: &str) -> Option<String> {
-    let trimmed = host.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if trimmed.parse::<IpAddr>().is_ok() {
-        return Some(trimmed.to_string());
-    }
-    let addrs = tokio::net::lookup_host((trimmed, 0)).await.ok()?;
-    let mut fallback = None;
-    for addr in addrs {
-        let ip = addr.ip();
-        if matches!(ip, IpAddr::V4(_)) {
-            return Some(ip.to_string());
-        }
-        if fallback.is_none() {
-            fallback = Some(ip.to_string());
-        }
-    }
-    fallback
 }
