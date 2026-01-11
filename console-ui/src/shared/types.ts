@@ -17,23 +17,12 @@ export interface ProfilesStatus {
   profiles: ProfileSummary[];
 }
 
-export interface ProfileRuntimeSettings {
-  remote_dir_alias: string;
-  remote_listen_port: number;
-  remote_control_port: number;
-}
-
 export interface ProxyDefaultsConfig {
   timeout_ms?: number | null;
   max_output_bytes?: number | null;
-  local_bind?: string | null;
-  remote_addr?: string | null;
   ssh_args?: string[] | null;
   ssh_password?: string | null;
   terminal_locale?: string | null;
-  control_remote_addr?: string | null;
-  control_local_bind?: string | null;
-  control_local_port_offset?: number | null;
 }
 
 export interface ProxyTargetConfig {
@@ -42,16 +31,10 @@ export interface ProxyTargetConfig {
   hostname?: string | null;
   ip?: string | null;
   ssh?: string | null;
-  remote_addr?: string | null;
-  local_port?: number | null;
-  local_bind?: string | null;
   ssh_args?: string[] | null;
   ssh_password?: string | null;
   terminal_locale?: string | null;
   tty?: boolean | null;
-  control_remote_addr?: string | null;
-  control_local_port?: number | null;
-  control_local_bind?: string | null;
 }
 
 export interface ProxyConfigEditor {
@@ -87,8 +70,6 @@ export interface TargetInfo {
   pending_count: number;
   last_seen?: string | null;
   last_error?: string | null;
-  control_addr?: string | null;
-  local_addr?: string | null;
   terminal_available?: boolean;
   is_default?: boolean;
 }

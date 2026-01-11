@@ -7,7 +7,6 @@ import type {
   ConfigFilePayload,
   ConsoleEvent,
   AppLanguage,
-  ProfileRuntimeSettings,
   ProfilesStatus,
   ProxyConfigEditor,
   ServiceSnapshot,
@@ -220,26 +219,6 @@ export async function writeProfileBrokerConfig(name: string, content: string) {
   await invoke('write_profile_broker_config', { name, content });
 }
 
-export async function readProfileRuntimeSettings(name: string): Promise<ProfileRuntimeSettings> {
-  if (!TAURI_AVAILABLE) {
-    throw new Error(t('api.tauriOnly.profiles'));
-  }
-  return invoke<ProfileRuntimeSettings>('read_profile_runtime_settings', { name });
-}
-
-export async function writeProfileRuntimeSettings(name: string, settings: ProfileRuntimeSettings) {
-  if (!TAURI_AVAILABLE) {
-    throw new Error(t('api.tauriOnly.profiles'));
-  }
-  await invoke('write_profile_runtime_settings', { name, settings });
-}
-
-export async function cleanupTunnels() {
-  if (!TAURI_AVAILABLE) {
-    throw new Error(t('api.tauriOnly.tunnel'));
-  }
-  await invoke('proxy_cleanup_tunnels');
-}
 
 export async function parseProxyConfigToml(content: string): Promise<ProxyConfigEditor> {
   if (!TAURI_AVAILABLE) {
@@ -353,20 +332,6 @@ export async function writeProxyConfig(content: string) {
   await invoke('write_proxy_config', { content });
 }
 
-export async function readBrokerConfig(): Promise<ConfigFilePayload> {
-  if (!TAURI_AVAILABLE) {
-    throw new Error(t('api.tauriOnly.configEditor'));
-  }
-  return invoke<ConfigFilePayload>('read_broker_config');
-}
-
-export async function writeBrokerConfig(content: string) {
-  if (!TAURI_AVAILABLE) {
-    throw new Error(t('api.tauriOnly.configEditor'));
-  }
-  await invoke('write_broker_config', { content });
-}
-
 export async function restartConsole() {
   if (!TAURI_AVAILABLE) {
     throw new Error(t('api.tauriOnly.configEditor'));
@@ -379,13 +344,6 @@ export async function validateStartupConfig(): Promise<StartupCheckResult> {
     return { ok: true, needs_setup: false, errors: [], proxy_path: '', broker_path: '' };
   }
   return invoke<StartupCheckResult>('validate_startup_config');
-}
-
-export async function reloadRemoteBrokers() {
-  if (!TAURI_AVAILABLE) {
-    throw new Error(t('api.tauriOnly.configEditor'));
-  }
-  await invoke('proxy_reload_remote_brokers');
 }
 
 export async function readConsoleLog(offset: number, maxBytes: number): Promise<ConsoleLogChunk> {

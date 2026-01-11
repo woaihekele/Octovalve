@@ -13,8 +13,6 @@ use crate::services::logging::{append_log_line, escape_log_body};
 pub const CONSOLE_HTTP_HOST: &str = "127.0.0.1:19309";
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const HTTP_IO_TIMEOUT: Duration = Duration::from_secs(5);
-pub const HTTP_RELOAD_TIMEOUT: Duration = Duration::from_secs(120);
-pub const HTTP_TUNNEL_TIMEOUT: Duration = Duration::from_secs(30);
 static HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 

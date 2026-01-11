@@ -81,9 +81,6 @@ function serializeTarget(target: ProxyTargetConfig): string[] {
   pushIf(lines, 'hostname', target.hostname);
   pushIf(lines, 'ip', target.ip);
   pushIf(lines, 'ssh', target.ssh);
-  pushIf(lines, 'remote_addr', target.remote_addr);
-  pushIf(lines, 'local_port', target.local_port);
-  pushIf(lines, 'local_bind', target.local_bind);
 
   const sshArgs = target.ssh_args ?? [];
   if (Array.isArray(sshArgs) && sshArgs.length > 0) {
@@ -92,9 +89,6 @@ function serializeTarget(target: ProxyTargetConfig): string[] {
   pushIf(lines, 'ssh_password', target.ssh_password);
   pushIf(lines, 'terminal_locale', target.terminal_locale);
   pushIf(lines, 'tty', target.tty);
-  pushIf(lines, 'control_remote_addr', target.control_remote_addr);
-  pushIf(lines, 'control_local_port', target.control_local_port);
-  pushIf(lines, 'control_local_bind', target.control_local_bind);
 
   return lines;
 }
@@ -116,17 +110,12 @@ export function serializeProxyConfigToml(config: ProxyConfigEditor): string {
     const defaultsLines: string[] = [];
     pushIf(defaultsLines, 'timeout_ms', defaults.timeout_ms);
     pushIf(defaultsLines, 'max_output_bytes', defaults.max_output_bytes);
-    pushIf(defaultsLines, 'local_bind', defaults.local_bind);
-    pushIf(defaultsLines, 'remote_addr', defaults.remote_addr);
-    pushIf(defaultsLines, 'control_remote_addr', defaults.control_remote_addr);
     const sshArgs = defaults.ssh_args ?? [];
     if (Array.isArray(sshArgs) && sshArgs.length > 0) {
       defaultsLines.push(...writeStringArray('ssh_args', sshArgs));
     }
     pushIf(defaultsLines, 'ssh_password', defaults.ssh_password);
     pushIf(defaultsLines, 'terminal_locale', defaults.terminal_locale);
-    pushIf(defaultsLines, 'control_local_bind', defaults.control_local_bind);
-    pushIf(defaultsLines, 'control_local_port_offset', defaults.control_local_port_offset);
     if (defaultsLines.length > 0) {
       if (lines.length > 0) {
         lines.push('');

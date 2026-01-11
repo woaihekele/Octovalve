@@ -38,9 +38,6 @@ const props = defineProps<{
   brokerConfigText: string;
   proxyDirty: boolean;
   brokerDirty: boolean;
-  remoteDirAlias: string;
-  remoteListenPort: number;
-  remoteControlPort: number;
   activeProfile: string | null;
   resolvedTheme: ResolvedTheme;
 }>();
@@ -53,12 +50,8 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'save'): void;
   (e: 'apply'): void;
-  (e: 'request-cleanup-tunnels'): void;
   (e: 'update:proxyConfigText', value: string): void;
   (e: 'update:brokerConfigText', value: string): void;
-  (e: 'update:remoteDirAlias', value: string): void;
-  (e: 'update:remoteListenPort', value: number): void;
-  (e: 'update:remoteControlPort', value: number): void;
 }>();
 
 const { t } = useI18n();
@@ -103,34 +96,6 @@ const proxyConfigModel = computed({
 const brokerConfigModel = computed({
   get: () => props.brokerConfigText,
   set: (value: string) => emit('update:brokerConfigText', value),
-});
-
-const remoteDirAliasModel = computed({
-  get: () => props.remoteDirAlias,
-  set: (value: string) => emit('update:remoteDirAlias', value),
-});
-
-const remoteListenPortModel = computed({
-  get: () => props.remoteListenPort,
-  set: (value: number | null) => {
-    if (value !== null) {
-      emit('update:remoteListenPort', value);
-    }
-  },
-});
-
-const remoteControlPortModel = computed({
-  get: () => props.remoteControlPort,
-  set: (value: number | null) => {
-    if (value !== null) {
-      emit('update:remoteControlPort', value);
-    }
-  },
-});
-
-const remoteDirPreview = computed(() => {
-  const suffix = props.remoteDirAlias.trim();
-  return suffix ? `~/.octovalve_${suffix}` : '~/.octovalve';
 });
 
 function normalizeStringArray(value: unknown): string[] {
@@ -206,10 +171,6 @@ function setTargetSshHost(target: ProxyTargetForm | null, host: string) {
 
 function normalizeProxyForm(value: ProxyConfigEditor): ProxyConfigEditorForm {
   const defaults = (value.defaults ?? {}) as ProxyDefaultsForm;
-  defaults.local_bind = normalizeInputString(defaults.local_bind);
-  defaults.remote_addr = normalizeInputString(defaults.remote_addr);
-  defaults.control_remote_addr = normalizeInputString(defaults.control_remote_addr);
-  defaults.control_local_bind = normalizeInputString(defaults.control_local_bind);
   defaults.ssh_password = normalizeInputString(defaults.ssh_password);
   defaults.terminal_locale = normalizeInputString(defaults.terminal_locale);
   defaults.ssh_args = normalizeStringArray(defaults.ssh_args);
@@ -218,13 +179,9 @@ function normalizeProxyForm(value: ProxyConfigEditor): ProxyConfigEditorForm {
     target.hostname = normalizeInputString(target.hostname);
     target.ip = normalizeInputString(target.ip);
     target.ssh = normalizeInputString(target.ssh);
-    target.remote_addr = normalizeInputString(target.remote_addr);
-    target.local_bind = normalizeInputString(target.local_bind);
     target.ssh_password = normalizeInputString(target.ssh_password);
     target.terminal_locale = normalizeInputString(target.terminal_locale);
     target.tty = Boolean(target.tty);
-    target.control_remote_addr = normalizeInputString(target.control_remote_addr);
-    target.control_local_bind = normalizeInputString(target.control_local_bind);
     target.ssh_args = normalizeStringArray(target.ssh_args);
   }
   return {
@@ -366,26 +323,16 @@ function addTarget() {
   if (!proxyForm.value) {
     return;
   }
-  const used = new Set<number>();
-  for (const target of proxyForm.value.targets) {
-    if (typeof target.local_port === 'number') {
-      used.add(target.local_port);
-    }
-  }
-  let nextPort = 19311;
-  while (used.has(nextPort) && nextPort < 65535) {
-    nextPort += 1;
-  }
-  const offset = Number(proxyForm.value.defaults?.control_local_port_offset ?? 100);
   proxyForm.value.targets.push({
     name: '',
     desc: '',
     ssh: '',
-    local_port: nextPort,
-    control_local_port: nextPort + offset,
+    hostname: '',
+    ip: '',
     ssh_password: '',
     ssh_args: [],
     tty: false,
+    terminal_locale: '',
   });
   targetAdvancedOpen.value.push(false);
   selectedTargetIndex.value = proxyForm.value.targets.length - 1;
@@ -599,66 +546,6 @@ watch(
           </div>
         </div>
 
-        <div class="rounded-lg border border-border/50 bg-panel-muted/30 p-3 text-sm">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <div class="font-medium">{{ $t('settings.profile.remote.title') }}</div>
-              <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.help') }}</div>
-            </div>
-            <NButton
-              size="small"
-              type="primary"
-              :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-              @click="emit('request-cleanup-tunnels')"
-            >
-              {{ $t('settings.profile.remote.cleanupAction') }}
-            </NButton>
-          </div>
-          <div class="mt-3 space-y-3">
-            <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              <div class="flex flex-col gap-1">
-                <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.aliasLabel') }}</div>
-                <NInput
-                  v-model:value="remoteDirAliasModel"
-                  size="small"
-                  :placeholder="$t('settings.profile.remote.aliasPlaceholder')"
-                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                />
-                <div class="text-[11px] text-foreground-muted">
-                  {{ $t('settings.profile.remote.dirPreview', { path: remoteDirPreview }) }}
-                </div>
-              </div>
-              <div class="flex flex-col gap-1">
-                <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.listenPortLabel') }}</div>
-                <NInputNumber
-                  v-model:value="remoteListenPortModel"
-                  size="small"
-                  :min="1"
-                  :max="65535"
-                  :precision="0"
-                  :show-button="false"
-                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                />
-              </div>
-              <div class="flex flex-col gap-1">
-                <div class="text-xs text-foreground-muted">{{ $t('settings.profile.remote.controlPortLabel') }}</div>
-                <NInputNumber
-                  v-model:value="remoteControlPortModel"
-                  size="small"
-                  :min="1"
-                  :max="65535"
-                  :precision="0"
-                  :show-button="false"
-                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                />
-              </div>
-            </div>
-            <div class="text-xs text-foreground-muted">
-              {{ $t('settings.profile.remote.portHint') }}
-            </div>
-          </div>
-        </div>
-
         <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
           <div>
             <div class="font-medium">{{ $t('settings.config.editor.title') }}</div>
@@ -862,107 +749,47 @@ watch(
                                   </div>
                                 </template>
                                 <div class="pt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.localPort') }}</div>
-                                <NInputNumber
-                                  v-model:value="selectedTarget.local_port"
-                                  size="small"
-                                  :min="1"
-                                  :max="65535"
-                                  :precision="0"
-                                  :show-button="false"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.controlLocalPort') }}</div>
-                                <NInputNumber
-                                  v-model:value="selectedTarget.control_local_port"
-                                  size="small"
-                                  :min="1"
-                                  :max="65535"
-                                  :precision="0"
-                                  :show-button="false"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1 md:col-span-2">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.sshArgs') }}</div>
-                                <NDynamicTags
-                                  v-model:value="selectedTarget.ssh_args"
-                                  size="small"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.remoteAddr') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.remote_addr"
-                                  size="small"
-                                  :placeholder="$t('settings.config.fields.addrPlaceholder')"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.localBind') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.local_bind"
-                                  size="small"
-                                  :placeholder="$t('settings.config.fields.bindPlaceholder')"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.controlRemoteAddr') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.control_remote_addr"
-                                  size="small"
-                                  :placeholder="$t('settings.config.fields.addrPlaceholder')"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.controlLocalBind') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.control_local_bind"
-                                  size="small"
-                                  :placeholder="$t('settings.config.fields.bindPlaceholder')"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.hostname') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.hostname"
-                                  size="small"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.ip') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.ip"
-                                  size="small"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex flex-col gap-1 md:col-span-2">
-                                <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.terminalLocale') }}</div>
-                                <NInput
-                                  v-model:value="selectedTarget.terminal_locale"
-                                  size="small"
-                                  :placeholder="$t('settings.config.fields.terminalLocalePlaceholder')"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
-                              <div class="flex items-center justify-between gap-3 md:col-span-2">
-                                <span class="text-xs text-foreground-muted">{{ $t('settings.config.fields.tty') }}</span>
-                                <NSwitch
-                                  v-model:value="selectedTarget.tty"
-                                  size="small"
-                                  :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                                />
-                              </div>
+                                  <div class="flex flex-col gap-1 md:col-span-2">
+                                    <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.sshArgs') }}</div>
+                                    <NDynamicTags
+                                      v-model:value="selectedTarget.ssh_args"
+                                      size="small"
+                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                    />
+                                  </div>
+                                  <div class="flex flex-col gap-1">
+                                    <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.hostname') }}</div>
+                                    <NInput
+                                      v-model:value="selectedTarget.hostname"
+                                      size="small"
+                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                    />
+                                  </div>
+                                  <div class="flex flex-col gap-1">
+                                    <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.ip') }}</div>
+                                    <NInput
+                                      v-model:value="selectedTarget.ip"
+                                      size="small"
+                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                    />
+                                  </div>
+                                  <div class="flex flex-col gap-1 md:col-span-2">
+                                    <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.terminalLocale') }}</div>
+                                    <NInput
+                                      v-model:value="selectedTarget.terminal_locale"
+                                      size="small"
+                                      :placeholder="$t('settings.config.fields.terminalLocalePlaceholder')"
+                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                    />
+                                  </div>
+                                  <div class="flex items-center justify-between gap-3 md:col-span-2">
+                                    <span class="text-xs text-foreground-muted">{{ $t('settings.config.fields.tty') }}</span>
+                                    <NSwitch
+                                      v-model:value="selectedTarget.tty"
+                                      size="small"
+                                      :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                    />
+                                  </div>
                                 </div>
                               </NCollapseItem>
                             </NCollapse>
@@ -1020,53 +847,6 @@ watch(
                           <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.maxOutputBytes') }}</div>
                           <NInputNumber
                             v-model:value="proxyForm.defaults.max_output_bytes"
-                            size="small"
-                            :min="0"
-                            :precision="0"
-                            :show-button="false"
-                            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                          />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                          <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.localBind') }}</div>
-                          <NInput
-                            v-model:value="proxyForm.defaults.local_bind"
-                            size="small"
-                            :placeholder="$t('settings.config.fields.bindPlaceholder')"
-                            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                          />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                          <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.remoteAddr') }}</div>
-                          <NInput
-                            v-model:value="proxyForm.defaults.remote_addr"
-                            size="small"
-                            :placeholder="$t('settings.config.fields.addrPlaceholder')"
-                            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                          />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                          <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.controlRemoteAddr') }}</div>
-                          <NInput
-                            v-model:value="proxyForm.defaults.control_remote_addr"
-                            size="small"
-                            :placeholder="$t('settings.config.fields.addrPlaceholder')"
-                            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                          />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                          <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.controlLocalBind') }}</div>
-                          <NInput
-                            v-model:value="proxyForm.defaults.control_local_bind"
-                            size="small"
-                            :placeholder="$t('settings.config.fields.bindPlaceholder')"
-                            :disabled="props.configBusy || props.logModalOpen || props.configLoading"
-                          />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                          <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.controlLocalPortOffset') }}</div>
-                          <NInputNumber
-                            v-model:value="proxyForm.defaults.control_local_port_offset"
                             size="small"
                             :min="0"
                             :precision="0"

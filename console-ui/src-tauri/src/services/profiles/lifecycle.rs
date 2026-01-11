@@ -61,9 +61,6 @@ fn create_default_profile(
         name: name.to_string(),
         proxy_path: proxy_path.to_string_lossy().to_string(),
         broker_path: broker_path.to_string_lossy().to_string(),
-        remote_dir_alias: String::new(),
-        remote_listen_port: 19307,
-        remote_control_port: 19308,
     })
 }
 

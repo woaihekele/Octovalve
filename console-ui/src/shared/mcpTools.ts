@@ -17,7 +17,7 @@ export function buildMcpTools(targets: string[], defaultTarget?: string): Tool[]
       type: 'function',
       function: {
         name: 'run_command',
-        description: 'Forward command execution to a remote broker with manual approval.',
+        description: 'Forward command execution to the console executor with manual approval.',
         parameters: {
           type: 'object',
           properties: {
