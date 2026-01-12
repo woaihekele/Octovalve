@@ -16,6 +16,8 @@ const props = defineProps<{
   profilesEnabled: boolean;
   profileLoading?: boolean;
   profileSwitching?: boolean;
+  sidebarWidth?: number;
+  profileSelectWidth?: number;
 }>();
 
 const emit = defineEmits<{
@@ -28,6 +30,12 @@ const { t } = useI18n();
 const profileOptions = computed<SelectOption[]>(() =>
   props.profiles.map((profile) => ({ label: profile.name, value: profile.name }))
 );
+const sidebarStyle = computed(() => ({
+  width: props.sidebarWidth ? `${props.sidebarWidth}px` : undefined,
+  ['--sidebar-profile-width' as string]: props.profileSelectWidth
+    ? `${props.profileSelectWidth}px`
+    : undefined,
+}));
 
 function resolveStatus(target: TargetInfo) {
   if (target.status === 'ready') {
@@ -70,7 +78,7 @@ function resolveTargetHost(target: TargetInfo) {
 </script>
 
 <template>
-  <aside class="w-72 bg-panel border-r border-border flex flex-col h-full">
+  <aside class="w-72 bg-panel border-r border-border flex flex-col h-full" :style="sidebarStyle">
     <div
       class="p-4 border-b border-border flex items-center gap-2"
       data-tauri-drag-region
@@ -149,7 +157,7 @@ function resolveTargetHost(target: TargetInfo) {
 
 <style scoped>
 .sidebar__profile-select {
-  width: 150px;
+  width: var(--sidebar-profile-width, 150px);
 }
 
 .sidebar__profile-select :deep(.n-base-selection) {

@@ -21,6 +21,12 @@ const props = defineProps<{
   chatOpen: boolean;
   aiRiskMap: Record<string, AiRiskEntry>;
   aiEnabled: boolean;
+  selectedId?: string | null;
+  layout?: {
+    minLeftPaneWidth?: number;
+    minRightPaneWidth?: number;
+    defaultLeftPaneRatio?: number;
+  };
 }>();
 
 const emit = defineEmits<{
@@ -32,11 +38,24 @@ const emit = defineEmits<{
   (e: 'open-upload'): void;
   (e: 'toggle-chat'): void;
   (e: 'refresh-risk', payload: { target: string; id: string }): void;
+  (e: 'update:selectedId', value: string | null): void;
 }>();
 
 const { t, locale } = useI18n();
 
-const selectedId = ref<string | null>(null);
+const localSelectedId = ref<string | null>(null);
+const selectedId = computed<string | null>({
+  get: () => (props.selectedId !== undefined ? props.selectedId : localSelectedId.value),
+  set: (value) => {
+    if (props.selectedId !== undefined) {
+      if (props.selectedId !== value) {
+        emit('update:selectedId', value);
+      }
+      return;
+    }
+    localSelectedId.value = value;
+  },
+});
 const isFullScreen = ref(false);
 const splitContainerRef = ref<HTMLDivElement | null>(null);
 const terminalContainerRef = ref<HTMLDivElement | null>(null);
@@ -49,11 +68,10 @@ const isResizingColumns = ref(false);
 const lastPendingCount = ref(0);
 const leftPaneWidthStorageKey = 'console-ui.target-split.left.width';
 const terminalHeightStorageKey = 'console-ui.target-terminal.height';
-const minLeftPaneWidth = 320;
-const minRightPaneWidth = 420;
 const columnResizerWidth = 8;
 const minTerminalHeight = 240;
 const minContentHeight = 240;
+const defaultLeftPaneWidth = 351;
 let resizeObserver: ResizeObserver | null = null;
 let resizeStartY = 0;
 let resizeStartHeight = 0;
@@ -61,6 +79,12 @@ let resizeStartX = 0;
 let resizeStartWidth = 0;
 
 type SnapshotItem = RequestSnapshot | RunningSnapshot | ResultSnapshot;
+
+const layoutDefaults = computed(() => ({
+  minLeftPaneWidth: props.layout?.minLeftPaneWidth ?? 320,
+  minRightPaneWidth: props.layout?.minRightPaneWidth ?? 420,
+  defaultLeftPaneRatio: props.layout?.defaultLeftPaneRatio ?? 1 / 3,
+}));
 
 const pendingList = computed(() => props.snapshot?.queue ?? []);
 const runningList = computed(() => props.snapshot?.running ?? []);
@@ -82,15 +106,24 @@ const leftPaneStyle = computed(() => {
   if (isFullScreen.value) {
     return {};
   }
-  const fallback = containerWidth.value > 0 ? containerWidth.value / 3 : minLeftPaneWidth;
+  const fallback =
+    containerWidth.value > 0
+      ? containerWidth.value * layoutDefaults.value.defaultLeftPaneRatio
+      : layoutDefaults.value.minLeftPaneWidth;
   const width = leftPaneWidth.value ?? fallback;
-  return { width: `${clampLeftPaneWidth(width)}px` };
+  return {
+    width: `${clampLeftPaneWidth(width)}px`,
+    minWidth: `${layoutDefaults.value.minLeftPaneWidth}px`,
+  };
 });
 const columnResizerStyle = computed(() => {
   if (isFullScreen.value) {
     return {};
   }
-  const fallback = containerWidth.value > 0 ? containerWidth.value / 3 : minLeftPaneWidth;
+  const fallback =
+    containerWidth.value > 0
+      ? containerWidth.value * layoutDefaults.value.defaultLeftPaneRatio
+      : layoutDefaults.value.minLeftPaneWidth;
   const width = clampLeftPaneWidth(leftPaneWidth.value ?? fallback);
   const offset = width - columnResizerWidth / 2 - 0.5;
   return { left: `${offset}px`, width: `${columnResizerWidth}px` };
@@ -452,8 +485,8 @@ function clampLeftPaneWidth(value: number) {
   if (containerWidth.value <= 0) {
     return value;
   }
-  const min = Math.min(minLeftPaneWidth, containerWidth.value);
-  const max = Math.max(min, containerWidth.value - minRightPaneWidth);
+  const min = Math.min(layoutDefaults.value.minLeftPaneWidth, containerWidth.value);
+  const max = Math.max(min, containerWidth.value - layoutDefaults.value.minRightPaneWidth);
   return Math.min(max, Math.max(min, value));
 }
 
@@ -491,11 +524,11 @@ function readStoredLeftPaneWidth() {
   }
   const raw = window.localStorage.getItem(leftPaneWidthStorageKey);
   if (!raw) {
-    return null;
+    return defaultLeftPaneWidth;
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
+    return defaultLeftPaneWidth;
   }
   return parsed;
 }
@@ -511,7 +544,9 @@ function ensureLeftPaneWidth() {
   if (leftPaneWidth.value !== null || containerWidth.value <= 0) {
     return;
   }
-  leftPaneWidth.value = clampLeftPaneWidth(containerWidth.value / 3);
+  leftPaneWidth.value = clampLeftPaneWidth(
+    containerWidth.value * layoutDefaults.value.defaultLeftPaneRatio
+  );
 }
 
 function handleResizeMove(event: MouseEvent) {
@@ -565,7 +600,9 @@ function startColumnResize(event: MouseEvent) {
   isResizingColumns.value = true;
   updateContainerMetrics();
   resizeStartX = event.clientX;
-  resizeStartWidth = leftPaneWidth.value ?? clampLeftPaneWidth(containerWidth.value / 3);
+  resizeStartWidth =
+    leftPaneWidth.value ??
+    clampLeftPaneWidth(containerWidth.value * layoutDefaults.value.defaultLeftPaneRatio);
   leftPaneWidth.value = clampLeftPaneWidth(resizeStartWidth);
   window.addEventListener('mousemove', handleColumnResizeMove);
   window.addEventListener('mouseup', stopColumnResize);
@@ -733,7 +770,7 @@ onBeforeUnmount(() => {
       <div class="flex-1 min-h-0 flex overflow-hidden relative">
         <div
           v-if="!isFullScreen"
-          class="shrink-0 min-w-[320px] border-r border-border flex flex-col bg-panel/20 min-h-0"
+          class="shrink-0 border-r border-border flex flex-col bg-panel/20 min-h-0"
           :style="leftPaneStyle"
         >
           <div class="flex items-center justify-between border-b border-border px-4 py-3">

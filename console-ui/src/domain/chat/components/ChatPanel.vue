@@ -109,6 +109,7 @@ interface Props {
   greeting?: string;
   placeholder?: string;
   width?: number;
+  useStoredWidth?: boolean;
   messages: ChatMessage[];
   planEntries?: PlanEntry[];
   isStreaming?: boolean;
@@ -123,6 +124,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   width: 380,
+  useStoredWidth: true,
   isStreaming: false,
   isConnected: true,
   inputLocked: false,
@@ -187,7 +189,11 @@ function readStoredWidth() {
   return clampWidth(parsed);
 }
 
-const panelWidth = ref(readStoredWidth() ?? props.width);
+const panelWidth = ref(
+  props.useStoredWidth === false
+    ? clampWidth(props.width ?? minPanelWidth)
+    : (readStoredWidth() ?? clampWidth(props.width ?? minPanelWidth))
+);
 const isResizing = ref(false);
 
 const panelStyle = computed(() => {
