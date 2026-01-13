@@ -612,12 +612,12 @@ watch(
               <div v-if="editorMode === 'toml'">
                 <MonacoEditor v-model="proxyConfigModel" language="toml" height="52vh" :theme="props.resolvedTheme" />
               </div>
-              <div v-else>
-                <div v-if="!proxyForm || formBusy" class="flex items-center gap-2 text-xs text-foreground-muted">
-                  <NSpin size="small" />
-                  <span>{{ $t('settings.config.editor.parsing') }}</span>
-                </div>
-                <div v-else class="space-y-4">
+              <div v-else class="relative">
+                <div
+                  class="config-center-form"
+                  :class="formBusy || !proxyForm ? 'config-center-form--dim' : ''"
+                >
+                  <div v-if="proxyForm" class="space-y-4">
                   <div class="rounded-lg border border-border/40 p-3">
                     <div class="flex items-center justify-between gap-2">
                       <div class="text-sm font-medium">{{ $t('settings.config.proxy.targetsTitle') }}</div>
@@ -902,6 +902,15 @@ watch(
                     </NCollapse>
                   </div>
                 </div>
+                  <div v-else class="config-center-form__placeholder"></div>
+                </div>
+                <div
+                  class="config-center-overlay flex items-center justify-center gap-2 text-xs text-foreground-muted"
+                  :class="formBusy || !proxyForm ? 'config-center-overlay--show' : ''"
+                >
+                  <NSpin size="small" />
+                  <span>{{ $t('settings.config.editor.parsing') }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -917,12 +926,12 @@ watch(
               <div v-if="editorMode === 'toml'">
                 <MonacoEditor v-model="brokerConfigModel" language="toml" height="52vh" :theme="props.resolvedTheme" />
               </div>
-              <div v-else>
-                <div v-if="!brokerForm || formBusy" class="flex items-center gap-2 text-xs text-foreground-muted">
-                  <NSpin size="small" />
-                  <span>{{ $t('settings.config.editor.parsing') }}</span>
-                </div>
-                <div v-else class="space-y-4">
+              <div v-else class="relative">
+                <div
+                  class="config-center-form"
+                  :class="formBusy || !brokerForm ? 'config-center-form--dim' : ''"
+                >
+                  <div v-if="brokerForm" class="space-y-4">
                   <div class="flex items-center justify-between gap-3">
                     <span class="text-xs text-foreground-muted">{{ $t('settings.config.fields.autoApproveAllowed') }}</span>
                     <NSwitch
@@ -1007,6 +1016,14 @@ watch(
                       </div>
                     </div>
                   </div>
+                  <div v-else class="config-center-form__placeholder"></div>
+                </div>
+                <div
+                  class="config-center-overlay flex items-center justify-center gap-2 text-xs text-foreground-muted"
+                  :class="formBusy || !brokerForm ? 'config-center-overlay--show' : ''"
+                >
+                  <NSpin size="small" />
+                  <span>{{ $t('settings.config.editor.parsing') }}</span>
                 </div>
               </div>
             </div>
@@ -1031,5 +1048,32 @@ watch(
 .config-center-root :deep(.n-input-number:not(.n-input-number--disabled) .n-input__input input::placeholder),
 .config-center-root :deep(.n-base-selection:not(.n-base-selection--disabled) .n-base-selection-placeholder) {
   color: rgb(var(--color-text-muted));
+}
+
+.config-center-form {
+  transition: opacity 160ms ease;
+}
+
+.config-center-form--dim {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.config-center-form__placeholder {
+  min-height: 120px;
+}
+
+.config-center-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--color-panel) / 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.config-center-overlay--show {
+  opacity: 1;
+  pointer-events: auto;
 }
 </style>
