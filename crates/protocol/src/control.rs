@@ -2,7 +2,7 @@ use crate::{CommandMode, CommandStage, CommandStatus};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RequestSnapshot {
+pub struct SnapshotCommonFields {
     pub id: String,
     pub client: String,
     pub target: String,
@@ -18,19 +18,15 @@ pub struct RequestSnapshot {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequestSnapshot {
+    #[serde(flatten)]
+    pub common: SnapshotCommonFields,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunningSnapshot {
-    pub id: String,
-    pub client: String,
-    pub target: String,
-    pub peer: String,
-    pub intent: String,
-    pub mode: CommandMode,
-    pub raw_command: String,
-    pub pipeline: Vec<CommandStage>,
-    pub cwd: Option<String>,
-    pub timeout_ms: Option<u64>,
-    pub max_output_bytes: Option<u64>,
-    pub received_at_ms: u64,
+    #[serde(flatten)]
+    pub common: SnapshotCommonFields,
     pub queued_for_secs: u64,
     pub started_at_ms: u64,
 }

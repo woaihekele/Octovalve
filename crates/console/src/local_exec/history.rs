@@ -216,17 +216,8 @@ fn system_time_ms(time: SystemTime) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_utils::temp_dir;
     use std::fs;
-    fn temp_dir(prefix: &str) -> PathBuf {
-        let mut dir = std::env::temp_dir();
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        dir.push(format!("{prefix}-{nanos}"));
-        fs::create_dir_all(&dir).expect("create temp dir");
-        dir
-    }
 
     #[test]
     fn load_history_reads_output_files() {

@@ -3,6 +3,11 @@ use clap::Parser;
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio};
 
+#[path = "../shell_utils.rs"]
+mod shell_utils;
+
+use shell_utils::{apply_ssh_options, build_env_prefix, env_language_locale, env_locale, shell_escape};
+
 #[derive(Parser, Debug)]
 #[command(name = "test_pty", about = "Test remote command execution via SSH")]
 struct Args {
@@ -42,9 +47,7 @@ fn main() -> anyhow::Result<()> {
     } else {
         cmd.arg("-T");
     }
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
-    cmd.arg("-o").arg("ConnectTimeout=10");
-    cmd.arg("-o").arg("BatchMode=yes");
+    apply_ssh_options(&mut cmd, false);
     apply_locale_env(&mut cmd, locale.as_deref());
     cmd.arg(args.ssh);
     cmd.arg(remote_cmd);
@@ -78,28 +81,6 @@ fn resolve_locale(explicit: Option<String>) -> Option<String> {
         return Some(locale);
     }
     Some("en_US.utf8".to_string())
-}
-
-fn env_locale(key: &str) -> Option<String> {
-    let value = std::env::var(key).ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn env_language_locale(key: &str) -> Option<String> {
-    let value = std::env::var(key).ok()?;
-    let trimmed = value.trim().to_lowercase();
-    if trimmed.starts_with("zh") {
-        return Some("zh_CN.utf8".to_string());
-    }
-    if trimmed.starts_with("en") {
-        return Some("en_US.utf8".to_string());
-    }
-    None
 }
 
 fn parse_env_pairs(values: &[String]) -> anyhow::Result<BTreeMap<String, String>> {
@@ -147,34 +128,6 @@ fn build_remote_command(
         "{shell_prefix}bash --noprofile -lc {}",
         shell_escape(&command)
     )
-}
-
-fn build_env_prefix(pairs: &BTreeMap<String, String>) -> String {
-    let mut parts = Vec::new();
-    for (key, value) in pairs {
-        if key.trim().is_empty() {
-            continue;
-        }
-        let value = value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        parts.push(format!("{key}={}", shell_escape(value)));
-    }
-    parts.join(" ")
-}
-
-fn shell_escape(value: &str) -> String {
-    let mut escaped = String::from("'");
-    for ch in value.chars() {
-        if ch == '\'' {
-            escaped.push_str("'\"'\"'");
-        } else {
-            escaped.push(ch);
-        }
-    }
-    escaped.push('\'');
-    escaped
 }
 
 fn apply_locale_env(cmd: &mut Command, locale: Option<&str>) {

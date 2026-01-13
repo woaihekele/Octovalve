@@ -4,6 +4,7 @@ mod control;
 mod events;
 mod local_exec;
 mod runtime;
+mod shell_utils;
 mod state;
 mod terminal;
 mod uploads;

@@ -11,10 +11,15 @@ pub struct CliConfig {
 
 impl CliConfig {
     pub fn parse() -> Result<Self> {
+        let args = env::args().skip(1).collect();
+        Self::parse_from(args)
+    }
+
+    pub fn parse_from(args: Vec<String>) -> Result<Self> {
         let mut approval_policy = None;
         let mut sandbox_mode = None;
         let mut app_server_args = Vec::new();
-        let mut args = env::args().skip(1).peekable();
+        let mut args = args.into_iter().peekable();
 
         while let Some(arg) = args.next() {
             match arg.as_str() {

@@ -62,19 +62,8 @@ pub(crate) async fn write_output_files(output_dir: &Path, response: &CommandResp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_utils::temp_dir;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn temp_dir(prefix: &str) -> PathBuf {
-        let mut dir = std::env::temp_dir();
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        dir.push(format!("{prefix}-{nanos}"));
-        fs::create_dir_all(&dir).expect("create temp dir");
-        dir
-    }
 
     #[test]
     fn writes_result_and_outputs() {

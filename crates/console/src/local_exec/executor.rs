@@ -17,6 +17,7 @@ use system_utils::path::expand_tilde;
 use system_utils::ssh::apply_askpass_env;
 use tracing::warn;
 
+use crate::shell_utils::{apply_ssh_options, build_env_prefix, env_language_locale, env_locale, shell_escape};
 use crate::state::TargetSpec;
 
 use super::policy::{LimitsConfig, Whitelist};
@@ -388,55 +389,6 @@ fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
     Some("en_US.utf8".to_string())
 }
 
-fn env_locale(key: &str) -> Option<String> {
-    let value = std::env::var(key).ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn env_language_locale(key: &str) -> Option<String> {
-    let value = std::env::var(key).ok()?;
-    let trimmed = value.trim().to_lowercase();
-    if trimmed.starts_with("zh") {
-        return Some("zh_CN.utf8".to_string());
-    }
-    if trimmed.starts_with("en") {
-        return Some("en_US.utf8".to_string());
-    }
-    None
-}
-
-fn build_env_prefix(pairs: &BTreeMap<String, String>) -> String {
-    let mut parts = Vec::new();
-    for (key, value) in pairs {
-        if key.trim().is_empty() {
-            continue;
-        }
-        let value = value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        parts.push(format!("{key}={}", shell_escape(value)));
-    }
-    parts.join(" ")
-}
-
-fn shell_escape(value: &str) -> String {
-    let mut escaped = String::from("'");
-    for ch in value.chars() {
-        if ch == '\'' {
-            escaped.push_str("'\"'\"'");
-        } else {
-            escaped.push(ch);
-        }
-    }
-    escaped.push('\'');
-    escaped
-}
 
 fn build_execution_outcome(
     exit_code: Option<i32>,
@@ -662,14 +614,6 @@ impl PtySession {
         self.writer.write_all(b"\n").context("write pty newline")?;
         self.writer.flush().context("flush pty command")?;
         Ok(())
-    }
-}
-
-fn apply_ssh_options(cmd: &mut Command, has_password: bool) {
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
-    cmd.arg("-o").arg("ConnectTimeout=10");
-    if !has_password {
-        cmd.arg("-o").arg("BatchMode=yes");
     }
 }
 

@@ -11,6 +11,7 @@ use tokio::time::timeout;
 use system_utils::path::expand_tilde;
 use system_utils::ssh::apply_askpass_env;
 
+use crate::shell_utils::{apply_ssh_options, shell_escape};
 use crate::state::TargetSpec;
 
 const LIST_DIR_TIMEOUT: Duration = Duration::from_secs(8);
@@ -465,23 +466,4 @@ fn remote_parent_dir(path: &str) -> String {
     }
 }
 
-fn apply_ssh_options(cmd: &mut Command, has_password: bool) {
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
-    cmd.arg("-o").arg("ConnectTimeout=10");
-    if !has_password {
-        cmd.arg("-o").arg("BatchMode=yes");
-    }
-}
-
-fn shell_escape(value: &str) -> String {
-    let mut escaped = String::from("'");
-    for ch in value.chars() {
-        if ch == '\'' {
-            escaped.push_str("'\"'\"'");
-        } else {
-            escaped.push(ch);
-        }
-    }
-    escaped.push('\'');
-    escaped
-}
+// shell/ssh helpers live in crate::shell_utils

@@ -9,6 +9,8 @@ mod server;
 mod service;
 mod snapshots;
 mod stream;
+#[cfg(test)]
+mod test_utils;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

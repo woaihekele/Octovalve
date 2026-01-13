@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use protocol::control::{RequestSnapshot, ResultSnapshot, RunningSnapshot};
+use protocol::control::{RequestSnapshot, ResultSnapshot, RunningSnapshot, SnapshotCommonFields};
 use protocol::CommandResponse;
 
 use super::events::PendingRequest;
@@ -10,20 +10,8 @@ pub(super) fn build_queue_snapshots(pending: &[PendingRequest]) -> Vec<RequestSn
 }
 
 fn to_request_snapshot(pending: &PendingRequest) -> RequestSnapshot {
-    let request = &pending.request;
     RequestSnapshot {
-        id: request.id.clone(),
-        client: request.client.clone(),
-        target: request.target.clone(),
-        peer: pending.peer.clone(),
-        intent: request.intent.clone(),
-        mode: request.mode.clone(),
-        raw_command: request.raw_command.clone(),
-        pipeline: request.pipeline.clone(),
-        cwd: request.cwd.clone(),
-        timeout_ms: request.timeout_ms,
-        max_output_bytes: request.max_output_bytes,
-        received_at_ms: system_time_ms(pending.received_at),
+        common: build_common_fields(pending),
     }
 }
 
@@ -31,24 +19,12 @@ pub(super) fn running_snapshot_from_pending(
     pending: &PendingRequest,
     started_at: SystemTime,
 ) -> RunningSnapshot {
-    let request = &pending.request;
     let queued_for_secs = started_at
         .duration_since(pending.received_at)
         .map(|duration| duration.as_secs())
         .unwrap_or_else(|_| pending.queued_at.elapsed().as_secs());
     RunningSnapshot {
-        id: request.id.clone(),
-        client: request.client.clone(),
-        target: request.target.clone(),
-        peer: pending.peer.clone(),
-        intent: request.intent.clone(),
-        mode: request.mode.clone(),
-        raw_command: request.raw_command.clone(),
-        pipeline: request.pipeline.clone(),
-        cwd: request.cwd.clone(),
-        timeout_ms: request.timeout_ms,
-        max_output_bytes: request.max_output_bytes,
-        received_at_ms: system_time_ms(pending.received_at),
+        common: build_common_fields(pending),
         queued_for_secs,
         started_at_ms: system_time_ms(started_at),
     }
@@ -81,4 +57,22 @@ fn system_time_ms(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+fn build_common_fields(pending: &PendingRequest) -> SnapshotCommonFields {
+    let request = &pending.request;
+    SnapshotCommonFields {
+        id: request.id.clone(),
+        client: request.client.clone(),
+        target: request.target.clone(),
+        peer: pending.peer.clone(),
+        intent: request.intent.clone(),
+        mode: request.mode.clone(),
+        raw_command: request.raw_command.clone(),
+        pipeline: request.pipeline.clone(),
+        cwd: request.cwd.clone(),
+        timeout_ms: request.timeout_ms,
+        max_output_bytes: request.max_output_bytes,
+        received_at_ms: system_time_ms(pending.received_at),
+    }
 }

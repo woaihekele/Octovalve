@@ -381,14 +381,15 @@ impl ServiceState {
         running: protocol::control::RunningSnapshot,
         token: CancellationToken,
     ) {
-        self.running.retain(|item| item.id != running.id);
+        self.running
+            .retain(|item| item.common.id != running.common.id);
         self.running.insert(0, running.clone());
-        self.running_tokens.insert(running.id, token);
+        self.running_tokens.insert(running.common.id, token);
     }
 
     fn finish_running(&mut self, id: &str) -> bool {
         let before = self.running.len();
-        self.running.retain(|item| item.id != id);
+        self.running.retain(|item| item.common.id != id);
         self.running_tokens.remove(id);
         before != self.running.len()
     }

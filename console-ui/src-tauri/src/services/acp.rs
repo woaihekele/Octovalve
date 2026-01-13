@@ -81,66 +81,6 @@ fn parse_acp_args(raw: Option<String>) -> Result<Vec<String>, String> {
     shlex::split(trimmed).ok_or_else(|| "Invalid ACP arguments (check quotes)".to_string())
 }
 
-fn apply_config_override(
-    value: &str,
-    approval_policy: &mut Option<String>,
-    sandbox_mode: &mut Option<String>,
-) {
-    let (key, raw_value) = match value.split_once('=') {
-        Some(pair) => pair,
-        None => return,
-    };
-    let normalized_value = raw_value.trim().replace('_', "-");
-    match key.trim() {
-        "approval_policy" if approval_policy.is_none() => {
-            *approval_policy = Some(normalized_value);
-        }
-        "sandbox_mode" if sandbox_mode.is_none() => {
-            *sandbox_mode = Some(normalized_value);
-        }
-        _ => {}
-    }
-}
-
-fn build_cli_config(args: Vec<String>) -> Result<CliConfig, String> {
-    let mut approval_policy = None;
-    let mut sandbox_mode = None;
-    let mut app_server_args = Vec::new();
-    let mut iter = args.into_iter().peekable();
-
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--approval-policy" | "--approval_policy" => {
-                let value = iter
-                    .next()
-                    .ok_or_else(|| "--approval-policy 缺少值".to_string())?;
-                approval_policy = Some(value.replace('_', "-"));
-            }
-            "--sandbox-mode" | "--sandbox_mode" => {
-                let value = iter
-                    .next()
-                    .ok_or_else(|| "--sandbox-mode 缺少值".to_string())?;
-                sandbox_mode = Some(value.replace('_', "-"));
-            }
-            "-c" | "--config" => {
-                let value = iter.next().ok_or_else(|| "-c 缺少配置值".to_string())?;
-                apply_config_override(&value, &mut approval_policy, &mut sandbox_mode);
-                app_server_args.push(arg);
-                app_server_args.push(value);
-            }
-            _ => {
-                app_server_args.push(arg);
-            }
-        }
-    }
-
-    Ok(CliConfig {
-        approval_policy,
-        sandbox_mode,
-        app_server_args,
-    })
-}
-
 fn format_config_literal(value: &str) -> Result<String, String> {
     serde_json::to_string(value).map_err(|err| err.to_string())
 }
@@ -259,7 +199,7 @@ pub async fn acp_start(
     );
     acp_args.push("-c".to_string());
     acp_args.push(mcp_override);
-    let cli_config = build_cli_config(acp_args)?;
+    let cli_config = CliConfig::parse_from(acp_args).map_err(|err| err.to_string())?;
 
     let _ = append_log_line(&log_path, "[acp_start] starting new client...");
     let client = Arc::new(
