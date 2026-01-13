@@ -103,6 +103,24 @@ pub(crate) fn normalize_dir_path(path: &str) -> String {
     }
 }
 
+pub(crate) async fn resolve_remote_dir_path(
+    target: &TargetSpec,
+    path: &str,
+) -> Result<String, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "~" || trimmed == "~/" {
+        return Ok(fetch_remote_home(target).await.unwrap_or_else(|_| "/".to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        let home = fetch_remote_home(target).await.unwrap_or_else(|_| "/".to_string());
+        if rest.is_empty() {
+            return Ok(home);
+        }
+        return Ok(join_remote_path(&home, rest));
+    }
+    Ok(normalize_dir_path(trimmed))
+}
+
 pub(crate) async fn list_remote_directories(
     target: &TargetSpec,
     path: &str,
@@ -158,6 +176,47 @@ pub(crate) async fn list_remote_directories(
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(entries)
+}
+
+async fn fetch_remote_home(target: &TargetSpec) -> Result<String, String> {
+    let ssh = target
+        .ssh
+        .as_deref()
+        .ok_or_else(|| "missing ssh target".to_string())?;
+    let mut cmd = Command::new("ssh");
+    if let Some(password) = target.ssh_password.as_deref() {
+        apply_askpass_env(&mut cmd, password).map_err(|err| err.to_string())?;
+    }
+    apply_ssh_options(&mut cmd, target.ssh_password.is_some());
+    for arg in &target.ssh_args {
+        cmd.arg(arg);
+    }
+    cmd.arg(ssh);
+    cmd.arg(build_home_command());
+
+    let output = match timeout(LIST_DIR_TIMEOUT, cmd.output()).await {
+        Ok(result) => result.map_err(|err| err.to_string())?,
+        Err(_) => return Err("home lookup timed out".to_string()),
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let message = if stderr.is_empty() {
+            format!("home lookup failed with status {:?}", output.status.code())
+        } else {
+            stderr
+        };
+        return Err(message);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut home = stdout.trim().to_string();
+    while home.ends_with('/') && home.len() > 1 {
+        home.pop();
+    }
+    if home.is_empty() {
+        Ok("/".to_string())
+    } else {
+        Ok(home)
+    }
 }
 
 pub(crate) async fn start_upload(
@@ -364,6 +423,11 @@ fn build_list_command(path: &str) -> String {
         "bash --noprofile -lc {}",
         shell_escape(&command)
     )
+}
+
+fn build_home_command() -> String {
+    let command = "printf %s \"$HOME\"";
+    format!("bash --noprofile -lc {}", shell_escape(command))
 }
 
 fn build_upload_command(remote_path: &str) -> String {

@@ -29,6 +29,7 @@ const emit = defineEmits<{
   (e: 'cancel', id: string): void;
   (e: 'open-terminal'): void;
   (e: 'close-terminal'): void;
+  (e: 'open-upload'): void;
   (e: 'toggle-chat'): void;
   (e: 'refresh-risk', payload: { target: string; id: string }): void;
 }>();
@@ -409,6 +410,13 @@ function handleTerminalToggle() {
   emit('open-terminal');
 }
 
+function handleUploadClick() {
+  if (!props.target.terminal_available) {
+    return;
+  }
+  emit('open-upload');
+}
+
 function readStoredTerminalHeight() {
   if (typeof window === 'undefined') {
     return null;
@@ -635,6 +643,32 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <button
+          class="p-2 rounded border transition-colors"
+          :class="
+            props.target.terminal_available
+              ? 'bg-panel/60 text-foreground border-border hover:border-accent/40'
+              : 'bg-panel/30 text-foreground-muted border-border/60 cursor-not-allowed'
+          "
+          :disabled="!props.target.terminal_available"
+          @click="handleUploadClick"
+          :aria-label="$t('terminal.upload.title')"
+          :title="$t('terminal.upload.title')"
+        >
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 3v12" />
+            <polyline points="8 7 12 3 16 7" />
+            <rect x="4" y="15" width="16" height="6" rx="2" />
+          </svg>
+        </button>
         <button
           class="p-2 rounded border transition-colors"
           :class="

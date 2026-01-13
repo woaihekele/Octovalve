@@ -276,13 +276,15 @@ async fn list_target_dirs(
     let Some(target) = target else {
         return Err(StatusCode::NOT_FOUND);
     };
-    let raw_path = query.path.unwrap_or_else(|| "/".to_string());
-    let normalized = uploads::normalize_dir_path(&raw_path);
-    let entries = uploads::list_remote_directories(&target, &normalized)
+    let raw_path = query.path.unwrap_or_default();
+    let resolved = uploads::resolve_remote_dir_path(&target, &raw_path)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let entries = uploads::list_remote_directories(&target, &resolved)
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
     Ok(Json(DirListing {
-        path: normalized,
+        path: resolved,
         entries,
     }))
 }
