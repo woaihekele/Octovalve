@@ -418,10 +418,10 @@ export const messages = {
       },
       config: {
         loading: '正在加载配置...',
-        status: '当前环境 {active} · 已选择 {selected} · 本地配置 {proxy} · 规则配置 {broker}',
+        status: '当前环境 {active} · 已选择 {selected} · 连接配置 {proxy} · 规则配置 {broker}',
         changed: '有改动',
         unchanged: '未改动',
-        proxyTitle: '本地代理配置',
+        proxyTitle: '连接配置',
         brokerTitle: '执行规则配置',
         missing: '未创建',
         editor: {
@@ -494,7 +494,7 @@ export const messages = {
       apply: {
         failed: '应用失败：{error}',
         switchProfile: '已切换到环境 {name}。',
-        localApplied: '本地配置已应用，console 已重启。',
+        localApplied: '连接配置已应用，console 已重启。',
       },
       log: {
         title: {
@@ -1023,7 +1023,7 @@ export const messages = {
       apply: {
         failed: 'Apply failed: {error}',
         switchProfile: 'Switched to profile {name}.',
-        localApplied: 'Local config applied. Console restarted.',
+        localApplied: 'Connection config applied. Console restarted.',
       },
       log: {
         title: {
