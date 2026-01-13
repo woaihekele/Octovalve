@@ -947,10 +947,10 @@ export const messages = {
       },
       config: {
         loading: 'Loading config...',
-        status: 'Active {active} · Selected {selected} · Local {proxy} · Rules {broker}',
+        status: 'Active {active} · Selected {selected} · Connection {proxy} · Rules {broker}',
         changed: 'changed',
         unchanged: 'unchanged',
-        proxyTitle: 'Local proxy config',
+        proxyTitle: 'Connection settings',
         brokerTitle: 'Execution rules',
         missing: 'Missing',
         editor: {
@@ -1023,7 +1023,7 @@ export const messages = {
       apply: {
         failed: 'Apply failed: {error}',
         switchProfile: 'Switched to profile {name}.',
-        localApplied: 'Connection config applied. Console restarted.',
+        localApplied: 'Connection settings applied. Console restarted.',
       },
       log: {
         title: {
