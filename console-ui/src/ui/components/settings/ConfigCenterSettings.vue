@@ -87,6 +87,7 @@ let suppressBrokerSync = false;
 let lastProxyText: string | null = null;
 let lastBrokerText: string | null = null;
 let parseSeq = 0;
+let pendingParse = false;
 
 const proxyConfigModel = computed({
   get: () => props.proxyConfigText,
@@ -260,12 +261,18 @@ function isDefaultTarget(name: string) {
 }
 
 async function loadInteractiveForms() {
-  if (formBusy.value || props.configLoading) {
+  if (props.configLoading) {
+    return;
+  }
+  if (formBusy.value) {
+    pendingParse = true;
+    parseSeq += 1;
     return;
   }
   formBusy.value = true;
   formError.value = null;
   const current = ++parseSeq;
+  pendingParse = false;
   try {
     const [proxy, broker] = await Promise.all([
       parseProxyConfigToml(props.proxyConfigText),
@@ -291,6 +298,10 @@ async function loadInteractiveForms() {
     suppressProxySync = false;
     suppressBrokerSync = false;
     formBusy.value = false;
+    if (pendingParse) {
+      pendingParse = false;
+      void loadInteractiveForms();
+    }
   }
 }
 
@@ -400,6 +411,13 @@ const selectedTarget = computed(() => {
   }
   return form.targets[selectedTargetIndex.value] ?? null;
 });
+
+function updateTargetTty(value: boolean) {
+  if (!selectedTarget.value) {
+    return;
+  }
+  selectedTarget.value.tty = value;
+}
 
 watch(
   () => props.configLoading,
@@ -777,9 +795,10 @@ watch(
                                   <div class="flex items-center justify-between gap-3 md:col-span-2">
                                     <span class="text-xs text-foreground-muted">{{ $t('settings.config.fields.tty') }}</span>
                                     <NSwitch
-                                      v-model:value="selectedTarget.tty"
+                                      :value="selectedTarget.tty ?? false"
                                       size="small"
                                       :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                      @update:value="updateTargetTty"
                                     />
                                   </div>
                                 </div>
