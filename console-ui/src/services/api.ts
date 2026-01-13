@@ -11,6 +11,9 @@ import type {
   ProxyConfigEditor,
   ServiceSnapshot,
   TargetInfo,
+  DirectoryListing,
+  UploadStartResponse,
+  UploadStatus,
 } from '../shared/types';
 
 const DEFAULT_HTTP = 'http://127.0.0.1:19309';
@@ -109,6 +112,35 @@ export async function fetchSnapshot(name: string): Promise<ServiceSnapshot> {
     throw new Error(`failed to fetch snapshot: ${response.status}`);
   }
   return response.json() as Promise<ServiceSnapshot>;
+}
+
+export async function listTargetDirectories(name: string, path: string): Promise<DirectoryListing> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.upload'));
+  }
+  return invoke<DirectoryListing>('proxy_list_target_dirs', { name, path });
+}
+
+export async function startUpload(
+  name: string,
+  localPath: string,
+  remotePath: string
+): Promise<UploadStartResponse> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.upload'));
+  }
+  return invoke<UploadStartResponse>('proxy_start_upload', {
+    name,
+    localPath,
+    remotePath,
+  });
+}
+
+export async function fetchUploadStatus(id: string): Promise<UploadStatus> {
+  if (!TAURI_AVAILABLE) {
+    throw new Error(t('api.tauriOnly.upload'));
+  }
+  return invoke<UploadStatus>('proxy_upload_status', { id });
 }
 
 export async function approveCommand(name: string, id: string) {

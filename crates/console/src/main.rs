@@ -6,6 +6,7 @@ mod local_exec;
 mod runtime;
 mod state;
 mod terminal;
+mod uploads;
 
 use crate::cli::Args;
 use crate::config::load_console_config;
@@ -14,10 +15,11 @@ use crate::events::ConsoleEvent;
 use crate::local_exec::{spawn_local_exec, PolicyConfig};
 use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
+use crate::uploads::{DirectoryEntry, UploadRegistry, UploadRequest, UploadStatus};
 use anyhow::Context;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::extract::State;
 use axum::http::Request;
 use axum::http::StatusCode;
@@ -41,6 +43,7 @@ use tracing::info;
 struct AppState {
     state: Arc<RwLock<crate::state::ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
+    uploads: UploadRegistry,
 }
 
 #[tokio::main]
@@ -64,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
+        uploads: UploadRegistry::new(),
     };
 
     let app = Router::new()
@@ -73,6 +77,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
         .route("/targets/:name/cancel", post(cancel_command))
+        .route("/targets/:name/dirs", get(list_target_dirs))
+        .route("/targets/:name/upload", post(start_upload))
+        .route("/uploads/:id", get(get_upload_status))
         .route("/targets/:name/terminal", get(terminal_ws_handler))
         .route("/ws", get(ws_handler))
         .with_state(app_state)
@@ -185,6 +192,22 @@ struct CommandPayload {
     id: String,
 }
 
+#[derive(Deserialize)]
+struct DirQuery {
+    path: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DirListing {
+    path: String,
+    entries: Vec<DirectoryEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct UploadStartResponse {
+    id: String,
+}
+
 #[derive(serde::Serialize)]
 struct ActionResponse {
     message: String,
@@ -242,6 +265,63 @@ async fn cancel_command(
     Ok(Json(ActionResponse {
         message: "cancel queued".to_string(),
     }))
+}
+
+async fn list_target_dirs(
+    Path(name): Path<String>,
+    Query(query): Query<DirQuery>,
+    State(state): State<AppState>,
+) -> Result<Json<DirListing>, StatusCode> {
+    let target = state.state.read().await.target_spec(&name);
+    let Some(target) = target else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    let raw_path = query.path.unwrap_or_else(|| "/".to_string());
+    let normalized = uploads::normalize_dir_path(&raw_path);
+    let entries = uploads::list_remote_directories(&target, &normalized)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    Ok(Json(DirListing {
+        path: normalized,
+        entries,
+    }))
+}
+
+async fn start_upload(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<UploadRequest>,
+) -> Result<Json<UploadStartResponse>, StatusCode> {
+    let target = state.state.read().await.target_spec(&name);
+    let Some(target) = target else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if payload.local_path.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if uploads::normalize_remote_path(&payload.remote_path).is_err() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let id = uploads::start_upload(
+        state.uploads.clone(),
+        target,
+        payload.local_path,
+        payload.remote_path,
+    )
+    .await
+    .map_err(|_| StatusCode::BAD_REQUEST)?;
+    Ok(Json(UploadStartResponse { id }))
+}
+
+async fn get_upload_status(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<UploadStatus>, StatusCode> {
+    let status = state.uploads.get(&id).await;
+    let Some(status) = status else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    Ok(Json(status))
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

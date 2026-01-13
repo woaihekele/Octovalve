@@ -71,6 +71,33 @@ export interface TargetInfo {
   is_default?: boolean;
 }
 
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+}
+
+export interface DirectoryListing {
+  path: string;
+  entries: DirectoryEntry[];
+}
+
+export type UploadState = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface UploadStartResponse {
+  id: string;
+}
+
+export interface UploadStatus {
+  id: string;
+  target: string;
+  local_path: string;
+  remote_path: string;
+  status: UploadState;
+  total_bytes: number;
+  sent_bytes: number;
+  error?: string | null;
+}
+
 export type CommandMode = 'shell';
 export type CommandStatus = 'approved' | 'denied' | 'error' | 'cancelled' | 'completed';
 

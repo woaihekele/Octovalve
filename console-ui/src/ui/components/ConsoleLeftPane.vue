@@ -75,26 +75,52 @@
           <template #terminal>
             <div class="flex flex-col min-h-0 h-full">
               <div v-if="selectedTerminalEntry" class="pt-1 pb-0 bg-surface">
-                <n-tabs
-                  :value="activeTerminalTabId"
-                  type="card"
-                  size="small"
-                  addable
-                  closable
-                  :pane-wrapper-style="{ display: 'none' }"
-                  class="min-w-0 terminal-tabs"
-                  @add="emit('terminal-add')"
-                  @close="emit('terminal-close', $event)"
-                  @update:value="emit('terminal-activate', $event)"
-                >
-                  <n-tab-pane
-                    v-for="tab in selectedTerminalEntry.state.tabs"
-                    :key="tab.id"
-                    :name="tab.id"
-                    :tab="tab.label"
+                <div class="flex items-center gap-2">
+                  <n-tabs
+                    :value="activeTerminalTabId"
+                    type="card"
+                    size="small"
+                    addable
                     closable
-                  />
-                </n-tabs>
+                    :pane-wrapper-style="{ display: 'none' }"
+                    class="min-w-0 flex-1 terminal-tabs"
+                    @add="emit('terminal-add')"
+                    @close="emit('terminal-close', $event)"
+                    @update:value="emit('terminal-activate', $event)"
+                  >
+                    <n-tab-pane
+                      v-for="tab in selectedTerminalEntry.state.tabs"
+                      :key="tab.id"
+                      :name="tab.id"
+                      :tab="tab.label"
+                      closable
+                    />
+                  </n-tabs>
+                  <button
+                    class="p-2 rounded border transition-colors"
+                    :class="uploadDisabled
+                      ? 'bg-panel/30 text-foreground-muted border-border/60 cursor-not-allowed'
+                      : 'bg-panel/60 text-foreground border-border hover:border-accent/40'"
+                    :disabled="uploadDisabled"
+                    @click="openUploadModal"
+                    :aria-label="$t('terminal.upload.title')"
+                    :title="$t('terminal.upload.title')"
+                  >
+                    <svg
+                      class="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M12 3v12" />
+                      <polyline points="8 7 12 3 16 7" />
+                      <rect x="4" y="15" width="16" height="6" rx="2" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div class="flex-1 min-h-0 relative">
                 <template v-for="entry in terminalEntries" :key="entry.target.name">
@@ -127,9 +153,12 @@
       </div>
     </div>
   </div>
+
+  <TerminalUploadModal v-model:show="uploadOpen" :target="selectedTarget" />
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { NTabPane, NTabs } from 'naive-ui';
 import type { ResolvedTheme } from '../../shared/theme';
@@ -137,6 +166,7 @@ import type { AiRiskEntry, AppSettings, ProfileSummary, ServiceSnapshot, TargetI
 import Sidebar from './Sidebar.vue';
 import TargetView from './TargetView.vue';
 import TerminalPanel from './TerminalPanel.vue';
+import TerminalUploadModal from './TerminalUploadModal.vue';
 
 type TerminalTab = {
   id: string;
@@ -185,6 +215,10 @@ type TerminalPanelExpose = {
 };
 
 const terminalRefMap = new Map<string, TerminalPanelExpose>();
+const uploadOpen = ref(false);
+const uploadDisabled = computed(
+  () => !props.selectedTarget || !props.selectedTarget.terminal_available
+);
 
 function terminalKey(targetName: string, tabId: string) {
   return `${targetName}::${tabId}`;
@@ -229,6 +263,13 @@ function blurActiveTerminal() {
 
 function isActiveTerminalFocused() {
   return getActiveTerminalRef()?.hasFocus() ?? false;
+}
+
+function openUploadModal() {
+  if (uploadDisabled.value) {
+    return;
+  }
+  uploadOpen.value = true;
 }
 
 defineExpose({

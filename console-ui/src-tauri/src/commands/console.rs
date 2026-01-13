@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
 
-use crate::services::console_http::{console_get, console_post};
+use crate::services::console_http::{console_get, console_post, console_post_json};
 use crate::services::console_sidecar::{start_console, stop_console};
 use crate::services::console_ws::start_console_stream as start_console_stream_service;
 use crate::services::logging::append_log_line;
 use crate::services::startup_check;
 use crate::state::{AppLanguageState, AppLogState, ProfilesState, ProxyConfigState};
 use crate::types::{LogChunk, StartupCheckResult};
+use urlencoding::encode;
 
 fn console_log_path(app: &AppHandle) -> Result<PathBuf, String> {
     let config_dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
@@ -215,6 +216,45 @@ pub async fn proxy_cancel(
 ) -> Result<(), String> {
     let path = format!("/targets/{name}/cancel");
     console_post(&path, json!({ "id": id }), &log_state.app_log).await
+}
+
+#[tauri::command]
+pub async fn proxy_list_target_dirs(
+    name: String,
+    path: String,
+    log_state: State<'_, AppLogState>,
+) -> Result<Value, String> {
+    let encoded = encode(&path);
+    let path = format!("/targets/{name}/dirs?path={encoded}");
+    console_get(&path, &log_state.app_log).await
+}
+
+#[tauri::command]
+pub async fn proxy_start_upload(
+    name: String,
+    local_path: String,
+    remote_path: String,
+    log_state: State<'_, AppLogState>,
+) -> Result<Value, String> {
+    let path = format!("/targets/{name}/upload");
+    console_post_json(
+        &path,
+        json!({
+            "local_path": local_path,
+            "remote_path": remote_path
+        }),
+        &log_state.app_log,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn proxy_upload_status(
+    id: String,
+    log_state: State<'_, AppLogState>,
+) -> Result<Value, String> {
+    let path = format!("/uploads/{id}");
+    console_get(&path, &log_state.app_log).await
 }
 
 #[tauri::command]

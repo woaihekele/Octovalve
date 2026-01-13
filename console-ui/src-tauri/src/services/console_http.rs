@@ -40,6 +40,23 @@ pub async fn console_post(path: &str, payload: Value, log_path: &Path) -> Result
     console_post_with_timeout(path, payload, log_path, HTTP_IO_TIMEOUT).await
 }
 
+pub async fn console_post_json(path: &str, payload: Value, log_path: &Path) -> Result<Value, String> {
+    let payload = payload.to_string();
+    let response =
+        console_http_request_with_timeout("POST", path, Some(payload), log_path, HTTP_IO_TIMEOUT)
+            .await?;
+    if response.status / 100 != 2 {
+        return Err(format!(
+            "console http POST status {} for {}",
+            response.status, path
+        ));
+    }
+    serde_json::from_str(&response.body).map_err(|err| {
+        let _ = append_log_line(log_path, &format!("console http POST parse error: {err}"));
+        err.to_string()
+    })
+}
+
 pub async fn console_post_with_timeout(
     path: &str,
     payload: Value,
