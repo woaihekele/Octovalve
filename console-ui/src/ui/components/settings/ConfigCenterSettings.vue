@@ -618,7 +618,7 @@ watch(
                   :class="formBusy || !proxyForm ? 'config-center-form--dim' : ''"
                 >
                   <div v-if="proxyForm" class="space-y-4">
-                  <div class="rounded-lg border border-border/40 p-3">
+                    <div class="rounded-lg border border-border/40 p-3">
                     <div class="flex items-center justify-between gap-2">
                       <div class="text-sm font-medium">{{ $t('settings.config.proxy.targetsTitle') }}</div>
                       <NButton
@@ -902,7 +902,7 @@ watch(
                     </NCollapse>
                   </div>
                 </div>
-                  <div v-else class="config-center-form__placeholder"></div>
+                  <div v-if="!proxyForm" class="config-center-form__placeholder"></div>
                 </div>
                 <div
                   class="config-center-overlay flex items-center justify-center gap-2 text-xs text-foreground-muted"
@@ -1016,7 +1016,8 @@ watch(
                       </div>
                     </div>
                   </div>
-                  <div v-else class="config-center-form__placeholder"></div>
+                    </div>
+                  <div v-if="!brokerForm" class="config-center-form__placeholder"></div>
                 </div>
                 <div
                   class="config-center-overlay flex items-center justify-center gap-2 text-xs text-foreground-muted"
@@ -1032,7 +1033,6 @@ watch(
       </div>
     </div>
 
-  </div>
   </div>
 </template>
 
