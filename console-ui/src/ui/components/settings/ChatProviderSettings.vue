@@ -246,6 +246,11 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
   opacity: 0.4;
 }
 
+.chat-mcp-panel :deep(.n-input__placeholder) {
+  color: rgb(var(--color-text-muted));
+  opacity: 0.4;
+}
+
 .chat-mcp-input :deep(.n-input),
 .chat-mcp-input :deep(.n-input__textarea),
 .chat-mcp-input :deep(.n-input__textarea textarea) {

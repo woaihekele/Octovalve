@@ -121,6 +121,11 @@ body {
   color: rgb(var(--color-text));
 }
 
+.n-input__placeholder {
+  color: rgb(var(--color-text-muted));
+  opacity: 0.4;
+}
+
 .hljs {
   color: rgb(var(--color-text));
   background: transparent;
