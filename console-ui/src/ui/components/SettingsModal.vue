@@ -166,7 +166,10 @@ const configStatusText = computed(() =>
   })
 );
 const isAiTab = computed(() => activeTab.value === 'ai');
-const cardMaxWidth = computed(() => (isConfigTab.value ? '80rem' : isAiTab.value ? '64rem' : '32rem'));
+const isChatTab = computed(() => activeTab.value === 'chat');
+const cardMaxWidth = computed(() =>
+  isConfigTab.value ? '80rem' : isAiTab.value || isChatTab.value ? '64rem' : '32rem'
+);
 const cardShellStyle = computed<CSSProperties>(() => ({
   width: cardMaxWidth.value,
   maxWidth: '100%',
