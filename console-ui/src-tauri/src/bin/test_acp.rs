@@ -16,6 +16,7 @@ use octovalve_console::clients::acp_types::{
     AcpMessage, AuthenticateParams, ContentBlock, InitializeParams, InitializeResult,
     JsonRpcRequest, NewSessionParams, NewSessionResult, PromptParams, SessionUpdate,
 };
+use octovalve_console::services::mcp_config::parse_mcp_config_json;
 
 #[derive(Debug, Deserialize)]
 struct AcpEventPayload {
@@ -24,12 +25,24 @@ struct AcpEventPayload {
     payload: serde_json::Value,
 }
 
-fn parse_args() -> (Option<PathBuf>, String, Option<String>, Option<String>) {
+struct TestConfig {
+    acp_codex_path: Option<PathBuf>,
+    cwd: String,
+    auth_method: Option<String>,
+    image_arg: Option<String>,
+    prompt: Option<String>,
+    mcp_config_json: Option<String>,
+}
+
+fn parse_args() -> TestConfig {
     let mut args = std::env::args().skip(1);
     let mut acp_codex_path: Option<PathBuf> = None;
     let mut cwd: Option<String> = None;
     let mut auth_method: Option<String> = None;
     let mut image_path: Option<String> = None;
+    let mut prompt: Option<String> = None;
+    let mut mcp_json: Option<String> = None;
+    let mut mcp_json_path: Option<PathBuf> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--acp-codex-path" => {
@@ -44,6 +57,15 @@ fn parse_args() -> (Option<PathBuf>, String, Option<String>, Option<String>) {
             "--image" => {
                 image_path = args.next();
             }
+            "--prompt" => {
+                prompt = args.next();
+            }
+            "--mcp-json" => {
+                mcp_json = args.next();
+            }
+            "--mcp-json-path" => {
+                mcp_json_path = args.next().map(PathBuf::from);
+            }
             _ => {}
         }
     }
@@ -55,18 +77,29 @@ fn parse_args() -> (Option<PathBuf>, String, Option<String>, Option<String>) {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| "/".to_string())
     });
-    (acp_codex_path, cwd, auth_method, image_path)
+    let prompt = prompt.or_else(|| std::env::var("ACP_PROMPT").ok());
+    let mcp_config_json = mcp_json
+        .or_else(|| mcp_json_path.and_then(|path| std::fs::read_to_string(path).ok()))
+        .or_else(|| std::env::var("MCP_CONFIG_JSON").ok());
+    TestConfig {
+        acp_codex_path,
+        cwd,
+        auth_method,
+        image_arg: image_path,
+        prompt,
+        mcp_config_json,
+    }
 }
 
 fn main() -> Result<(), String> {
-    let (acp_codex_path, cwd, auth_method, image_arg) = parse_args();
-    if let Some(path) = acp_codex_path {
+    let config = parse_args();
+    if let Some(path) = config.acp_codex_path {
         eprintln!(
             "acp_codex_path={} (ignored: using embedded acp-codex)",
             path.display()
         );
     }
-    eprintln!("cwd={}", cwd);
+    eprintln!("cwd={}", config.cwd);
 
     let (tx, rx) = mpsc::channel::<AcpEventPayload>();
 
@@ -95,7 +128,7 @@ fn main() -> Result<(), String> {
         init.agent_info, init.auth_methods
     );
 
-    let method_id = auth_method.or_else(|| {
+    let method_id = config.auth_method.or_else(|| {
         if init.auth_methods.iter().any(|m| m.id == "openai-api-key") {
             Some("openai-api-key".to_string())
         } else if init.auth_methods.iter().any(|m| m.id == "codex-api-key") {
@@ -117,9 +150,14 @@ fn main() -> Result<(), String> {
         eprintln!("skip authenticate: no auth method");
     }
 
+    let mcp_servers = if let Some(raw) = config.mcp_config_json {
+        parse_mcp_config_json(&raw)?.servers
+    } else {
+        Vec::new()
+    };
     let session_params = NewSessionParams {
-        cwd: cwd.clone(),
-        mcp_servers: Vec::new(),
+        cwd: config.cwd.clone(),
+        mcp_servers,
     };
     let session_value = runtime
         .block_on(client.send_request(
@@ -131,22 +169,33 @@ fn main() -> Result<(), String> {
         .map_err(|e| format!("parse new_session failed: {}", e))?;
     eprintln!("session_id={}", session.session_id);
 
-    let image_path = resolve_image_path(image_arg)
-        .ok_or_else(|| "image path not found (use --image or ACP_IMAGE_PATH)".to_string())?;
-    let image_bytes = fs::read(&image_path)
-        .map_err(|e| format!("read image failed: {} ({})", image_path.display(), e))?;
-    let image_base64 = base64_encode(&image_bytes);
-    let mime_type = infer_mime_type(&image_path);
-
-    let prompt_blocks = vec![
-        ContentBlock::Text {
-            text: "请描述这张图里是什么内容。".to_string(),
-        },
-        ContentBlock::Image {
+    let has_prompt = config.prompt.is_some();
+    let image_path = if has_prompt {
+        resolve_image_path(config.image_arg, false)
+    } else {
+        resolve_image_path(config.image_arg, true)
+    };
+    let mut prompt_blocks = Vec::new();
+    let prompt = config.prompt.unwrap_or_else(|| {
+        if image_path.is_some() {
+            "请描述这张图里是什么内容。".to_string()
+        } else {
+            "请只列出当前可调用的工具名称，逐行输出，不要解释。".to_string()
+        }
+    });
+    prompt_blocks.push(ContentBlock::Text { text: prompt });
+    if let Some(image_path) = image_path {
+        let image_bytes = fs::read(&image_path)
+            .map_err(|e| format!("read image failed: {} ({})", image_path.display(), e))?;
+        let image_base64 = base64_encode(&image_bytes);
+        let mime_type = infer_mime_type(&image_path);
+        prompt_blocks.push(ContentBlock::Image {
             data: image_base64,
             mime_type,
-        },
-    ];
+        });
+    } else if !has_prompt {
+        return Err("image path not found (use --image or ACP_IMAGE_PATH)".to_string());
+    }
 
     let prompt_params = PromptParams {
         session_id: session.session_id.clone(),
@@ -464,7 +513,7 @@ async fn read_loop(
     Ok(())
 }
 
-fn resolve_image_path(cli_value: Option<String>) -> Option<PathBuf> {
+fn resolve_image_path(cli_value: Option<String>, allow_fallback: bool) -> Option<PathBuf> {
     if let Some(value) = cli_value {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
@@ -483,16 +532,18 @@ fn resolve_image_path(cli_value: Option<String>) -> Option<PathBuf> {
             }
         }
     }
-    let local = PathBuf::from("SCR-20260106-qdmo.png");
-    if local.exists() {
-        return Some(local);
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        let doc = PathBuf::from(home)
-            .join("Documents")
-            .join("SCR-20260106-qdmo.png");
-        if doc.exists() {
-            return Some(doc);
+    if allow_fallback {
+        let local = PathBuf::from("SCR-20260106-qdmo.png");
+        if local.exists() {
+            return Some(local);
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let doc = PathBuf::from(home)
+                .join("Documents")
+                .join("SCR-20260106-qdmo.png");
+            if doc.exists() {
+                return Some(doc);
+            }
         }
     }
     None
