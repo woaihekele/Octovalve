@@ -77,8 +77,8 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] gap-6 items-start">
-    <div class="space-y-6">
+  <div class="chat-settings grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] gap-6 items-stretch">
+    <div class="flex flex-col gap-6 min-h-0">
       <!-- Provider Selection -->
       <div class="space-y-2">
         <div class="text-sm font-medium">{{ $t('settings.chat.provider.label') }}</div>
@@ -170,7 +170,7 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
           <NInput
             :value="props.config.acp.args"
             size="small"
-            placeholder='-c mcp_servers.octovalve={command="octovalve-proxy",args=["--config","/path"]}'
+            placeholder="--approval-policy on-request"
             @update:value="updateAcpArgs"
           />
         </div>
@@ -201,15 +201,16 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
       </div>
     </div>
 
-    <div class="space-y-2">
+    <div class="chat-mcp-panel flex flex-col min-h-0 space-y-2">
       <div class="text-sm font-medium">{{ $t('settings.chat.mcp.title') }}</div>
       <div class="text-xs text-foreground-muted">{{ $t('settings.chat.mcp.help') }}</div>
-      <div class="max-h-72 overflow-auto">
+      <div class="chat-mcp-input flex-1 min-h-0 overflow-hidden">
         <NInput
           :value="props.config.mcpConfigJson"
           type="textarea"
           size="small"
-          :autosize="{ minRows: 8, maxRows: 12 }"
+          :input-props="{ style: { resize: 'none' } }"
+          :resizable="false"
           :placeholder="$t('settings.chat.mcp.placeholder')"
           @update:value="updateMcpConfigJson"
         />
@@ -221,6 +222,34 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
 <style scoped>
 .bg-panel-muted\/50 {
   background: rgb(var(--color-panel-muted) / 0.5);
+}
+
+.chat-mcp-panel :deep(.n-input__textarea textarea),
+.chat-mcp-panel :deep(.n-input__textarea-el) {
+  color: rgb(var(--color-text));
+  resize: none !important;
+  overflow: auto;
+}
+
+.chat-mcp-panel :deep(.n-input__textarea),
+.chat-mcp-panel :deep(.n-input__textarea-el) {
+  resize: none !important;
+}
+
+.chat-mcp-panel :deep(.n-input__textarea textarea::-webkit-resizer),
+.chat-mcp-panel :deep(.n-input__textarea-el::-webkit-resizer) {
+  display: none;
+}
+
+.chat-mcp-panel :deep(.n-input__textarea textarea::placeholder) {
+  color: rgb(var(--color-text-muted));
+  opacity: 0.4;
+}
+
+.chat-mcp-input :deep(.n-input),
+.chat-mcp-input :deep(.n-input__textarea),
+.chat-mcp-input :deep(.n-input__textarea textarea) {
+  height: 100%;
 }
 
 .chat-settings :deep(.n-input:not(.n-input--disabled) .n-input__input input),

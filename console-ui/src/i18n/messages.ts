@@ -383,7 +383,7 @@ export const messages = {
         acp: {
           title: 'ACP 配置',
           arguments: '启动参数',
-          argumentsHelp: '填写 acp-codex 启动参数（示例：--approval-policy on-request）。MCP 请在上方配置。',
+          argumentsHelp: '填写 acp-codex 启动参数（可选，例如：--approval-policy on-request）。',
           approvalPolicy: {
             label: '审批策略',
             help: '决定何时请求授权执行',
@@ -939,7 +939,7 @@ export const messages = {
         acp: {
           title: 'ACP Settings',
           arguments: 'Arguments',
-          argumentsHelp: 'Extra acp-codex CLI args (e.g. --approval-policy on-request). Configure MCP above.',
+          argumentsHelp: 'Extra acp-codex CLI args (optional, e.g. --approval-policy on-request).',
           approvalPolicy: {
             label: 'Approval Policy',
             help: 'When to request execution approvals',
