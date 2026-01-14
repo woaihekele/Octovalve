@@ -29,7 +29,8 @@ import { concatAcpTextChunk, ensureToolCallBlock } from '../store/acpTimeline';
 type AcpService = {
   start: (
     cwd: string,
-    args?: string
+    args?: string,
+    mcpConfigJson?: string
   ) => Promise<{ authMethods: AuthMethod[]; agentCapabilities?: AgentCapabilities | null }>;
   authenticate: (methodId: string) => Promise<void>;
   newSession: (cwd: string) => Promise<{ sessionId: string }>;
@@ -280,11 +281,11 @@ export function createAcpProvider(context: AcpProviderContext, deps: AcpProvider
     context.scheduleSaveToStorage();
   }
 
-  async function initializeAcp(cwd: string, acpArgs?: string) {
+  async function initializeAcp(cwd: string, acpArgs?: string, mcpConfigJson?: string) {
     console.log('[chatStore] initializeAcp called with cwd:', cwd);
     try {
       console.log('[chatStore] initializeAcp: calling acpService.start...');
-      const response = await deps.acpService.start(cwd, acpArgs);
+      const response = await deps.acpService.start(cwd, acpArgs, mcpConfigJson);
       console.log('[chatStore] initializeAcp: acpService.start returned:', response);
       context.authMethods.value = response.authMethods;
       context.acpInitialized.value = true;

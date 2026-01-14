@@ -1,71 +1,181 @@
 use rmcp::{
     model::{
         CallToolRequestParam, CallToolResult, ClientCapabilities, ClientInfo, Implementation,
-        ListToolsResult, ProtocolVersion,
+        ListToolsResult, ProtocolVersion, Tool,
     },
     service::{RoleClient, RunningService, ServiceExt},
-    transport::{ConfigureCommandExt, TokioChildProcess},
+    transport::TokioChildProcess,
     ServiceError,
 };
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
-use crate::paths::resolve_octovalve_proxy_bin;
+#[derive(Clone, Debug)]
+pub struct McpServerSpec {
+    pub name: String,
+    pub command: PathBuf,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub cwd: Option<PathBuf>,
+}
 
-const DEFAULT_CLIENT_ID: &str = "octovalve-console-openai";
+impl McpServerSpec {
+    pub fn signature(&self) -> String {
+        let mut env_pairs = self.env.iter().collect::<Vec<_>>();
+        env_pairs.sort_by(|a, b| a.0.cmp(b.0));
+        let env_text = env_pairs
+            .into_iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(";");
+        let cwd = self
+            .cwd
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default();
+        format!(
+            "{}|{}|{}|{}",
+            self.command.to_string_lossy(),
+            self.args.join("|"),
+            env_text,
+            cwd
+        )
+    }
+}
 
-pub struct McpClientState(pub Mutex<Option<Arc<McpClient>>>);
+#[derive(Default)]
+struct McpClientRegistry {
+    servers: HashMap<String, McpServerSpec>,
+    clients: HashMap<String, Arc<McpClient>>,
+}
+
+pub struct McpClientState(pub Mutex<McpClientRegistry>);
 
 impl Default for McpClientState {
     fn default() -> Self {
-        Self(Mutex::new(None))
+        Self(Mutex::new(McpClientRegistry::default()))
     }
 }
 
 impl McpClientState {
+    pub async fn set_servers(&self, servers: Vec<McpServerSpec>) -> Result<(), String> {
+        let mut next = HashMap::new();
+        for server in servers {
+            next.insert(server.name.clone(), server);
+        }
+
+        let removed_clients = {
+            let mut guard = self.0.lock().await;
+            let mut removed = Vec::new();
+            let existing_names = guard.clients.keys().cloned().collect::<Vec<_>>();
+            for name in existing_names {
+                if let Some(spec) = next.get(&name) {
+                    let should_remove = guard
+                        .clients
+                        .get(&name)
+                        .map(|client| !client.is_usable_for(spec))
+                        .unwrap_or(false);
+                    if should_remove {
+                        if let Some(client) = guard.clients.remove(&name) {
+                            removed.push(client);
+                        }
+                    }
+                } else if let Some(client) = guard.clients.remove(&name) {
+                    removed.push(client);
+                }
+            }
+            guard.servers = next;
+            removed
+        };
+
+        for client in removed_clients {
+            client.shutdown().await;
+        }
+
+        Ok(())
+    }
+
+    pub async fn list_tools(&self) -> Result<Vec<(String, Tool)>, String> {
+        let server_names = {
+            let guard = self.0.lock().await;
+            guard.servers.keys().cloned().collect::<Vec<_>>()
+        };
+        let mut tools = Vec::new();
+        for server in server_names {
+            let client = match self.get_or_start_client(&server).await {
+                Ok(client) => client,
+                Err(err) => {
+                    eprintln!("[mcp] start client failed: {server} err={err}");
+                    continue;
+                }
+            };
+            let result = match client.list_tools().await {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("[mcp] list_tools failed: {server} err={err}");
+                    continue;
+                }
+            };
+            for tool in result.tools {
+                tools.push((server.clone(), tool));
+            }
+        }
+        Ok(tools)
+    }
+
     pub async fn call_tool(
         &self,
-        proxy_config_path: &Path,
+        server: &str,
         tool_name: &str,
         arguments: Value,
     ) -> Result<Value, String> {
-        let client = {
-            let mut guard = self.0.lock().await;
-            let needs_restart = match guard.as_ref() {
-                Some(client) => !client.is_usable_for(proxy_config_path),
-                None => true,
-            };
-            if needs_restart {
-                if let Some(old) = guard.take() {
-                    old.shutdown().await;
-                }
-                let client =
-                    Arc::new(McpClient::start(proxy_config_path, DEFAULT_CLIENT_ID).await?);
-                *guard = Some(Arc::clone(&client));
-                client
-            } else {
-                guard
-                    .as_ref()
-                    .ok_or_else(|| "mcp client unavailable".to_string())?
-                    .clone()
-            }
-        };
+        let client = self.get_or_start_client(server).await?;
         let result = client.call_tool(tool_name, arguments).await?;
         serde_json::to_value(&result).map_err(|err| err.to_string())
+    }
+
+    async fn get_or_start_client(&self, server: &str) -> Result<Arc<McpClient>, String> {
+        let spec = {
+            let guard = self.0.lock().await;
+            guard
+                .servers
+                .get(server)
+                .cloned()
+                .ok_or_else(|| format!("mcp server not configured: {server}"))?
+        };
+
+        let existing = {
+            let mut guard = self.0.lock().await;
+            if let Some(client) = guard.clients.get(server) {
+                if client.is_usable_for(&spec) {
+                    return Ok(client.clone());
+                }
+            }
+            guard.clients.remove(server)
+        };
+
+        if let Some(old) = existing {
+            old.shutdown().await;
+        }
+
+        let client = Arc::new(McpClient::start_with_spec(&spec).await?);
+        let mut guard = self.0.lock().await;
+        guard.clients.insert(server.to_string(), Arc::clone(&client));
+        Ok(client)
     }
 }
 
 pub struct McpClient {
     service: RunningService<RoleClient, ClientInfo>,
-    config_path: PathBuf,
+    spec_signature: String,
 }
 
 impl McpClient {
-    pub async fn start(proxy_config_path: &Path, client_id: &str) -> Result<Self, String> {
-        let proxy_bin = resolve_octovalve_proxy_bin()?;
+    pub async fn start_with_spec(spec: &McpServerSpec) -> Result<Self, String> {
         let client_info = ClientInfo {
             protocol_version: ProtocolVersion::V_2025_06_18,
             capabilities: ClientCapabilities::default(),
@@ -77,23 +187,27 @@ impl McpClient {
                 website_url: None,
             },
         };
-        let transport = TokioChildProcess::new(TokioCommand::new(proxy_bin).configure(|cmd| {
-            cmd.arg("--config").arg(proxy_config_path);
-            cmd.arg("--client-id").arg(client_id);
-        }))
-        .map_err(|err| err.to_string())?;
+        let mut command = TokioCommand::new(&spec.command);
+        command.args(&spec.args);
+        if !spec.env.is_empty() {
+            command.envs(&spec.env);
+        }
+        if let Some(cwd) = &spec.cwd {
+            command.current_dir(cwd);
+        }
+        let transport = TokioChildProcess::new(command).map_err(|err| err.to_string())?;
         let service = client_info
             .serve(transport)
             .await
             .map_err(|err| err.to_string())?;
         Ok(Self {
             service,
-            config_path: proxy_config_path.to_path_buf(),
+            spec_signature: spec.signature(),
         })
     }
 
-    pub fn is_usable_for(&self, proxy_config_path: &Path) -> bool {
-        self.config_path.as_path() == proxy_config_path && !self.service.is_transport_closed()
+    pub fn is_usable_for(&self, spec: &McpServerSpec) -> bool {
+        self.spec_signature == spec.signature() && !self.service.is_transport_closed()
     }
 
     pub async fn call_tool(

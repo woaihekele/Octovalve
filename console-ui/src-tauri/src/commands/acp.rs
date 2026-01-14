@@ -15,8 +15,9 @@ pub async fn acp_start(
     proxy_state: State<'_, ProxyConfigState>,
     cwd: String,
     acp_args: Option<String>,
+    mcp_config_json: Option<String>,
 ) -> Result<AcpInitResponse, String> {
-    acp::acp_start(app, state, proxy_state, cwd, acp_args).await
+    acp::acp_start(app, state, proxy_state, cwd, acp_args, mcp_config_json).await
 }
 
 #[tauri::command]

@@ -7,6 +7,7 @@ pub mod console_ws;
 pub mod http_utils;
 pub mod logging;
 pub mod mcp;
+pub mod mcp_config;
 pub mod openai;
 pub mod profiles;
 pub mod startup_check;

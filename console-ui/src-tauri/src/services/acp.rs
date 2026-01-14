@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use acp_codex::CliConfig;
-use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::clients::acp_client::{AcpClient, AcpClientState};
@@ -13,6 +12,7 @@ use crate::clients::acp_types::{
 use crate::paths::resolve_octovalve_proxy_bin;
 use crate::services::console_sidecar::{build_console_path, DEFAULT_COMMAND_ADDR};
 use crate::services::logging::append_log_line;
+use crate::services::mcp_config::{build_octovalve_server, parse_mcp_config_json};
 use crate::services::profiles::{expand_tilde_path, octovalve_dir};
 use crate::state::{AppLogState, ProxyConfigState};
 
@@ -103,18 +103,8 @@ fn build_mcp_cli_override(proxy_bin: &Path, proxy_config: &Path) -> Result<Strin
 }
 
 fn build_mcp_servers(proxy_bin: &Path, proxy_config: &Path) -> Vec<serde_json::Value> {
-    let args = vec![
-        "--config".to_string(),
-        proxy_config.to_string_lossy().to_string(),
-        "--command-addr".to_string(),
-        DEFAULT_COMMAND_ADDR.to_string(),
-    ];
-    vec![json!({
-        "name": "octovalve",
-        "command": proxy_bin.to_string_lossy(),
-        "args": args,
-        "env": [],
-    })]
+    let (_, value) = build_octovalve_server(proxy_bin, proxy_config, DEFAULT_COMMAND_ADDR);
+    vec![value]
 }
 
 fn resolve_acp_cwd(app: &AppHandle, cwd: &str) -> Result<PathBuf, String> {
@@ -147,6 +137,7 @@ pub async fn acp_start(
     proxy_state: State<'_, ProxyConfigState>,
     cwd: String,
     acp_args: Option<String>,
+    mcp_config_json: Option<String>,
 ) -> Result<AcpInitResponse, String> {
     let log_path = app.state::<AppLogState>().app_log.clone();
     let _ = append_log_line(&log_path, &format!("[acp_start] called with cwd: {}", cwd));
@@ -183,7 +174,15 @@ pub async fn acp_start(
             proxy_config_path.display()
         ),
     );
-    let mcp_servers = build_mcp_servers(&proxy_bin, &proxy_config_path);
+    let mut parsed = parse_mcp_config_json(mcp_config_json.as_deref().unwrap_or(""))?;
+    let mut uses_builtin = false;
+    if !parsed.has_octovalve {
+        let (_, value) =
+            build_octovalve_server(&proxy_bin, &proxy_config_path, DEFAULT_COMMAND_ADDR);
+        parsed.servers.push(value);
+        uses_builtin = true;
+    }
+    let mcp_servers = parsed.servers;
     let _ = append_log_line(
         &log_path,
         &format!(
@@ -192,13 +191,15 @@ pub async fn acp_start(
         ),
     );
     let mut acp_args = parse_acp_args(acp_args)?;
-    let mcp_override = build_mcp_cli_override(&proxy_bin, &proxy_config_path)?;
-    let _ = append_log_line(
-        &log_path,
-        &format!("[acp_start] mcp_override={}", mcp_override),
-    );
-    acp_args.push("-c".to_string());
-    acp_args.push(mcp_override);
+    if uses_builtin {
+        let mcp_override = build_mcp_cli_override(&proxy_bin, &proxy_config_path)?;
+        let _ = append_log_line(
+            &log_path,
+            &format!("[acp_start] mcp_override={}", mcp_override),
+        );
+        acp_args.push("-c".to_string());
+        acp_args.push(mcp_override);
+    }
     let cli_config = CliConfig::parse_from(acp_args).map_err(|err| err.to_string())?;
 
     let _ = append_log_line(&log_path, "[acp_start] starting new client...");

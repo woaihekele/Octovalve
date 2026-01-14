@@ -363,6 +363,12 @@ export const messages = {
         sendShortcut: '发送快捷键',
         sendShortcutHelp: '默认 Cmd+Enter 发送',
         sendOnEnter: 'Enter 发送',
+        mcp: {
+          title: 'MCP 配置',
+          help: '标准 MCP JSON（同时用于 API 与 ACP）',
+          placeholder:
+            '{\n  "mcpServers": {\n    "example": {\n      "command": "node",\n      "args": ["server.js"]\n    }\n  }\n}',
+        },
         openai: {
           title: 'OpenAI API 配置',
           baseUrl: 'Base URL',
@@ -377,7 +383,7 @@ export const messages = {
         acp: {
           title: 'ACP 配置',
           arguments: '启动参数',
-          argumentsHelp: '填写 acp-codex 启动参数（示例：-c ...）。内置 MCP 会自动附加。',
+          argumentsHelp: '填写 acp-codex 启动参数（示例：--approval-policy on-request）。MCP 请在上方配置。',
           approvalPolicy: {
             label: '审批策略',
             help: '决定何时请求授权执行',
@@ -913,6 +919,12 @@ export const messages = {
         sendShortcut: 'Send Shortcut',
         sendShortcutHelp: 'Default Cmd+Enter to send',
         sendOnEnter: 'Send with Enter',
+        mcp: {
+          title: 'MCP config',
+          help: 'Standard MCP JSON used by API and ACP',
+          placeholder:
+            '{\n  "mcpServers": {\n    "example": {\n      "command": "node",\n      "args": ["server.js"]\n    }\n  }\n}',
+        },
         openai: {
           title: 'OpenAI API Settings',
           baseUrl: 'Base URL',
@@ -927,7 +939,7 @@ export const messages = {
         acp: {
           title: 'ACP Settings',
           arguments: 'Arguments',
-          argumentsHelp: 'Extra acp-codex CLI args (e.g. -c ...). Built-in MCP is always appended.',
+          argumentsHelp: 'Extra acp-codex CLI args (e.g. --approval-policy on-request). Configure MCP above.',
           approvalPolicy: {
             label: 'Approval Policy',
             help: 'When to request execution approvals',

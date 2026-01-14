@@ -166,8 +166,12 @@ export async function openaiCancel(): Promise<void> {
   return invoke('openai_cancel');
 }
 
-export async function mcpCallTool(name: string, arguments_: Record<string, unknown>): Promise<unknown> {
-  return invoke('mcp_call_tool', { name, arguments: arguments_ });
+export async function mcpCallTool(
+  server: string,
+  name: string,
+  arguments_: Record<string, unknown>
+): Promise<unknown> {
+  return invoke('mcp_call_tool', { server, name, arguments: arguments_ });
 }
 
 /**

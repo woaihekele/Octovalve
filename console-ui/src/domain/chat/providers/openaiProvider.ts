@@ -7,7 +7,7 @@ import type {
   ToolCall,
 } from '../types';
 import type { TargetInfo } from '../../../shared/types';
-import { buildMcpTools } from '../../../shared/mcpTools';
+import { buildOpenAiToolsFromMcp, type McpToolInfo } from '../../../shared/mcpTools';
 import {
   buildPromptBlocks,
   toDisplayFiles,
@@ -30,7 +30,6 @@ type OpenaiService = {
   send: () => Promise<void>;
   cancel: () => Promise<void>;
   onStream: (handler: (event: ChatStreamEvent) => void) => Promise<() => void>;
-  mcpCallTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
 };
 
 type OpenaiProviderContext = {
@@ -58,11 +57,16 @@ type OpenaiProviderContext = {
 
 type OpenaiProviderDeps = {
   openaiService: OpenaiService;
-  fetchTargets: () => Promise<TargetInfo[]>;
+  mcpService: {
+    setConfig: (configJson: string) => Promise<void>;
+    listTools: () => Promise<McpToolInfo[]>;
+    callTool: (server: string, name: string, args: Record<string, unknown>) => Promise<unknown>;
+  };
   t: (key: string, params?: Record<string, unknown>) => string;
 };
 
 const TOOL_CALL_CONCURRENCY_LIMIT = 10;
+const MCP_SIGNATURE_PENDING = '__mcp_pending__';
 
 export function createOpenaiProvider(context: OpenaiProviderContext, deps: OpenaiProviderDeps) {
   let openaiEventUnlisten: (() => void) | null = null;
@@ -71,6 +75,9 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
   let openaiContextQueue: Promise<void> = Promise.resolve();
   let openaiToolAbortController: AbortController | null = null;
   const openaiToolsSignature = ref('');
+  const lastTargetSignature = ref('');
+  const mcpToolMapping = new Map<string, { server: string; name: string }>();
+  let mcpConfigJson = '';
 
   function enqueueOpenaiContextOp(op: () => Promise<void>) {
     openaiContextQueue = openaiContextQueue
@@ -386,8 +393,15 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
         }
 
         context.updateToolCall(messageId, tc.id, { status: 'running' });
-        const callPromise = deps.openaiService
-          .mcpCallTool(name, args)
+        const mapping = mcpToolMapping.get(name);
+        if (!mapping) {
+          const text = 'Unknown tool';
+          context.updateToolCall(messageId, tc.id, { status: 'failed', result: text });
+          results.set(tc.id, text);
+          continue;
+        }
+        const callPromise = deps.mcpService
+          .callTool(mapping.server, mapping.name, args)
           .then((result) => ({ ok: true as const, result }))
           .catch((error) => ({ ok: false as const, error }));
         const outcome = await Promise.race([callPromise, cancelWait]);
@@ -461,25 +475,20 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
       await deps.openaiService.init(config);
       console.log('[chatStore] initializeOpenai: openaiService.init() done');
       openaiToolsSignature.value = '';
+      mcpToolMapping.clear();
 
       try {
-        await deps.openaiService.setTools(buildOpenaiTools([], undefined));
-        openaiToolsSignature.value = buildOpenaiToolsSignature([], undefined);
+        const { tools, signature } = await loadMcpTools();
+        await deps.openaiService.setTools(tools);
+        openaiToolsSignature.value = signature;
       } catch (e) {
-        console.warn('[openaiProvider] setTools base failed (continuing without tools):', e);
-      }
-
-      try {
-        const targets = await deps.fetchTargets();
-        const targetNames = buildTargetNameList(targets);
-        const defaultTarget = resolveDefaultTarget(targets, targetNames);
-        const signature = buildOpenaiToolsSignature(targetNames, defaultTarget);
-        if (signature !== openaiToolsSignature.value) {
-          await deps.openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
-          openaiToolsSignature.value = signature;
+        console.warn('[openaiProvider] refresh tools from mcp failed:', e);
+        try {
+          await deps.openaiService.setTools([]);
+          openaiToolsSignature.value = '';
+        } catch (inner) {
+          console.warn('[openaiProvider] setTools base failed (continuing without tools):', inner);
         }
-      } catch (e) {
-        console.warn('[openaiProvider] refresh tools from targets failed:', e);
       }
 
       context.openaiInitialized.value = true;
@@ -496,6 +505,13 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
     }
   }
 
+  function buildMcpToolsSignature(toolList: McpToolInfo[]) {
+    const signatureParts = toolList
+      .map((tool) => `${tool.server}:${tool.name}`)
+      .sort((a, b) => a.localeCompare(b));
+    return signatureParts.join('|');
+  }
+
   function buildTargetNameList(targets: TargetInfo[]) {
     return Array.from(new Set(targets.map((t) => t.name))).sort((a, b) => a.localeCompare(b));
   }
@@ -504,26 +520,45 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
     return targets.find((t) => t.is_default)?.name ?? targetNames[0];
   }
 
-  function buildOpenaiToolsSignature(targetNames: string[], defaultTarget?: string) {
+  function buildTargetSignature(targets: TargetInfo[]) {
+    const targetNames = buildTargetNameList(targets);
+    const defaultTarget = resolveDefaultTarget(targets, targetNames);
     return `${targetNames.join(',')}|${defaultTarget ?? ''}`;
   }
 
-  function buildOpenaiTools(targets: string[], defaultTarget?: string) {
-    return buildMcpTools(targets, defaultTarget);
+  async function loadMcpTools() {
+    await deps.mcpService.setConfig(mcpConfigJson);
+    const toolList = await deps.mcpService.listTools();
+    const signature = buildMcpToolsSignature(toolList);
+    const { tools, mapping } = buildOpenAiToolsFromMcp(toolList);
+    mcpToolMapping.clear();
+    for (const [name, value] of mapping.entries()) {
+      mcpToolMapping.set(name, value);
+    }
+    return { tools, signature };
+  }
+
+  function setMcpConfig(configJson: string) {
+    mcpConfigJson = configJson;
+    openaiToolsSignature.value = MCP_SIGNATURE_PENDING;
+    mcpToolMapping.clear();
   }
 
   async function refreshOpenaiTools(targets: TargetInfo[]) {
     if (!context.openaiInitialized.value || context.provider.value !== 'openai') {
       return;
     }
-    const targetNames = buildTargetNameList(targets);
-    const defaultTarget = resolveDefaultTarget(targets, targetNames);
-    const signature = buildOpenaiToolsSignature(targetNames, defaultTarget);
-    if (signature === openaiToolsSignature.value) {
+    const targetSignature = buildTargetSignature(targets);
+    if (targetSignature === lastTargetSignature.value && openaiToolsSignature.value !== MCP_SIGNATURE_PENDING) {
       return;
     }
+    lastTargetSignature.value = targetSignature;
     try {
-      await deps.openaiService.setTools(buildOpenaiTools(targetNames, defaultTarget));
+      const { tools, signature } = await loadMcpTools();
+      if (signature === openaiToolsSignature.value) {
+        return;
+      }
+      await deps.openaiService.setTools(tools);
       openaiToolsSignature.value = signature;
     } catch (e) {
       console.warn('[openaiProvider] refreshOpenaiTools failed:', e);
@@ -631,6 +666,8 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
     context.setConnected(false);
     openaiContextSessionId.value = null;
     openaiToolsSignature.value = '';
+    lastTargetSignature.value = '';
+    mcpToolMapping.clear();
     console.log('[chatStore] stopOpenai done');
   }
 
@@ -650,6 +687,7 @@ export function createOpenaiProvider(context: OpenaiProviderContext, deps: Opena
 
   return {
     initializeOpenai,
+    setMcpConfig,
     refreshOpenaiTools,
     sendOpenaiMessage,
     cancelOpenai,

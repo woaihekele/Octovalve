@@ -63,6 +63,7 @@ function cloneSettings(source: AppSettings): AppSettings {
     chat: {
       provider: source.chat.provider,
       sendOnEnter: source.chat.sendOnEnter,
+      mcpConfigJson: source.chat.mcpConfigJson,
       openai: { ...source.chat.openai },
       acp: { ...source.chat.acp },
     },

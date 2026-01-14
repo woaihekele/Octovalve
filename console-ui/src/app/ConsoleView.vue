@@ -569,12 +569,12 @@ async function initChatProvider(options: ChatProviderInitOptions = {}) {
   
   try {
     if (provider === 'openai') {
-      await chatStore.initializeOpenai(chatConfig.openai);
+      await chatStore.initializeOpenai(chatConfig.openai, chatConfig.mcpConfigJson);
     } else {
       // ACP provider
       console.log('[initChatProvider] calling initializeAcp...');
       const acpArgs = buildAcpArgs(chatConfig.acp);
-      await chatStore.initializeAcp('.', acpArgs);
+      await chatStore.initializeAcp('.', acpArgs, chatConfig.mcpConfigJson);
       console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
       
       // Authentication is optional - don't fail if it's not available
@@ -1231,18 +1231,24 @@ function hasOpenaiConfigChanged(previous: AppSettings, next: AppSettings) {
   );
 }
 
+function hasMcpConfigChanged(previous: AppSettings, next: AppSettings) {
+  return previous.chat.mcpConfigJson !== next.chat.mcpConfigJson;
+}
+
 function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
   return (
     previous.chat.acp.args !== next.chat.acp.args ||
     previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
-    previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode
+    previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode ||
+    previous.chat.mcpConfigJson !== next.chat.mcpConfigJson
   );
 }
 
 function hasAcpRestartSettingsChanged(previous: AppSettings, next: AppSettings) {
   return (
     previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
-    previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode
+    previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode ||
+    previous.chat.mcpConfigJson !== next.chat.mcpConfigJson
   );
 }
 
@@ -1283,6 +1289,7 @@ async function refreshChatProviderFromSettings(
   const allowProviderSwitch = options.allowProviderSwitch ?? true;
   const providerChanged = previous.chat.provider !== next.chat.provider;
   const openaiChanged = hasOpenaiConfigChanged(previous, next);
+  const mcpChanged = hasMcpConfigChanged(previous, next);
   const acpChanged = hasAcpConfigChanged(previous, next);
   const acpRestartChanged = hasAcpRestartSettingsChanged(previous, next);
   const activeProvider = options.activeProvider ?? chatStore.provider;
@@ -1290,6 +1297,14 @@ async function refreshChatProviderFromSettings(
   const refreshProvider = shouldSwitchProvider ? next.chat.provider : activeProvider;
   const needsOpenaiRefresh = refreshProvider === 'openai' && (shouldSwitchProvider || openaiChanged);
   const needsAcpRefresh = refreshProvider === 'acp' && (shouldSwitchProvider || acpChanged);
+  const mcpOnlyOpenaiChange =
+    refreshProvider === 'openai' && mcpChanged && !needsOpenaiRefresh && !shouldSwitchProvider;
+
+  if (mcpOnlyOpenaiChange) {
+    chatStore.updateMcpConfig(next.chat.mcpConfigJson);
+    await chatStore.refreshOpenaiTools(targets.value);
+    return;
+  }
 
   if (!needsOpenaiRefresh && !needsAcpRefresh) {
     return;

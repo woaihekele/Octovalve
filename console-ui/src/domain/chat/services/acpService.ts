@@ -132,9 +132,10 @@ export interface CompletePayload {
  */
 export async function acpStart(
   cwd: string,
-  acpArgs?: string
+  acpArgs?: string,
+  mcpConfigJson?: string
 ): Promise<AcpInitResponse> {
-  return invoke<AcpInitResponse>('acp_start', { cwd, acpArgs });
+  return invoke<AcpInitResponse>('acp_start', { cwd, acpArgs, mcpConfigJson });
 }
 
 /**

@@ -11,7 +11,7 @@ import type {
 import type { AuthMethod, AgentCapabilities, AcpSessionSummary } from '../services/acpService';
 import { acpService } from '../services/acpService';
 import { openaiService, type OpenAiConfig } from '../services/openaiService';
-import { fetchTargets } from '../../../services/api';
+import { mcpService } from '../services/mcpService';
 import type { TargetInfo } from '../../../shared/types';
 import { i18n } from '../../../i18n';
 import { appendReasoningBlock, concatAcpTextChunk } from './acpTimeline';
@@ -405,7 +405,7 @@ export const useChatStore = defineStore('chat', () => {
     },
     {
       openaiService,
-      fetchTargets,
+      mcpService,
       t,
     }
   );
@@ -449,8 +449,8 @@ export const useChatStore = defineStore('chat', () => {
     }
   );
 
-  async function initializeAcp(cwd: string, acpArgs?: string) {
-    return acpProvider.initializeAcp(cwd, acpArgs);
+  async function initializeAcp(cwd: string, acpArgs?: string, mcpConfigJson?: string) {
+    return acpProvider.initializeAcp(cwd, acpArgs, mcpConfigJson);
   }
 
   async function authenticateAcp(methodId: string) {
@@ -485,12 +485,17 @@ export const useChatStore = defineStore('chat', () => {
     return acpProvider.stopAcp();
   }
 
-  async function initializeOpenai(config: OpenAiConfig) {
+  async function initializeOpenai(config: OpenAiConfig, mcpConfigJson = '') {
+    openaiProvider.setMcpConfig(mcpConfigJson);
     return openaiProvider.initializeOpenai(config);
   }
 
   async function refreshOpenaiTools(targets: TargetInfo[]) {
     return openaiProvider.refreshOpenaiTools(targets);
+  }
+
+  function updateMcpConfig(configJson: string) {
+    openaiProvider.setMcpConfig(configJson);
   }
 
   async function sendOpenaiMessage(options: SendMessageOptions) {
@@ -596,6 +601,7 @@ export const useChatStore = defineStore('chat', () => {
     openaiInitialized,
     initializeOpenai,
     refreshOpenaiTools,
+    updateMcpConfig,
     sendOpenaiMessage,
     cancelOpenai,
     stopOpenai,

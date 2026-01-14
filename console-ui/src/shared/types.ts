@@ -204,6 +204,7 @@ export interface AiSettings {
 export interface ChatProviderConfig {
   provider: 'openai' | 'acp';
   sendOnEnter: boolean;
+  mcpConfigJson: string;
   openai: {
     baseUrl: string;
     apiKey: string;

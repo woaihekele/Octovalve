@@ -43,6 +43,10 @@ function updateSendOnEnter(value: boolean) {
   emit('update', { ...props.config, sendOnEnter: value });
 }
 
+function updateMcpConfigJson(value: string) {
+  emit('update', { ...props.config, mcpConfigJson: value });
+}
+
 function updateOpenaiField(field: keyof ChatProviderConfig['openai'], value: string) {
   emit('update', {
     ...props.config,
@@ -102,10 +106,23 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
       </div>
     </div>
 
+    <div class="space-y-2">
+      <div class="text-sm font-medium">{{ $t('settings.chat.mcp.title') }}</div>
+      <div class="text-xs text-foreground-muted">{{ $t('settings.chat.mcp.help') }}</div>
+      <NInput
+        :value="props.config.mcpConfigJson"
+        type="textarea"
+        size="small"
+        :autosize="{ minRows: 6, maxRows: 12 }"
+        :placeholder="$t('settings.chat.mcp.placeholder')"
+        @update:value="updateMcpConfigJson"
+      />
+    </div>
+
     <!-- OpenAI API Settings -->
     <div v-if="props.config.provider === 'openai'" class="space-y-4 p-4 rounded-lg bg-panel-muted/50">
       <div class="text-sm font-medium text-accent">{{ $t('settings.chat.openai.title') }}</div>
-      
+
       <div class="grid gap-4">
         <div class="space-y-1">
           <div class="text-sm">{{ $t('settings.chat.openai.baseUrl') }}</div>

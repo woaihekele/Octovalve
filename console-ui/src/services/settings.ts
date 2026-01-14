@@ -92,6 +92,7 @@ const DEFAULT_TERMINAL_SCALE = 1;
 const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
   provider: 'openai',
   sendOnEnter: false,
+  mcpConfigJson: '',
   openai: {
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
@@ -225,6 +226,7 @@ export function loadSettings(): AppSettings {
     const normalizedChat: ChatProviderConfig = {
       provider: normalizeChatProvider(parsedChat.provider),
       sendOnEnter: normalizeBool(parsedChat.sendOnEnter, DEFAULT_CHAT_SETTINGS.sendOnEnter),
+      mcpConfigJson: normalizeText(parsedChat.mcpConfigJson, DEFAULT_CHAT_SETTINGS.mcpConfigJson),
       openai: {
         baseUrl: normalizeText(parsedOpenai.baseUrl, DEFAULT_CHAT_SETTINGS.openai.baseUrl),
         apiKey: normalizeText(parsedOpenai.apiKey, DEFAULT_CHAT_SETTINGS.openai.apiKey),
