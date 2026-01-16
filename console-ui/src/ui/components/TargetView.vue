@@ -720,10 +720,10 @@ onBeforeUnmount(() => {
           >
             <line x1="12" y1="3" x2="12" y2="6" />
             <circle cx="12" cy="3" r="1" />
-            <rect x="4" y="6" width="16" height="12" rx="3" />
-            <circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none" />
-            <circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none" />
-            <line x1="9" y1="15" x2="15" y2="15" />
+            <rect x="4" y="7" width="16" height="13" rx="3" />
+            <circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none" />
+            <line x1="9" y1="16" x2="15" y2="16" />
           </svg>
         </button>
       </div>
