@@ -10,7 +10,8 @@
     "test:watch": "vitest -c vitest.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build:dmg": "tauri build --bundles dmg --config '{\"bundle\":{\"active\":true}}'"
+    "tauri:build:dmg": "tauri build --bundles dmg --config '{\"bundle\":{\"active\":true}}'",
+    "tauri:build:universal:dmg": "OCTOVALVE_SIDECAR_TARGET=universal-apple-darwin tauri build --target universal-apple-darwin --bundles dmg --config '{\"bundle\":{\"active\":true}}'"
   },
   "dependencies": {
     "@tauri-apps/api": "2.9.1",

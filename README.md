@@ -160,6 +160,11 @@ npm run tauri dev
 
 # 产出桌面应用
 npm run tauri:build:dmg
+
+# macOS 通用包（arm64 + x86_64）
+# 需要安装 Xcode Command Line Tools（提供 lipo）
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run tauri:build:universal:dmg
 ```
 
 运行时说明：
