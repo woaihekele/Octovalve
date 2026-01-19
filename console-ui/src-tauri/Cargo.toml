@@ -37,3 +37,8 @@ acp-types = { path = "../../crates/acp-types" }
 custom-protocol = ["tauri/custom-protocol"]
 
 [workspace]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.3"
+objc2-app-kit = { version = "0.3.2", features = ["NSScrollView", "NSResponder", "NSView"] }
+objc2-web-kit = { version = "0.3.2", features = ["WKWebView"] }

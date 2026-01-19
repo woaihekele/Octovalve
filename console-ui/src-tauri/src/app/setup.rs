@@ -10,6 +10,25 @@ use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
 
 const RUNTIME_AGENTS_TEMPLATE: &str = include_str!("../../assets/runtime/AGENTS.md");
 
+#[cfg(target_os = "macos")]
+fn disable_scroll_elasticity(app: &tauri::AppHandle) {
+    use objc2::ClassType;
+    use objc2_app_kit::NSScrollElasticity;
+    use objc2_web_kit::WKWebView;
+    use tauri::Manager;
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.with_webview(|webview| unsafe {
+        let view: &WKWebView = &*webview.inner().cast();
+        if let Some(scroll_view) = view.as_super().enclosingScrollView() {
+            scroll_view.setVerticalScrollElasticity(NSScrollElasticity::None);
+            scroll_view.setHorizontalScrollElasticity(NSScrollElasticity::None);
+        }
+    });
+}
+
 fn ensure_runtime_agents_file(app: &tauri::AppHandle, log_path: &Path) -> Result<(), String> {
     let workspace_dir = octovalve_dir(app)?.join("workspace");
     fs::create_dir_all(&workspace_dir).map_err(|err| err.to_string())?;
@@ -67,5 +86,7 @@ pub fn init(app: &mut tauri::App) -> Result<(), String> {
             "proxy config missing; waiting for user to create local-proxy-config.toml",
         );
     }
+    #[cfg(target_os = "macos")]
+    disable_scroll_elasticity(&app_handle);
     Ok(())
 }
