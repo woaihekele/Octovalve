@@ -669,7 +669,9 @@ onBeforeUnmount(() => {
               {{ hostDisplay }}
             </span>
           </div>
-          <div class="text-sm text-foreground-muted">{{ props.target.desc }}</div>
+          <div class="text-sm text-foreground-muted truncate max-w-[520px]" :title="props.target.desc">
+            {{ props.target.desc }}
+          </div>
           <div
             v-if="props.target.last_error"
             class="text-xs text-danger mt-1 max-w-[520px] truncate"
