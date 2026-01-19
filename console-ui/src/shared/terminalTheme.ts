@@ -1,6 +1,30 @@
 import type { ITheme } from '@xterm/xterm';
 import type { ResolvedTheme } from './theme';
 
+function resolveCssColorVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return fallback;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!raw) {
+    return fallback;
+  }
+  if (raw.startsWith('rgb') || raw.startsWith('#')) {
+    return raw;
+  }
+  const normalized = raw.replace(/\s+/g, ', ');
+  return `rgb(${normalized})`;
+}
+
+function applySurfaceBackground(theme: ITheme): ITheme {
+  const background = resolveCssColorVar('--color-bg', theme.background ?? '#000000');
+  return {
+    ...theme,
+    background,
+    cursorAccent: background,
+  };
+}
+
 function buildExtendedAnsi(overrides: Record<number, string>): string[] {
   const colors: string[] = [];
   for (const [index, value] of Object.entries(overrides)) {
@@ -178,14 +202,15 @@ const ONE_DARK_PRO_THEME: ITheme = {
 };
 
 export function resolveTerminalTheme(theme: ResolvedTheme): ITheme {
+  let resolvedTheme: ITheme;
   if (theme === 'light') {
-    return GITHUB_LIGHT_THEME;
+    resolvedTheme = GITHUB_LIGHT_THEME;
+  } else if (theme === 'darcula') {
+    resolvedTheme = DARCULA_THEME;
+  } else if (theme === 'one-dark-pro') {
+    resolvedTheme = ONE_DARK_PRO_THEME;
+  } else {
+    resolvedTheme = GITHUB_DARK_THEME;
   }
-  if (theme === 'darcula') {
-    return DARCULA_THEME;
-  }
-  if (theme === 'one-dark-pro') {
-    return ONE_DARK_PRO_THEME;
-  }
-  return GITHUB_DARK_THEME;
+  return applySurfaceBackground(resolvedTheme);
 }

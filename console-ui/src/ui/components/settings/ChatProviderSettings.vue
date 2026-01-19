@@ -13,7 +13,12 @@ const emit = defineEmits<{
   (e: 'update', config: ChatProviderConfig): void;
 }>();
 
-const { t } = useI18n();
+const { t, tm } = useI18n();
+
+const mcpPlaceholder = computed(() => {
+  const message = (tm as (key: string) => unknown)('settings.chat.mcp.placeholder');
+  return typeof message === 'string' ? message : '';
+});
 
 const providerOptions = computed<SelectOption[]>(() => [
   { value: 'openai', label: t('settings.chat.provider.openai') },
@@ -211,7 +216,7 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
           size="small"
           :input-props="{ style: { resize: 'none' } }"
           :resizable="false"
-          :placeholder="$t('settings.chat.mcp.placeholder')"
+          :placeholder="mcpPlaceholder"
           @update:value="updateMcpConfigJson"
         />
       </div>
