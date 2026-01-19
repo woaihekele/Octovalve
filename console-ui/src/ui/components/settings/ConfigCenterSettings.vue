@@ -222,6 +222,35 @@ function clampSelectedTarget(value: number | null, length: number): number | nul
   return value;
 }
 
+function enforceSingleTargetDefault(): boolean {
+  const form = proxyForm.value;
+  if (!form || form.targets.length !== 1) {
+    return false;
+  }
+  const soleName = form.targets[0]?.name?.trim() ?? '';
+  const nextDefault = soleName || null;
+  const currentDefault = form.default_target?.trim() ?? '';
+  if ((nextDefault ?? '') === currentDefault) {
+    return false;
+  }
+  form.default_target = nextDefault;
+  return true;
+}
+
+function syncDefaultTargetOnRename(previousName: string, nextName: string) {
+  const form = proxyForm.value;
+  if (!form) {
+    return;
+  }
+  const prevTrimmed = previousName.trim();
+  const currentDefault = form.default_target?.trim() ?? '';
+  if (!prevTrimmed || currentDefault !== prevTrimmed) {
+    return;
+  }
+  const nextTrimmed = nextName.trim();
+  form.default_target = nextTrimmed || null;
+}
+
 function syncTargetUiState(length: number) {
   const next = targetAdvancedOpen.value.slice(0, length);
   while (next.length < length) {
@@ -273,6 +302,7 @@ async function loadInteractiveForms() {
   formError.value = null;
   const current = ++parseSeq;
   pendingParse = false;
+  let shouldSyncProxy = false;
   try {
     const [proxy, broker] = await Promise.all([
       parseProxyConfigToml(props.proxyConfigText),
@@ -285,6 +315,7 @@ async function loadInteractiveForms() {
     suppressBrokerSync = true;
     proxyForm.value = normalizeProxyForm(proxy);
     brokerForm.value = normalizeBrokerForm(broker);
+    shouldSyncProxy = enforceSingleTargetDefault();
     syncTargetUiState(proxyForm.value.targets.length);
     ensureSelectedTarget(proxyForm.value.targets);
     brokerArgRules.value = Object.entries(brokerForm.value.whitelist.arg_rules ?? {}).map(
@@ -298,6 +329,9 @@ async function loadInteractiveForms() {
     suppressProxySync = false;
     suppressBrokerSync = false;
     formBusy.value = false;
+    if (shouldSyncProxy) {
+      syncProxyText();
+    }
     if (pendingParse) {
       pendingParse = false;
       void loadInteractiveForms();
@@ -349,6 +383,7 @@ function addTarget() {
   });
   targetAdvancedOpen.value.push(false);
   selectedTargetIndex.value = proxyForm.value.targets.length - 1;
+  enforceSingleTargetDefault();
 }
 
 function removeTarget(index: number) {
@@ -371,6 +406,7 @@ function removeTarget(index: number) {
     proxyForm.value.default_target = null;
   }
   ensureSelectedTarget(proxyForm.value.targets);
+  enforceSingleTargetDefault();
 }
 
 function setDefaultTarget(name: string) {
@@ -382,6 +418,16 @@ function setDefaultTarget(name: string) {
     return;
   }
   proxyForm.value.default_target = trimmed;
+}
+
+function updateTargetName(target: ProxyTargetForm | null, value: string) {
+  if (!target) {
+    return;
+  }
+  const previousName = target.name;
+  target.name = value;
+  syncDefaultTargetOnRename(previousName, value);
+  enforceSingleTargetDefault();
 }
 
 const targetAdvancedExpandedNames = computed(() => {
@@ -704,11 +750,12 @@ watch(
                             <div class="flex flex-col gap-1">
                               <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.name') }}</div>
                               <NInput
-                                v-model:value="selectedTarget.name"
+                                :value="selectedTarget.name"
                                 size="small"
                                 :placeholder="$t('settings.config.fields.namePlaceholder')"
                                 :input-props="textInputProps"
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
+                                @update:value="(v) => updateTargetName(selectedTarget, v)"
                               />
                             </div>
                             <div class="flex flex-col gap-1">
