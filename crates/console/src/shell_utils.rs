@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 
+use portable_pty::CommandBuilder;
+
 pub(crate) trait CommandArgs {
     fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self;
 }
@@ -17,9 +19,20 @@ impl CommandArgs for tokio::process::Command {
     }
 }
 
-pub(crate) fn apply_ssh_options<C: CommandArgs>(cmd: &mut C, has_password: bool) {
+impl CommandArgs for CommandBuilder {
+    fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
+        CommandBuilder::arg(self, arg);
+        self
+    }
+}
+
+pub(crate) fn apply_ssh_base_options<C: CommandArgs>(cmd: &mut C) {
     cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
     cmd.arg("-o").arg("ConnectTimeout=10");
+}
+
+pub(crate) fn apply_ssh_options<C: CommandArgs>(cmd: &mut C, has_password: bool) {
+    apply_ssh_base_options(cmd);
     if !has_password {
         cmd.arg("-o").arg("BatchMode=yes");
     }

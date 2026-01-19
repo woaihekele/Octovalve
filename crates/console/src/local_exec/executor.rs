@@ -476,7 +476,7 @@ impl PtySession {
             }
         }
         cmd.arg("-tt");
-        apply_ssh_options_builder(&mut cmd, target.ssh_password.is_some());
+        apply_ssh_options(&mut cmd, target.ssh_password.is_some());
         if let Some(control_path) = resolve_control_path(target) {
             apply_control_master_builder(&mut cmd, &control_path);
         }
@@ -614,17 +614,6 @@ impl PtySession {
         self.writer.write_all(b"\n").context("write pty newline")?;
         self.writer.flush().context("flush pty command")?;
         Ok(())
-    }
-}
-
-fn apply_ssh_options_builder(cmd: &mut CommandBuilder, has_password: bool) {
-    cmd.arg("-o");
-    cmd.arg("StrictHostKeyChecking=accept-new");
-    cmd.arg("-o");
-    cmd.arg("ConnectTimeout=10");
-    if !has_password {
-        cmd.arg("-o");
-        cmd.arg("BatchMode=yes");
     }
 }
 

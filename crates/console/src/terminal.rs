@@ -1,3 +1,4 @@
+use crate::shell_utils::apply_ssh_base_options;
 use crate::state::TargetSpec;
 use crate::AppState;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -136,6 +137,7 @@ async fn handle_terminal(mut socket: WebSocket, target: TerminalTarget, config: 
 
     let mut cmd = CommandBuilder::new("ssh");
     apply_locale_env(&mut cmd, target.terminal_locale.as_deref());
+    apply_ssh_base_options(&mut cmd);
     for arg in &target.ssh_args {
         cmd.arg(arg);
     }

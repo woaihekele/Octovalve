@@ -15,14 +15,18 @@ mod test_utils;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+use tokio::process::Command;
 
 use crate::events::ConsoleEvent;
 use crate::runtime::emit_target_update;
-use crate::state::{ConsoleState, ControlCommand, TargetStatus};
+use crate::shell_utils::apply_ssh_options;
+use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
+use system_utils::ssh::apply_askpass_env;
 
 pub(crate) use policy::PolicyConfig;
 use policy::Whitelist;
@@ -75,14 +79,57 @@ pub(crate) async fn spawn_local_exec(
             let mut guard = state.write().await;
             guard.register_command_sender(target.name.clone(), handle.command_tx.clone());
             guard.apply_snapshot(&target.name, handle.snapshot.clone());
-            guard.set_status(&target.name, TargetStatus::Ready, None);
         }
         emit_target_update(&target.name, &state, &event_tx).await;
-        services.insert(target.name, handle);
+        let target_name = target.name.clone();
+        services.insert(target_name.clone(), handle);
+        let state = Arc::clone(&state);
+        let event_tx = event_tx.clone();
+        tokio::spawn(async move {
+            let (status, error) = match check_ssh_ready(&target).await {
+                Ok(()) => (TargetStatus::Ready, None),
+                Err(err) => (TargetStatus::Down, Some(err)),
+            };
+            {
+                let mut guard = state.write().await;
+                guard.set_status(&target_name, status, error);
+            }
+            emit_target_update(&target_name, &state, &event_tx).await;
+        });
     }
 
     server::spawn_command_server(listen_addr, services, Arc::clone(&whitelist)).await?;
     Ok(())
+}
+
+async fn check_ssh_ready(target: &TargetSpec) -> Result<(), String> {
+    let ssh = target
+        .ssh
+        .as_ref()
+        .ok_or_else(|| "missing ssh target".to_string())?;
+    let mut cmd = Command::new("ssh");
+    if let Some(password) = target.ssh_password.as_deref() {
+        apply_askpass_env(&mut cmd, password).map_err(|err| err.to_string())?;
+    }
+    cmd.arg("-T");
+    apply_ssh_options(&mut cmd, target.ssh_password.is_some());
+    cmd.args(&target.ssh_args);
+    cmd.arg(ssh);
+    cmd.arg("true");
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::piped());
+    cmd.kill_on_drop(true);
+    let output = cmd.output().await.map_err(|err| err.to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        Err(format!("ssh exited with {}", output.status))
+    } else {
+        Err(stderr)
+    }
 }
 
 fn target_audit_dir(root: &Path, target: &str) -> PathBuf {
