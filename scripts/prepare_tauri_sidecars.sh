@@ -50,7 +50,12 @@ fi
 
 cd "${REPO_ROOT}"
 
-BIN_DIR="${REPO_ROOT}/target/release"
+TARGET_DIR="${CARGO_TARGET_DIR:-${REPO_ROOT}/target}"
+if [[ "${TARGET_DIR}" != /* ]]; then
+  TARGET_DIR="${REPO_ROOT}/${TARGET_DIR}"
+fi
+
+BIN_DIR="${TARGET_DIR}/release"
 EXT=""
 if [[ "${TARGET_TRIPLE}" == *windows* ]]; then
   EXT=".exe"
@@ -58,12 +63,13 @@ fi
 
 build_sidecars_for_target() {
   local target_triple="$1"
-  local src_dir="${REPO_ROOT}/target/release"
+  local force_target="${2:-false}"
+  local src_dir="${TARGET_DIR}/release"
   local cargo_target_args=()
 
-  if [[ "${target_triple}" != "${HOST_TRIPLE}" ]]; then
+  if [[ "${force_target}" == "true" || "${target_triple}" != "${HOST_TRIPLE}" ]]; then
     cargo_target_args=(--target "${target_triple}")
-    src_dir="${REPO_ROOT}/target/${target_triple}/release"
+    src_dir="${TARGET_DIR}/${target_triple}/release"
   fi
 
   if [[ ${#cargo_target_args[@]} -gt 0 ]]; then
@@ -103,12 +109,12 @@ if [[ "${TARGET_TRIPLE}" == "universal-apple-darwin" ]]; then
   fi
 
   for arch_target in aarch64-apple-darwin x86_64-apple-darwin; do
-    build_sidecars_for_target "${arch_target}"
+    build_sidecars_for_target "${arch_target}" "true"
   done
 
   for bin in console octovalve-proxy; do
-    src_arm="${REPO_ROOT}/target/aarch64-apple-darwin/release/${bin}"
-    src_x86="${REPO_ROOT}/target/x86_64-apple-darwin/release/${bin}"
+    src_arm="${TARGET_DIR}/aarch64-apple-darwin/release/${bin}${EXT}"
+    src_x86="${TARGET_DIR}/x86_64-apple-darwin/release/${bin}${EXT}"
     dst="${BIN_DIR}/${bin}-universal-apple-darwin"
 
     if [[ ! -f "${src_arm}" ]]; then
