@@ -32,6 +32,10 @@ let unlistenExit: UnlistenFn | null = null;
 let unlistenError: UnlistenFn | null = null;
 let inputBuffer = '';
 let inputFlushTimer: number | null = null;
+let resizeIdleTimer: number | null = null;
+const RESIZE_THROTTLE_MS = 8;
+const RESIZE_TRAIL_MS = 12;
+let lastResizeFitAt = 0;
 
 function focusTerminal() {
   const focusable = containerRef.value?.querySelector('textarea');
@@ -84,6 +88,31 @@ function applyTerminalScale() {
   }
   if (sessionId) {
     void terminalResize(sessionId, terminal.cols, terminal.rows);
+  }
+}
+
+function runResizeFit() {
+  if (!terminal || !fitAddon || !sessionId) {
+    return;
+  }
+  fitAddon.fit();
+  if (terminal.rows > 0) {
+    terminal.refresh(0, terminal.rows - 1);
+  }
+  void terminalResize(sessionId, terminal.cols, terminal.rows);
+  lastResizeFitAt = Date.now();
+}
+
+function scheduleResizeFit() {
+  if (resizeIdleTimer !== null) {
+    window.clearTimeout(resizeIdleTimer);
+  }
+  resizeIdleTimer = window.setTimeout(() => {
+    resizeIdleTimer = null;
+    runResizeFit();
+  }, RESIZE_TRAIL_MS);
+  if (Date.now() - lastResizeFitAt >= RESIZE_THROTTLE_MS) {
+    runResizeFit();
   }
 }
 
@@ -177,11 +206,7 @@ async function openSession() {
   });
 
   resizeObserver = new ResizeObserver(() => {
-    if (!terminal || !fitAddon || !sessionId) {
-      return;
-    }
-    fitAddon.fit();
-    void terminalResize(sessionId, terminal.cols, terminal.rows);
+    scheduleResizeFit();
   });
   resizeObserver.observe(containerRef.value);
 
@@ -232,6 +257,10 @@ function cleanupTerminal(sendClose: boolean) {
   if (inputFlushTimer !== null) {
     window.clearTimeout(inputFlushTimer);
     inputFlushTimer = null;
+  }
+  if (resizeIdleTimer !== null) {
+    window.clearTimeout(resizeIdleTimer);
+    resizeIdleTimer = null;
   }
   inputBuffer = '';
   if (resizeObserver && containerRef.value) {
