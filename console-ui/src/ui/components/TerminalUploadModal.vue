@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { NButton, NCard, NInput, NModal, NProgress, NSpin, NTree, type TreeOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { isTauri } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/api/dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { fetchUploadStatus, listTargetDirectories, startUpload } from '../../services/api';
 import type { TargetInfo, UploadStatus } from '../../shared/types';
 

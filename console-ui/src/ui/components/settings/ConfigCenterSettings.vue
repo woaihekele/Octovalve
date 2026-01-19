@@ -795,7 +795,7 @@ watch(
                                   <div class="flex items-center justify-between gap-3 md:col-span-2">
                                     <span class="text-xs text-foreground-muted">{{ $t('settings.config.fields.tty') }}</span>
                                     <NSwitch
-                                      :value="selectedTarget.tty ?? false"
+                                      :value="Boolean(selectedTarget?.tty)"
                                       size="small"
                                       :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                                       @update:value="updateTargetTty"
