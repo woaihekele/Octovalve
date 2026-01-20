@@ -181,7 +181,7 @@ impl McpClient {
             capabilities: ClientCapabilities::default(),
             client_info: Implementation {
                 name: "octovalve-console".to_string(),
-                version: "0.1.0".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 title: Some("Octovalve Console".to_string()),
                 icons: None,
                 website_url: None,

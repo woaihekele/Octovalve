@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let server_details = InitializeResult {
         server_info: Implementation {
             name: "octovalve_proxy".to_string(),
-            version: "0.1.0".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
             title: Some("Octovalve Proxy".to_string()),
             icons: None,
             website_url: None,
