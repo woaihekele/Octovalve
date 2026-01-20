@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue';
+import { onBeforeUnmount, ref, watch, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
@@ -102,7 +102,7 @@ import ChatPlanCard from './ChatPlanCard.vue';
 import type { ChatMessage, PlanEntry, SendMessageOptions } from '../types';
 import { useStickToBottom } from '../composables/useStickToBottom';
 import type { TargetInfo } from '../../../shared/types';
-import { SIDEBAR_WIDTH, TARGET_MIN_MAIN_WIDTH } from '../../../ui/layout';
+import { CHAT_MAX_WIDTH, CHAT_MIN_WIDTH } from '../../../ui/layout';
 
 interface Props {
   isOpen: boolean;
@@ -111,6 +111,8 @@ interface Props {
   placeholder?: string;
   width?: number;
   useStoredWidth?: boolean;
+  minWidth?: number;
+  maxWidth?: number;
   messages: ChatMessage[];
   planEntries?: PlanEntry[];
   isStreaming?: boolean;
@@ -143,12 +145,20 @@ const emit = defineEmits<{
   'show-history': [];
   clear: [];
   'change-provider': [provider: 'acp' | 'openai'];
+  'width-change': [width: number];
 }>();
 
 const widthStorageKey = 'console-ui.chat-panel.width';
-const minPanelWidth = 320;
-const baseMaxPanelWidth = 720;
-const maxPanelWidth = ref(baseMaxPanelWidth);
+const minPanelWidth = computed(() => {
+  const max = props.maxWidth ?? CHAT_MAX_WIDTH;
+  const min = props.minWidth ?? CHAT_MIN_WIDTH;
+  return Math.min(min, max);
+});
+const maxPanelWidth = computed(() => {
+  const min = props.minWidth ?? CHAT_MIN_WIDTH;
+  const max = props.maxWidth ?? CHAT_MAX_WIDTH;
+  return Math.max(max, min);
+});
 const { t } = useI18n();
 function resolvePlatformShortcut() {
   if (typeof navigator === 'undefined') {
@@ -173,21 +183,9 @@ const resolvedPlaceholder = computed(() => {
 });
 
 function clampWidth(value: number) {
-  const min = Math.min(minPanelWidth, maxPanelWidth.value);
-  return Math.min(maxPanelWidth.value, Math.max(min, value));
-}
-
-function resolveMaxPanelWidth() {
-  if (typeof window === 'undefined') {
-    return baseMaxPanelWidth;
-  }
-  const available = window.innerWidth - SIDEBAR_WIDTH - TARGET_MIN_MAIN_WIDTH;
-  return Math.max(0, Math.min(baseMaxPanelWidth, available));
-}
-
-function updateMaxPanelWidth() {
-  maxPanelWidth.value = resolveMaxPanelWidth();
-  panelWidth.value = clampWidth(panelWidth.value);
+  const min = minPanelWidth.value;
+  const max = maxPanelWidth.value;
+  return Math.min(max, Math.max(min, value));
 }
 
 function readStoredWidth() {
@@ -207,22 +205,19 @@ function readStoredWidth() {
 
 const panelWidth = ref(
   props.useStoredWidth === false
-    ? clampWidth(props.width ?? minPanelWidth)
-    : (readStoredWidth() ?? clampWidth(props.width ?? minPanelWidth))
+    ? clampWidth(props.width ?? minPanelWidth.value)
+    : (readStoredWidth() ?? clampWidth(props.width ?? minPanelWidth.value))
 );
 const isResizing = ref(false);
-const effectiveMinWidth = computed(() => Math.min(minPanelWidth, maxPanelWidth.value));
-
 const panelStyle = computed(() => {
   return {
     ['--chat-panel-width']: `${panelWidth.value}px`,
-    ['--chat-panel-min-width']: `${effectiveMinWidth.value}px`,
+    ['--chat-panel-min-width']: `${minPanelWidth.value}px`,
   } as Record<string, string>;
 });
 
 let resizeStartX = 0;
 let resizeStartWidth = 0;
-const handleWindowResize = () => updateMaxPanelWidth();
 
 function persistWidth() {
   if (typeof window === 'undefined') {
@@ -307,7 +302,6 @@ onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('mousemove', handleResizeMove);
     window.removeEventListener('mouseup', stopResize);
-    window.removeEventListener('resize', handleWindowResize);
   }
 });
 
@@ -338,12 +332,20 @@ watch(
   }
 );
 
-onMounted(() => {
-  updateMaxPanelWidth();
-  if (typeof window !== 'undefined') {
-    window.addEventListener('resize', handleWindowResize, { passive: true });
+watch(
+  () => [minPanelWidth.value, maxPanelWidth.value],
+  () => {
+    panelWidth.value = clampWidth(panelWidth.value);
   }
-});
+);
+
+watch(
+  () => panelWidth.value,
+  (value) => {
+    emit('width-change', value);
+  },
+  { immediate: true }
+);
 </script>
 
 <style scoped lang="scss">

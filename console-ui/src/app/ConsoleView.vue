@@ -36,11 +36,20 @@ import SettingsModal from '../ui/components/SettingsModal.vue';
 import NotificationBridge from '../ui/components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from '../services/settings';
 import { applyUiScale } from '../services/uiScale';
+import { getWindowLogicalSize, setWindowMinSize, setWindowSize } from '../services/tauriWindow';
 import type { AppLanguage, AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
 import { useAiRiskQueue } from '../composables/useAiRiskQueue';
 import { useTerminalState } from '../composables/useTerminalState';
 import type { ResolvedTheme } from '../shared/theme';
 import { APPLY_THEME_MODE, RESOLVED_THEME } from './appContext';
+import {
+  CHAT_MAX_WIDTH,
+  CHAT_MIN_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH,
+  TARGET_MIN_MAIN_WIDTH,
+  WINDOW_MIN_HEIGHT,
+} from '../ui/layout';
 
 const targets = ref<TargetInfo[]>([]);
 const snapshots = ref<Record<string, ServiceSnapshot>>({});
@@ -131,6 +140,83 @@ const consoleBanner = computed<{ kind: 'error' | 'info'; message: string } | nul
   }
   return null;
 });
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0);
+const chatDesiredWidth = ref(CHAT_MIN_WIDTH);
+
+function clampChatWidth(value: number) {
+  return Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, value));
+}
+
+const layoutSizing = computed(() => {
+  const chatOpen = isChatOpen.value;
+  const scale = Number.isFinite(effectiveUiScale.value) && effectiveUiScale.value > 0
+    ? effectiveUiScale.value
+    : 1;
+  const mainMin = TARGET_MIN_MAIN_WIDTH;
+  const minChat = chatOpen ? CHAT_MIN_WIDTH : 0;
+  const desiredChat = chatOpen ? clampChatWidth(chatDesiredWidth.value) : 0;
+  const width = windowWidth.value || SIDEBAR_WIDTH + TARGET_MIN_MAIN_WIDTH + desiredChat;
+  const baseSidebar = SIDEBAR_WIDTH;
+  const minSidebar = SIDEBAR_MIN_WIDTH;
+
+  let sidebarWidth = baseSidebar;
+
+  if (chatOpen) {
+    const baseTotal = baseSidebar + mainMin + desiredChat;
+    if (width < baseTotal) {
+      const remaining = width - mainMin;
+      sidebarWidth = Math.min(baseSidebar, Math.max(minSidebar, remaining - desiredChat));
+      if (remaining - sidebarWidth < minChat) {
+        sidebarWidth = Math.max(minSidebar, remaining - minChat);
+      }
+    }
+  } else if (width < baseSidebar + mainMin) {
+    const remaining = width - mainMin;
+    sidebarWidth = Math.min(baseSidebar, Math.max(minSidebar, remaining));
+  }
+
+  const chatMaxWidth = chatOpen
+    ? Math.min(CHAT_MAX_WIDTH, width - mainMin - minSidebar)
+    : CHAT_MAX_WIDTH;
+
+  return {
+    sidebarWidth: Math.max(minSidebar, Math.min(baseSidebar, sidebarWidth)),
+    chatMaxWidth: Math.max(minChat, chatMaxWidth),
+    minWindowWidth: (mainMin + minSidebar + minChat) * scale,
+    minWindowHeight: WINDOW_MIN_HEIGHT * scale,
+  };
+});
+
+const chatMaxWidth = computed(() => layoutSizing.value.chatMaxWidth);
+
+async function syncWindowMinSize() {
+  if (!tauriAvailable) {
+    return;
+  }
+  const minWidth = layoutSizing.value.minWindowWidth;
+  const minHeight = layoutSizing.value.minWindowHeight;
+  await setWindowMinSize(minWidth, minHeight);
+  const logicalSize = await getWindowLogicalSize();
+  if (!logicalSize) {
+    return;
+  }
+  const nextWidth = Math.max(logicalSize.width, minWidth);
+  const nextHeight = Math.max(logicalSize.height, minHeight);
+  if (nextWidth !== logicalSize.width || nextHeight !== logicalSize.height) {
+    await setWindowSize(nextWidth, nextHeight);
+  }
+}
+
+watch(
+  () => [layoutSizing.value.minWindowWidth, layoutSizing.value.minWindowHeight],
+  () => {
+    void syncWindowMinSize();
+  }
+);
+
+function handleChatWidthChange(width: number) {
+  chatDesiredWidth.value = width;
+}
 
 const {
   activeTerminalTabId,
@@ -172,6 +258,12 @@ const pendingProviderLabel = computed(() => {
   }
   return t('common.unknown');
 });
+function handleWindowResize() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  windowWidth.value = window.innerWidth;
+}
 const switchLogOpen = ref(false);
 const switchLogInProgress = ref(false);
 const switchLogStatusMessage = ref('');
@@ -1459,6 +1551,9 @@ function handleGlobalKey(event: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  void syncWindowMinSize();
+  handleWindowResize();
+  window.addEventListener('resize', handleWindowResize, { passive: true });
   window.addEventListener('keydown', handleGlobalKey);
   window.addEventListener('dragenter', handleFileDragEnter, true);
   window.addEventListener('dragover', handleFileDragOver, true);
@@ -1496,6 +1591,7 @@ onBeforeUnmount(() => {
     streamHandle.close();
   }
   window.removeEventListener('keydown', handleGlobalKey);
+  window.removeEventListener('resize', handleWindowResize);
   window.removeEventListener('dragenter', handleFileDragEnter, true);
   window.removeEventListener('dragover', handleFileDragOver, true);
   window.removeEventListener('dragleave', handleFileDragLeave, true);
@@ -1640,6 +1736,7 @@ watch(
     <ConsoleLeftPane
       ref="leftPaneRef"
       :targets="targets"
+      :sidebar-width="layoutSizing.sidebarWidth"
       :selected-target-name="selectedTargetName"
       :pending-total="pendingTotal"
       :connection-state="connectionState"
@@ -1680,6 +1777,8 @@ watch(
     <ConsoleChatPane
       :is-chat-open="isChatOpen"
       :show-drop-hint="showChatDropHint"
+      :chat-min-width="CHAT_MIN_WIDTH"
+      :chat-max-width="chatMaxWidth"
       :messages="chatMessages"
       :plan-entries="chatPlanEntries"
       :is-streaming="chatIsStreaming"
@@ -1695,6 +1794,7 @@ watch(
       :active-session-id="chatStore.activeSessionId"
       @send="handleChatSend"
       @cancel="handleChatCancel"
+      @width-change="handleChatWidthChange"
       @show-history="handleChatShowHistory"
       @clear="handleChatClear"
       @change-provider="handleChangeProvider"

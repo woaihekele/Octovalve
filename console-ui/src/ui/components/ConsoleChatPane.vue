@@ -1,6 +1,8 @@
 <template>
   <ChatPanel
     :is-open="isChatOpen"
+    :min-width="chatMinWidth"
+    :max-width="chatMaxWidth"
     :show-drop-hint="showDropHint"
     :messages="messages"
     :plan-entries="planEntries"
@@ -18,6 +20,7 @@
     @show-history="emit('show-history')"
     @clear="emit('clear')"
     @change-provider="emit('change-provider', $event)"
+    @width-change="emit('width-change', $event)"
   />
 
   <ChatHistoryModal
@@ -42,6 +45,8 @@ import type { TargetInfo } from '../../shared/types';
 defineProps<{
   isChatOpen: boolean;
   showDropHint: boolean;
+  chatMinWidth: number;
+  chatMaxWidth: number;
   messages: ChatMessage[];
   planEntries: PlanEntry[];
   isStreaming: boolean;
@@ -63,6 +68,7 @@ const emit = defineEmits<{
   (e: 'show-history'): void;
   (e: 'clear'): void;
   (e: 'change-provider', provider: 'acp' | 'openai'): void;
+  (e: 'width-change', width: number): void;
   (e: 'close-history'): void;
   (e: 'select-session', sessionId: string): void;
   (e: 'delete-session', sessionId: string): void;

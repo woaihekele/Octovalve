@@ -9,12 +9,13 @@
     :profiles-enabled="profilesEnabled"
     :profile-loading="profileLoading"
     :profile-switching="profileSwitching"
+    :sidebar-width="sidebarWidth"
     @select="emit('select-target', $event)"
     @open-settings="emit('open-settings')"
     @switch-profile="emit('switch-profile', $event)"
   />
 
-  <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+  <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden" :style="{ minWidth: `${TARGET_MIN_MAIN_WIDTH}px` }">
     <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
       <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
         <span
@@ -144,6 +145,7 @@ import Sidebar from './Sidebar.vue';
 import TargetView from './TargetView.vue';
 import TerminalPanel from './TerminalPanel.vue';
 import TerminalUploadModal from './TerminalUploadModal.vue';
+import { TARGET_MIN_MAIN_WIDTH } from '../layout';
 
 type TerminalTab = {
   id: string;
@@ -169,6 +171,7 @@ const props = defineProps<{
   profilesEnabled: boolean;
   profileLoading: boolean;
   profileSwitching: boolean;
+  sidebarWidth?: number;
   selectedTarget: TargetInfo | null;
   selectedSnapshot: ServiceSnapshot | null;
   settings: AppSettings;
