@@ -32,6 +32,7 @@ const profileOptions = computed<SelectOption[]>(() =>
 );
 const sidebarStyle = computed(() => ({
   width: props.sidebarWidth ? `${props.sidebarWidth}px` : undefined,
+  minWidth: props.sidebarWidth ? `${props.sidebarWidth}px` : undefined,
   ['--sidebar-profile-width' as string]: props.profileSelectWidth
     ? `${props.profileSelectWidth}px`
     : undefined,
@@ -78,7 +79,7 @@ function resolveTargetHost(target: TargetInfo) {
 </script>
 
 <template>
-  <aside class="w-72 bg-panel border-r border-border flex flex-col h-full" :style="sidebarStyle">
+  <aside class="w-72 shrink-0 bg-panel border-r border-border flex flex-col h-full" :style="sidebarStyle">
     <div
       class="p-4 border-b border-border flex items-center gap-2"
       data-tauri-drag-region

@@ -4,6 +4,7 @@
     :class="{
       'chat-panel--open': isOpen,
       'chat-panel--resizing': isResizing,
+      'chat-panel--transitionless': disableTransition,
       'chat-panel--drop-active': showDropHint,
     }"
     :style="panelStyle"
@@ -113,6 +114,7 @@ interface Props {
   useStoredWidth?: boolean;
   minWidth?: number;
   maxWidth?: number;
+  disableTransition?: boolean;
   messages: ChatMessage[];
   planEntries?: PlanEntry[];
   isStreaming?: boolean;
@@ -137,6 +139,7 @@ const props = withDefaults(defineProps<Props>(), {
   targets: () => [],
   supportsImages: false,
   showDropHint: false,
+  disableTransition: false,
 });
 
 const emit = defineEmits<{
@@ -229,6 +232,7 @@ function persistWidth() {
 function handleResizeMove(event: MouseEvent) {
   const dx = resizeStartX - event.clientX;
   panelWidth.value = clampWidth(resizeStartWidth + dx);
+  emit('width-change', panelWidth.value);
 }
 
 function stopResize() {
@@ -239,6 +243,7 @@ function stopResize() {
   window.removeEventListener('mousemove', handleResizeMove);
   window.removeEventListener('mouseup', stopResize);
   persistWidth();
+  emit('width-change', panelWidth.value);
 }
 
 function startResize(event: MouseEvent) {
@@ -339,13 +344,6 @@ watch(
   }
 );
 
-watch(
-  () => panelWidth.value,
-  (value) => {
-    emit('width-change', value);
-  },
-  { immediate: true }
-);
 </script>
 
 <style scoped lang="scss">
@@ -366,6 +364,10 @@ watch(
   &--resizing {
     transition: none;
     user-select: none;
+  }
+
+  &--transitionless {
+    transition: none;
   }
 
   &--drop-active {

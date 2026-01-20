@@ -3,6 +3,7 @@
     :is-open="isChatOpen"
     :min-width="chatMinWidth"
     :max-width="chatMaxWidth"
+    :disable-transition="disableTransition"
     :show-drop-hint="showDropHint"
     :messages="messages"
     :plan-entries="planEntries"
@@ -47,6 +48,7 @@ defineProps<{
   showDropHint: boolean;
   chatMinWidth: number;
   chatMaxWidth: number;
+  disableTransition: boolean;
   messages: ChatMessage[];
   planEntries: PlanEntry[];
   isStreaming: boolean;

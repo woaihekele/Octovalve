@@ -141,7 +141,24 @@ const consoleBanner = computed<{ kind: 'error' | 'info'; message: string } | nul
   return null;
 });
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0);
-const chatDesiredWidth = ref(CHAT_MIN_WIDTH);
+const isWindowResizing = ref(false);
+let windowResizeIdleTimer: number | null = null;
+const chatWidthStorageKey = 'console-ui.chat-panel.width';
+function readStoredChatWidth() {
+  if (typeof window === 'undefined') {
+    return CHAT_MIN_WIDTH;
+  }
+  const raw = window.localStorage.getItem(chatWidthStorageKey);
+  if (!raw) {
+    return CHAT_MIN_WIDTH;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return CHAT_MIN_WIDTH;
+  }
+  return clampChatWidth(parsed);
+}
+const chatDesiredWidth = ref(readStoredChatWidth());
 
 function clampChatWidth(value: number) {
   return Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, value));
@@ -263,6 +280,14 @@ function handleWindowResize() {
     return;
   }
   windowWidth.value = window.innerWidth;
+  isWindowResizing.value = true;
+  if (windowResizeIdleTimer !== null) {
+    window.clearTimeout(windowResizeIdleTimer);
+  }
+  windowResizeIdleTimer = window.setTimeout(() => {
+    isWindowResizing.value = false;
+    windowResizeIdleTimer = null;
+  }, 140);
 }
 const switchLogOpen = ref(false);
 const switchLogInProgress = ref(false);
@@ -1592,6 +1617,10 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('keydown', handleGlobalKey);
   window.removeEventListener('resize', handleWindowResize);
+  if (windowResizeIdleTimer !== null) {
+    window.clearTimeout(windowResizeIdleTimer);
+    windowResizeIdleTimer = null;
+  }
   window.removeEventListener('dragenter', handleFileDragEnter, true);
   window.removeEventListener('dragover', handleFileDragOver, true);
   window.removeEventListener('dragleave', handleFileDragLeave, true);
@@ -1779,6 +1808,7 @@ watch(
       :show-drop-hint="showChatDropHint"
       :chat-min-width="CHAT_MIN_WIDTH"
       :chat-max-width="chatMaxWidth"
+      :disable-transition="isWindowResizing"
       :messages="chatMessages"
       :plan-entries="chatPlanEntries"
       :is-streaming="chatIsStreaming"
