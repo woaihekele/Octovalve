@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch, nextTick, computed } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatMessageRow from './ChatMessageRow.vue';
 import ChatInput from './ChatInput.vue';
@@ -102,6 +102,7 @@ import ChatPlanCard from './ChatPlanCard.vue';
 import type { ChatMessage, PlanEntry, SendMessageOptions } from '../types';
 import { useStickToBottom } from '../composables/useStickToBottom';
 import type { TargetInfo } from '../../../shared/types';
+import { SIDEBAR_WIDTH, TARGET_MIN_MAIN_WIDTH } from '../../../ui/layout';
 
 interface Props {
   isOpen: boolean;
@@ -146,7 +147,8 @@ const emit = defineEmits<{
 
 const widthStorageKey = 'console-ui.chat-panel.width';
 const minPanelWidth = 320;
-const maxPanelWidth = 720;
+const baseMaxPanelWidth = 720;
+const maxPanelWidth = ref(baseMaxPanelWidth);
 const { t } = useI18n();
 function resolvePlatformShortcut() {
   if (typeof navigator === 'undefined') {
@@ -171,7 +173,21 @@ const resolvedPlaceholder = computed(() => {
 });
 
 function clampWidth(value: number) {
-  return Math.min(maxPanelWidth, Math.max(minPanelWidth, value));
+  const min = Math.min(minPanelWidth, maxPanelWidth.value);
+  return Math.min(maxPanelWidth.value, Math.max(min, value));
+}
+
+function resolveMaxPanelWidth() {
+  if (typeof window === 'undefined') {
+    return baseMaxPanelWidth;
+  }
+  const available = window.innerWidth - SIDEBAR_WIDTH - TARGET_MIN_MAIN_WIDTH;
+  return Math.max(0, Math.min(baseMaxPanelWidth, available));
+}
+
+function updateMaxPanelWidth() {
+  maxPanelWidth.value = resolveMaxPanelWidth();
+  panelWidth.value = clampWidth(panelWidth.value);
 }
 
 function readStoredWidth() {
@@ -195,15 +211,18 @@ const panelWidth = ref(
     : (readStoredWidth() ?? clampWidth(props.width ?? minPanelWidth))
 );
 const isResizing = ref(false);
+const effectiveMinWidth = computed(() => Math.min(minPanelWidth, maxPanelWidth.value));
 
 const panelStyle = computed(() => {
   return {
     ['--chat-panel-width']: `${panelWidth.value}px`,
+    ['--chat-panel-min-width']: `${effectiveMinWidth.value}px`,
   } as Record<string, string>;
 });
 
 let resizeStartX = 0;
 let resizeStartWidth = 0;
+const handleWindowResize = () => updateMaxPanelWidth();
 
 function persistWidth() {
   if (typeof window === 'undefined') {
@@ -288,6 +307,7 @@ onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('mousemove', handleResizeMove);
     window.removeEventListener('mouseup', stopResize);
+    window.removeEventListener('resize', handleWindowResize);
   }
 });
 
@@ -317,6 +337,13 @@ watch(
     }
   }
 );
+
+onMounted(() => {
+  updateMaxPanelWidth();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize, { passive: true });
+  }
+});
 </script>
 
 <style scoped lang="scss">
@@ -331,7 +358,7 @@ watch(
 
   &--open {
     width: var(--chat-panel-width);
-    min-width: 320px;
+    min-width: var(--chat-panel-min-width, 320px);
   }
 
   &--resizing {

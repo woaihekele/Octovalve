@@ -3,6 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NButton, NPopover, NTag } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { formatShortcut, matchesShortcut } from '../../shared/shortcuts';
+import {
+  TARGET_COLUMN_RESIZER_WIDTH,
+  TARGET_MIN_LEFT_PANE_WIDTH,
+  TARGET_MIN_RIGHT_PANE_WIDTH,
+} from '../layout';
 import type {
   AiRiskEntry,
   AppSettings,
@@ -68,7 +73,8 @@ const isResizingColumns = ref(false);
 const lastPendingCount = ref(0);
 const leftPaneWidthStorageKey = 'console-ui.target-split.left.width';
 const terminalHeightStorageKey = 'console-ui.target-terminal.height';
-const columnResizerWidth = 8;
+
+const columnResizerWidth = TARGET_COLUMN_RESIZER_WIDTH;
 const minTerminalHeight = 240;
 const minContentHeight = 240;
 const defaultLeftPaneWidth = 351;
@@ -81,8 +87,8 @@ let resizeStartWidth = 0;
 type SnapshotItem = RequestSnapshot | RunningSnapshot | ResultSnapshot;
 
 const layoutDefaults = computed(() => ({
-  minLeftPaneWidth: props.layout?.minLeftPaneWidth ?? 320,
-  minRightPaneWidth: props.layout?.minRightPaneWidth ?? 420,
+  minLeftPaneWidth: props.layout?.minLeftPaneWidth ?? TARGET_MIN_LEFT_PANE_WIDTH,
+  minRightPaneWidth: props.layout?.minRightPaneWidth ?? TARGET_MIN_RIGHT_PANE_WIDTH,
   defaultLeftPaneRatio: props.layout?.defaultLeftPaneRatio ?? 1 / 3,
 }));
 
