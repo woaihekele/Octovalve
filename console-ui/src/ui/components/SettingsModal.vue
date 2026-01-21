@@ -1119,8 +1119,7 @@ watch(
 <style scoped>
 .settings-card-shell {
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: visible;
+  overflow: hidden;
 }
 
 :deep(.settings-modal) {

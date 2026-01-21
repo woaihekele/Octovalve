@@ -60,7 +60,7 @@ function updateTerminalScale(value: number | null) {
         :value="props.settings.theme"
         :options="themeOptions"
         size="small"
-        class="w-32"
+        class="w-44"
         to="body"
         @update:value="updateTheme"
       />

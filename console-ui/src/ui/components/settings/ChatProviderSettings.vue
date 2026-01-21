@@ -84,19 +84,6 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
 <template>
   <div class="chat-settings grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] gap-6 items-stretch">
     <div class="flex flex-col gap-6 min-h-0">
-      <!-- Provider Selection -->
-      <div class="space-y-2">
-        <div class="text-sm font-medium">{{ $t('settings.chat.provider.label') }}</div>
-        <div class="text-xs text-foreground-muted mb-2">{{ $t('settings.chat.provider.help') }}</div>
-        <NSelect
-          :value="props.config.provider"
-          :options="providerOptions"
-          size="small"
-          class="w-48"
-          @update:value="updateProvider"
-        />
-      </div>
-
       <div class="flex items-center justify-between gap-4">
         <div>
           <div class="text-sm font-medium">{{ $t('settings.chat.sendShortcut') }}</div>
@@ -110,6 +97,19 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
             @update:value="updateSendOnEnter"
           />
         </div>
+      </div>
+
+      <!-- Provider Selection -->
+      <div class="space-y-2">
+        <div class="text-sm font-medium">{{ $t('settings.chat.provider.label') }}</div>
+        <div class="text-xs text-foreground-muted mb-2">{{ $t('settings.chat.provider.help') }}</div>
+        <NSelect
+          :value="props.config.provider"
+          :options="providerOptions"
+          size="small"
+          class="w-56"
+          @update:value="updateProvider"
+        />
       </div>
 
       <!-- OpenAI API Settings -->
