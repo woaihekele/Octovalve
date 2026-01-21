@@ -706,10 +706,6 @@ function requestApplyConfig() {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
-  if (proxyDirty.value || brokerDirty.value) {
-    showConfigMessage(t('settings.config.applyBlocked'), 'warning');
-    return;
-  }
   void applyConfig();
 }
 
@@ -722,17 +718,29 @@ async function applyConfig() {
     showConfigMessage(t('settings.profile.selectFirst'), 'warning');
     return;
   }
-  if (proxyDirty.value || brokerDirty.value) {
-    showConfigMessage(t('settings.config.applyBlocked'), 'warning');
-    return;
-  }
-  const switching = profileName !== activeProfile.value;
-  const proxyChanged = proxyApplied.value !== null && proxyApplied.value !== proxyConfigText.value;
-  const brokerChanged = brokerApplied.value !== null && brokerApplied.value !== brokerConfigText.value;
-  const shouldRestartConsole = switching || proxyChanged || brokerChanged;
+
   configBusy.value = true;
   let success = false;
   try {
+    // Auto-save dirty config files before applying
+    if (proxyDirty.value || brokerDirty.value) {
+      const saveTasks: Promise<void>[] = [];
+      if (proxyDirty.value) {
+        saveTasks.push(writeProfileProxyConfig(profileName, proxyConfigText.value));
+      }
+      if (brokerDirty.value) {
+        saveTasks.push(writeProfileBrokerConfig(profileName, brokerConfigText.value));
+      }
+      await Promise.all(saveTasks);
+      proxyOriginal.value = proxyConfigText.value;
+      brokerOriginal.value = brokerConfigText.value;
+    }
+
+    const switching = profileName !== activeProfile.value;
+    const proxyChanged = proxyApplied.value !== null && proxyApplied.value !== proxyConfigText.value;
+    const brokerChanged = brokerApplied.value !== null && brokerApplied.value !== brokerConfigText.value;
+    const shouldRestartConsole = switching || proxyChanged || brokerChanged;
+
     if (switching) {
       await selectProfile(profileName);
       activeProfile.value = profileName;
