@@ -446,7 +446,7 @@ function disposeLogTerminal() {
   logTerminal = null;
 }
 
-async function restartConsoleWithLog(message?: string) {
+async function restartConsoleWithLog(message?: string): Promise<boolean> {
   logStatusMessage.value = t('settings.log.status.console.pending');
   await startLogPolling();
   try {
@@ -455,10 +455,12 @@ async function restartConsoleWithLog(message?: string) {
     if (message) {
       showConfigMessage(message);
     }
+    return true;
   } catch (err) {
     const msg = t('settings.log.status.console.failed', { error: String(err) });
     logStatusMessage.value = msg;
     showConfigMessage(msg, 'error');
+    return false;
   } finally {
     stopLogPolling();
   }
@@ -729,6 +731,7 @@ async function applyConfig() {
   const brokerChanged = brokerApplied.value !== null && brokerApplied.value !== brokerConfigText.value;
   const shouldRestartConsole = switching || proxyChanged || brokerChanged;
   configBusy.value = true;
+  let success = false;
   try {
     if (switching) {
       await selectProfile(profileName);
@@ -738,17 +741,22 @@ async function applyConfig() {
       const message = switching
         ? t('settings.apply.switchProfile', { name: profileName })
         : t('settings.apply.localApplied');
-      await restartConsoleWithLog(message);
+      success = await restartConsoleWithLog(message);
       proxyApplied.value = proxyConfigText.value;
       brokerApplied.value = brokerConfigText.value;
     }
     if (!shouldRestartConsole) {
       showConfigMessage(t('settings.config.noChanges'), 'info');
+      success = true;
     }
   } catch (err) {
     showConfigMessage(t('settings.apply.failed', { error: String(err) }), 'error');
   } finally {
     configBusy.value = false;
+    if (success) {
+      logModalOpen.value = false;
+      emit('close');
+    }
   }
 }
 

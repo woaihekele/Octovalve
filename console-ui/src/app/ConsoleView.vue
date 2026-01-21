@@ -616,6 +616,7 @@ async function handleQuickProfileSwitch(profileName: string) {
   booting.value = true;
   hasConnected.value = false;
   connectionState.value = 'connecting';
+  let success = false;
   try {
     await startSwitchLogPolling('console');
     switchLogStatusMessage.value = t('settings.log.status.console.pending');
@@ -625,6 +626,7 @@ async function handleQuickProfileSwitch(profileName: string) {
     showNotification(t('settings.apply.switchProfile', { name: profileName }));
     quickProfileCurrent.value = profileName;
     await startConsoleSession();
+    success = true;
   } catch (err) {
     const message = t('settings.log.status.console.failed', { error: String(err) });
     switchLogStatusMessage.value = message;
@@ -633,6 +635,9 @@ async function handleQuickProfileSwitch(profileName: string) {
   } finally {
     stopSwitchLogPolling();
     quickProfileSwitching.value = false;
+    if (success) {
+      switchLogOpen.value = false;
+    }
   }
 }
 
@@ -1375,6 +1380,7 @@ async function restartAcpSessionWithLog(createSession: boolean, config?: AppSett
   }
   acpRestarting.value = true;
   chatStore.setConnected(false);
+  let success = false;
   try {
     await startSwitchLogPolling('acp');
     switchLogStatusMessage.value = t('settings.log.status.acp.pending');
@@ -1383,6 +1389,7 @@ async function restartAcpSessionWithLog(createSession: boolean, config?: AppSett
       chatStore.createSession();
     }
     switchLogStatusMessage.value = t('settings.log.status.acp.done');
+    success = true;
   } catch (err) {
     const message = t('settings.log.status.acp.failed', { error: String(err) });
     switchLogStatusMessage.value = message;
@@ -1390,6 +1397,9 @@ async function restartAcpSessionWithLog(createSession: boolean, config?: AppSett
   } finally {
     stopSwitchLogPolling();
     acpRestarting.value = false;
+    if (success) {
+      switchLogOpen.value = false;
+    }
   }
 }
 
