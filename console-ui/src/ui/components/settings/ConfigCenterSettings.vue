@@ -562,8 +562,8 @@ watch(
 
 <template>
   <div
-    class="config-center-root flex h-full min-h-0 flex-1 flex-col overflow-hidden transition"
-    :class="props.highlight ? 'ring-1 ring-accent/60 rounded-lg' : ''"
+    class="config-center-root flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+    :class="props.highlight ? 'config-highlight rounded-lg' : ''"
   >
     <div class="min-h-0 min-w-0 flex-1 overflow-auto pr-2">
       <div v-if="props.configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
@@ -1123,5 +1123,25 @@ watch(
 .config-center-overlay--show {
   opacity: 1;
   pointer-events: auto;
+}
+
+.config-highlight {
+  box-shadow: inset 0 0 0 2px rgb(var(--color-accent) / 0.7);
+  animation: highlight-pulse 0.6s ease-in-out 2, highlight-fade 1s ease-out 1.2s forwards;
+}
+
+@keyframes highlight-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 0 2px rgb(var(--color-accent) / 0.7);
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px rgb(var(--color-accent) / 0.3);
+  }
+}
+
+@keyframes highlight-fade {
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
 }
 </style>
