@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
+use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
-use tokio::process::Command;
 
 use crate::events::ConsoleEvent;
 use crate::runtime::emit_target_update;

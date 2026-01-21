@@ -17,7 +17,9 @@ use system_utils::path::expand_tilde;
 use system_utils::ssh::apply_askpass_env;
 use tracing::warn;
 
-use crate::shell_utils::{apply_ssh_options, build_env_prefix, env_language_locale, env_locale, shell_escape};
+use crate::shell_utils::{
+    apply_ssh_options, build_env_prefix, env_language_locale, env_locale, shell_escape,
+};
 use crate::state::TargetSpec;
 
 use super::policy::{LimitsConfig, Whitelist};
@@ -388,7 +390,6 @@ fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
     }
     Some("en_US.utf8".to_string())
 }
-
 
 fn build_execution_outcome(
     exit_code: Option<i32>,

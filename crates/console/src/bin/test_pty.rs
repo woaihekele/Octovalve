@@ -6,7 +6,9 @@ use std::process::{Command, Stdio};
 #[path = "../shell_utils.rs"]
 mod shell_utils;
 
-use shell_utils::{apply_ssh_options, build_env_prefix, env_language_locale, env_locale, shell_escape};
+use shell_utils::{
+    apply_ssh_options, build_env_prefix, env_language_locale, env_locale, shell_escape,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "test_pty", about = "Test remote command execution via SSH")]

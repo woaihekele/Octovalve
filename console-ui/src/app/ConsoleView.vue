@@ -949,6 +949,22 @@ async function loadStartupProfiles() {
     const data = await listProfiles();
     startupProfiles.value = data.profiles;
     startupSelectedProfile.value = data.current || data.profiles[0]?.name || null;
+    // Auto-start when there's exactly one profile and config is ready
+    if (data.profiles.length === 1 && startupSelectedProfile.value) {
+      await selectProfile(startupSelectedProfile.value);
+      const status = await getProxyConfigStatus();
+      const check = status.present ? await validateStartupConfig() : null;
+      if (status.present && check?.ok) {
+        // Config is valid, auto-start
+        startupBusy.value = false;
+        await applyStartupProfile();
+        return;
+      }
+      // Config needs setup, guide user to settings without showing error
+      startupBusy.value = false;
+      openSettingsForConfig();
+      return;
+    }
     startupProfileOpen.value = true;
     connectionState.value = 'disconnected';
     startupStatusMessage.value = '';

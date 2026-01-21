@@ -215,8 +215,8 @@ fn system_time_ms(time: SystemTime) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_utils::temp_dir;
+    use super::*;
     use std::fs;
 
     #[test]

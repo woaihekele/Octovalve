@@ -167,10 +167,19 @@ fn build_state_from_config(
         }
     }
 
+    // Auto-select default_target when there's exactly one target
+    let default_target = config.default_target.or_else(|| {
+        if order.len() == 1 {
+            Some(order[0].clone())
+        } else {
+            None
+        }
+    });
+
     let state = ProxyState {
         targets,
         target_order: order,
-        default_target: config.default_target,
+        default_target,
         command_addr,
     };
 
@@ -217,5 +226,56 @@ mod tests {
         assert_eq!(state.target_addr("dev").expect("addr"), "127.0.0.1:19310");
         let targets = state.list_targets();
         assert_eq!(targets[0].status, TargetStatus::Ready);
+    }
+
+    #[test]
+    fn single_target_auto_selects_default() {
+        let args = base_args();
+        let config = ProxyConfig {
+            default_target: None,
+            defaults: None,
+            targets: vec![TargetConfig {
+                name: "only".to_string(),
+                desc: "only target".to_string(),
+                ssh: Some("user@host".to_string()),
+                ssh_args: None,
+                ssh_password: None,
+                terminal_locale: None,
+                tty: false,
+            }],
+        };
+        let (state, _) = build_state_from_config(&args, config).expect("state");
+        assert_eq!(state.default_target(), Some("only".to_string()));
+    }
+
+    #[test]
+    fn multiple_targets_no_auto_default() {
+        let args = base_args();
+        let config = ProxyConfig {
+            default_target: None,
+            defaults: None,
+            targets: vec![
+                TargetConfig {
+                    name: "a".to_string(),
+                    desc: "a".to_string(),
+                    ssh: Some("user@a".to_string()),
+                    ssh_args: None,
+                    ssh_password: None,
+                    terminal_locale: None,
+                    tty: false,
+                },
+                TargetConfig {
+                    name: "b".to_string(),
+                    desc: "b".to_string(),
+                    ssh: Some("user@b".to_string()),
+                    ssh_args: None,
+                    ssh_password: None,
+                    terminal_locale: None,
+                    tty: false,
+                },
+            ],
+        };
+        let (state, _) = build_state_from_config(&args, config).expect("state");
+        assert_eq!(state.default_target(), None);
     }
 }

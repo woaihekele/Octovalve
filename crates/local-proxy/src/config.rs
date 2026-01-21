@@ -1,6 +1,6 @@
 use anyhow::Context;
-pub(crate) use protocol::config::ProxyConfig;
 use protocol::config::parse_ssh_destination;
+pub(crate) use protocol::config::ProxyConfig;
 use std::path::PathBuf;
 
 fn validate_proxy_config(config: &ProxyConfig) -> anyhow::Result<()> {

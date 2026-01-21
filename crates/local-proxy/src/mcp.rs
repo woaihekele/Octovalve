@@ -112,10 +112,13 @@ impl ProxyHandler {
 
         let mut input_schema = Map::new();
         input_schema.insert("type".to_string(), Value::String("object".to_string()));
-        input_schema.insert(
-            "required".to_string(),
-            json!(["command", "intent", "target"]),
-        );
+        // When there's a default target, target is not required
+        let required = if default_target.is_some() {
+            json!(["command", "intent"])
+        } else {
+            json!(["command", "intent", "target"])
+        };
+        input_schema.insert("required".to_string(), required);
         input_schema.insert("properties".to_string(), Value::Object(properties));
 
         Tool {
@@ -194,18 +197,23 @@ impl ServerHandler for ProxyHandler {
                     let pipeline = parse_pipeline(&args.command)
                         .map_err(|err| McpError::invalid_params(err, None))?;
 
-                    let addr = {
+                    let (target, addr) = {
                         let state = self.state.read().await;
-                        state
-                            .target_addr(&args.target)
-                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?
+                        let target = args
+                            .target
+                            .or_else(|| state.default_target())
+                            .ok_or_else(|| McpError::invalid_params("target is required", None))?;
+                        let addr = state
+                            .target_addr(&target)
+                            .map_err(|err| McpError::invalid_params(err.to_string(), None))?;
+                        (target, addr)
                     };
 
                     let mode = args.mode.unwrap_or(CommandMode::Shell);
                     let request = CommandRequest {
                         id: Uuid::new_v4().to_string(),
                         client: self.client_id.clone(),
-                        target: args.target.clone(),
+                        target: target.clone(),
                         intent: args.intent,
                         mode,
                         raw_command: args.command.clone(),
@@ -263,7 +271,7 @@ impl ServerHandler for ProxyHandler {
 struct RunCommandArgs {
     command: String,
     intent: String,
-    target: String,
+    target: Option<String>,
     mode: Option<CommandMode>,
     cwd: Option<String>,
     timeout_ms: Option<u64>,

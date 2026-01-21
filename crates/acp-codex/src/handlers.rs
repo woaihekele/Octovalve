@@ -395,7 +395,11 @@ pub(crate) async fn handle_codex_event(
                 Ok(value) => format_tool_result(&value),
                 Err(err) => err,
             };
-            let content = if output.is_empty() { None } else { Some(output) };
+            let content = if output.is_empty() {
+                None
+            } else {
+                Some(output)
+            };
             send_tool_call_update(
                 writer,
                 &session_id,

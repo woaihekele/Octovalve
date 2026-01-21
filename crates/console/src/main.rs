@@ -20,8 +20,8 @@ use crate::uploads::{DirectoryEntry, UploadRegistry, UploadRequest, UploadStatus
 use anyhow::Context;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, Query};
 use axum::extract::State;
+use axum::extract::{Path, Query};
 use axum::http::Request;
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};

@@ -61,8 +61,8 @@ pub(crate) async fn write_output_files(output_dir: &Path, response: &CommandResp
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_utils::temp_dir;
+    use super::*;
     use std::fs;
 
     #[test]

@@ -110,10 +110,14 @@ pub(crate) async fn resolve_remote_dir_path(
 ) -> Result<String, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "~" || trimmed == "~/" {
-        return Ok(fetch_remote_home(target).await.unwrap_or_else(|_| "/".to_string()));
+        return Ok(fetch_remote_home(target)
+            .await
+            .unwrap_or_else(|_| "/".to_string()));
     }
     if let Some(rest) = trimmed.strip_prefix("~/") {
-        let home = fetch_remote_home(target).await.unwrap_or_else(|_| "/".to_string());
+        let home = fetch_remote_home(target)
+            .await
+            .unwrap_or_else(|_| "/".to_string());
         if rest.is_empty() {
             return Ok(home);
         }
@@ -151,7 +155,10 @@ pub(crate) async fn list_remote_directories(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let message = if stderr.is_empty() {
-            format!("list directory failed with status {:?}", output.status.code())
+            format!(
+                "list directory failed with status {:?}",
+                output.status.code()
+            )
         } else {
             stderr
         };
@@ -244,8 +251,7 @@ pub(crate) async fn start_upload(
     tokio::spawn(async move {
         if let Err(_err) =
             run_upload(registry_clone, target, local_path, remote_path, upload_id).await
-        {
-        }
+        {}
     });
     Ok(id)
 }
@@ -420,10 +426,7 @@ fn build_list_command(path: &str) -> String {
     let mut command = String::new();
     command.push_str("ls -1 -p -a -- ");
     command.push_str(&shell_escape(path));
-    format!(
-        "bash --noprofile -lc {}",
-        shell_escape(&command)
-    )
+    format!("bash --noprofile -lc {}", shell_escape(&command))
 }
 
 fn build_home_command() -> String {
@@ -438,10 +441,7 @@ fn build_upload_command(remote_path: &str) -> String {
         shell_escape(&parent),
         shell_escape(remote_path)
     );
-    format!(
-        "bash --noprofile -lc {}",
-        shell_escape(&command)
-    )
+    format!("bash --noprofile -lc {}", shell_escape(&command))
 }
 
 fn join_remote_path(base: &str, name: &str) -> String {
