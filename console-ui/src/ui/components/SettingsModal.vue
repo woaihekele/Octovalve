@@ -168,7 +168,7 @@ const configStatusText = computed(() =>
 const isAiTab = computed(() => activeTab.value === 'ai');
 const isChatTab = computed(() => activeTab.value === 'chat');
 const cardMaxWidth = computed(() =>
-  isConfigTab.value ? '80rem' : isAiTab.value || isChatTab.value ? '64rem' : '32rem'
+  '56rem'
 );
 const cardShellStyle = computed<CSSProperties>(() => ({
   width: cardMaxWidth.value,
@@ -1172,66 +1172,4 @@ watch(
   overflow: hidden;
 }
 
-.ai-field {
-  display: grid;
-  gap: 0.75rem;
-  align-items: center;
-  height: 2.5rem;
-}
-
-@media (min-width: 640px) {
-  .ai-field {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-  }
-}
-
-.ai-field > div:first-child {
-  min-height: 2.5rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.ai-field > div:first-child .text-xs {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-}
-
-.ai-control {
-  width: 100%;
-}
-
-@media (min-width: 640px) {
-  .ai-control {
-    width: 16rem;
-    display: flex;
-    justify-content: flex-end;
-  }
-}
-
-.ai-control--switch {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.ai-control--prompt {
-  width: 100%;
-  display: block;
-}
-
-.ai-control :deep(.n-input__input input),
-.ai-control :deep(.n-input__textarea textarea),
-.ai-control :deep(.n-base-selection-label) {
-  color: rgb(var(--color-text));
-}
-
-.ai-control :deep(.n-input__input input::placeholder),
-.ai-control :deep(.n-input__textarea textarea::placeholder),
-.ai-control :deep(.n-base-selection-placeholder) {
-  color: rgb(var(--color-text-muted));
-}
 </style>

@@ -38,7 +38,7 @@ function resetPrompt() {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] gap-6 items-start">
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-6 items-start">
     <div class="space-y-4">
       <div class="ai-field">
         <div>
@@ -226,7 +226,6 @@ function resetPrompt() {
   display: grid;
   gap: 0.75rem;
   align-items: center;
-  height: 2.5rem;
 }
 
 @media (min-width: 640px) {
@@ -237,18 +236,9 @@ function resetPrompt() {
 }
 
 .ai-field > div:first-child {
-  min-height: 2.5rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
-}
-
-.ai-field > div:first-child .text-xs {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
 }
 
 .ai-control {
@@ -257,7 +247,7 @@ function resetPrompt() {
 
 @media (min-width: 640px) {
   .ai-control {
-    width: 16rem;
+    width: 12rem;
     display: flex;
     justify-content: flex-end;
   }

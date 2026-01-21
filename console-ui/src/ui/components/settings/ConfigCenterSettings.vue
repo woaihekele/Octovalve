@@ -565,7 +565,7 @@ watch(
     class="config-center-root flex h-full min-h-0 flex-1 flex-col overflow-hidden transition"
     :class="props.highlight ? 'ring-1 ring-accent/60 rounded-lg' : ''"
   >
-    <div class="min-h-0 flex-1 overflow-auto pr-2">
+    <div class="min-h-0 min-w-0 flex-1 overflow-auto pr-2">
       <div v-if="props.configLoading" class="flex items-center gap-2 text-sm text-foreground-muted">
         <NSpin size="small" />
         <span>{{ $t('settings.config.loading') }}</span>
@@ -679,7 +679,7 @@ watch(
                         {{ $t('settings.config.proxy.addTarget') }}
                       </NButton>
                     </div>
-                    <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                    <div class="mt-3 grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
                       <div>
                         <div v-if="proxyForm.targets.length === 0" class="text-xs text-foreground-muted">
                           {{ $t('settings.config.proxy.noTargets') }}
@@ -744,9 +744,9 @@ watch(
                           </div>
                         </div>
                       </div>
-                      <div class="rounded-lg border border-border/40 p-3">
+                      <div class="min-w-0 rounded-lg border border-border/40 p-3">
                         <div v-if="selectedTarget && selectedTargetIndex !== null" class="space-y-3">
-                          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <div class="grid grid-cols-2 gap-3">
                             <div class="flex flex-col gap-1">
                               <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.name') }}</div>
                               <NInput
@@ -792,7 +792,7 @@ watch(
                                 :disabled="props.configBusy || props.logModalOpen || props.configLoading"
                               />
                             </div>
-                            <div class="flex flex-col gap-1 md:col-span-2">
+                            <div class="flex flex-col gap-1 col-span-2">
                               <div class="text-xs text-foreground-muted">{{ $t('settings.config.fields.desc') }}</div>
                               <NInput
                                 v-model:value="selectedTarget.desc"
