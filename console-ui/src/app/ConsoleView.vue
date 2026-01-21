@@ -64,7 +64,7 @@ const isFileDragging = ref(false);
 let dragIdleTimer: number | null = null;
 let lastFileDragAt = 0;
 const DRAG_IDLE_TIMEOUT = 200;
-const notification = ref<{ message: string; count?: number; target?: string } | null>(null);
+const notification = ref<{ message: string; count?: number; target?: string; type?: 'success' | 'warning' | 'error' | 'info' } | null>(null);
 const notificationToken = ref(0);
 const connectionState = ref<'connected' | 'connecting' | 'disconnected'>('connecting');
 const snapshotLoading = ref<Record<string, boolean>>({});
@@ -594,7 +594,7 @@ async function refreshQuickProfiles() {
     quickProfileCurrent.value = data.current;
   } catch (err) {
     const message = t('settings.profile.loadFailed', { error: String(err) });
-    showNotification(message);
+    showNotification(message, undefined, undefined, 'error');
     reportUiError('load profiles failed', err);
   } finally {
     quickProfileLoading.value = false;
@@ -628,7 +628,7 @@ async function handleQuickProfileSwitch(profileName: string) {
   } catch (err) {
     const message = t('settings.log.status.console.failed', { error: String(err) });
     switchLogStatusMessage.value = message;
-    showNotification(message);
+    showNotification(message, undefined, undefined, 'error');
     quickProfileCurrent.value = current;
   } finally {
     stopSwitchLogPolling();
@@ -701,7 +701,7 @@ async function initChatProvider(options: ChatProviderInitOptions = {}) {
           console.log('[initChatProvider] authenticateAcp done');
         } catch (authErr) {
           console.warn('[initChatProvider] authenticateAcp failed (optional):', authErr);
-          showNotification(formatAcpAuthError(authErr));
+          showNotification(formatAcpAuthError(authErr), undefined, undefined, 'error');
         }
       }
     }
@@ -720,7 +720,7 @@ async function handleChatSend(options: SendMessageOptions) {
     try {
       await chatStore.sendMessage(options);
     } catch (e) {
-      showNotification(t('chat.error', { error: String(e) }));
+      showNotification(t('chat.error', { error: String(e) }), undefined, undefined, 'error');
     }
   } else {
     // Fallback to simulated response
@@ -903,7 +903,7 @@ async function confirmProviderSwitch() {
     chatStore.createSession();
   } catch (e) {
     console.error('[Chat] Provider switch failed:', e);
-    showNotification(t('chat.providerSwitch.failed', { error: String(e) }));
+    showNotification(t('chat.providerSwitch.failed', { error: String(e) }), undefined, undefined, 'error');
   } finally {
     providerSwitching.value = false;
     providerSwitchConfirmOpen.value = false;
@@ -911,8 +911,8 @@ async function confirmProviderSwitch() {
   }
 }
 
-function showNotification(message: string, count?: number, target?: string) {
-  notification.value = { message, count, target };
+function showNotification(message: string, count?: number, target?: string, type?: 'success' | 'warning' | 'error' | 'info') {
+  notification.value = { message, count, target, type };
   notificationToken.value += 1;
 }
 
@@ -950,7 +950,7 @@ async function loadStartupProfiles() {
   } catch (err) {
     const message = t('console.startup.loadFailed', { error: String(err) });
     startupError.value = message;
-    showNotification(message);
+    showNotification(message, undefined, undefined, 'error');
     reportUiError('load profiles failed', err);
     startupProfileOpen.value = true;
   } finally {
@@ -981,7 +981,7 @@ async function applyStartupProfile(): Promise<boolean> {
         example: status.example_path,
       });
       startupError.value = message;
-      showNotification(message);
+      showNotification(message, undefined, undefined, 'error');
       connectionState.value = 'disconnected';
       booting.value = false;
       return false;
@@ -991,7 +991,7 @@ async function applyStartupProfile(): Promise<boolean> {
     if (!check.ok) {
       const message = t('console.startup.validationFailed', { errors: check.errors.join('\n- ') });
       startupError.value = message;
-      showNotification(t('console.startup.validationFailedToast'));
+      showNotification(t('console.startup.validationFailedToast'), undefined, undefined, 'error');
       reportUiError('startup config invalid', check.errors.join(' | '));
       connectionState.value = 'disconnected';
       booting.value = false;
@@ -1012,7 +1012,7 @@ async function applyStartupProfile(): Promise<boolean> {
   } catch (err) {
     const message = t('console.startup.startFailed', { error: String(err) });
     startupError.value = message;
-    showNotification(message);
+    showNotification(message, undefined, undefined, 'error');
     reportUiError('startup profile failed', err);
     connectionState.value = 'disconnected';
     booting.value = false;
@@ -1251,7 +1251,7 @@ async function approve(id: string) {
   try {
     await approveCommand(selectedTargetName.value, id);
   } catch (err) {
-    showNotification(t('console.notifications.approveFailed'));
+    showNotification(t('console.notifications.approveFailed'), undefined, undefined, 'error');
     reportUiError('approve command failed', err);
   }
 }
@@ -1261,7 +1261,7 @@ async function deny(id: string) {
   try {
     await denyCommand(selectedTargetName.value, id);
   } catch (err) {
-    showNotification(t('console.notifications.denyFailed'));
+    showNotification(t('console.notifications.denyFailed'), undefined, undefined, 'error');
     reportUiError('deny command failed', err);
   }
 }
@@ -1271,7 +1271,7 @@ async function cancel(id: string) {
   try {
     await cancelCommand(selectedTargetName.value, id);
   } catch (err) {
-    showNotification(t('console.notifications.cancelFailed'));
+    showNotification(t('console.notifications.cancelFailed'), undefined, undefined, 'error');
     reportUiError('cancel command failed', err);
   }
 }
@@ -1386,7 +1386,7 @@ async function restartAcpSessionWithLog(createSession: boolean, config?: AppSett
   } catch (err) {
     const message = t('settings.log.status.acp.failed', { error: String(err) });
     switchLogStatusMessage.value = message;
-    showNotification(message);
+    showNotification(message, undefined, undefined, 'error');
   } finally {
     stopSwitchLogPolling();
     acpRestarting.value = false;
@@ -1449,7 +1449,7 @@ async function refreshChatProviderFromSettings(
     }
   } catch (err) {
     console.error('[Chat] settings refresh failed:', err);
-    showNotification(t('chat.settingsRefreshFailed', { error: String(err) }));
+    showNotification(t('chat.settingsRefreshFailed', { error: String(err) }), undefined, undefined, 'error');
   }
 }
 
@@ -1601,7 +1601,7 @@ onMounted(async () => {
       showNotification(t('console.startup.configMissingRestart', {
         path: status.path,
         example: status.example_path,
-      }));
+      }), undefined, undefined, 'error');
       void logUiEvent(`proxy config missing: ${status.path}`);
       return;
     }

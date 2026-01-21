@@ -4,7 +4,7 @@ import { useNotification } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
-  payload: { message: string; count?: number; target?: string } | null;
+  payload: { message: string; count?: number; target?: string; type?: 'success' | 'warning' | 'error' | 'info' } | null;
   token: number;
 }>();
 
@@ -44,7 +44,7 @@ watch(
       title: props.payload.message,
       content,
       duration: 4000,
-      type: props.payload.count ? 'warning' : 'success',
+      type: props.payload.type ?? (props.payload.count ? 'warning' : 'success'),
     });
   }
 );
