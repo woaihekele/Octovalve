@@ -33,7 +33,7 @@
               "identifier": "shell:allow-spawn",
               "allow": [
                 {
-                  "name": "console",
+                  "name": "octovalve-console",
                   "sidecar": true
                 },
                 {
@@ -46,7 +46,7 @@
               "identifier": "shell:allow-execute",
               "allow": [
                 {
-                  "name": "console",
+                  "name": "octovalve-console",
                   "sidecar": true
                 },
                 {
@@ -79,7 +79,7 @@
   "bundle": {
     "active": false,
     "externalBin": [
-      "../../target/release/console",
+      "../../target/release/octovalve-console",
       "../../target/release/octovalve-proxy"
     ],
     "icon": [

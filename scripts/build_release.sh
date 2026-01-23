@@ -62,7 +62,7 @@ cd "$REPO_ROOT"
 cargo build --release
 
 mkdir -p "$OUTPUT_DIR"
-install -m 0755 target/release/console "$OUTPUT_DIR/console"
+install -m 0755 target/release/octovalve-console "$OUTPUT_DIR/octovalve-console"
 install -m 0755 target/release/octovalve-proxy "$OUTPUT_DIR/octovalve-proxy"
 
 if [[ "$COPY_CONFIG" -eq 1 ]]; then

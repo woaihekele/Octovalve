@@ -34,6 +34,7 @@ use clap::Parser;
 use serde::Deserialize;
 use std::sync::Arc;
 use system_utils::path::expand_tilde;
+use tokio::time::{interval, Duration};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
@@ -70,6 +71,10 @@ async fn main() -> anyhow::Result<()> {
         event_tx: event_tx.clone(),
         uploads: UploadRegistry::new(),
     };
+
+    if let Some(parent_pid) = resolve_parent_pid() {
+        spawn_parent_watchdog(parent_pid, shutdown.clone());
+    }
 
     let app = Router::new()
         .route("/health", get(health))
@@ -111,6 +116,57 @@ async fn main() -> anyhow::Result<()> {
     info!("console shutting down");
     shutdown.cancel();
     Ok(())
+}
+
+fn resolve_parent_pid() -> Option<u32> {
+    let value = std::env::var("OCTOVALVE_PARENT_PID").ok()?;
+    value.parse::<u32>().ok()
+}
+
+fn spawn_parent_watchdog(parent_pid: u32, shutdown: CancellationToken) {
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(2));
+        loop {
+            ticker.tick().await;
+            if !is_parent_alive(parent_pid) {
+                info!(parent_pid, "parent exited; shutting down");
+                shutdown.cancel();
+                break;
+            }
+        }
+    });
+}
+
+#[cfg(unix)]
+fn is_parent_alive(parent_pid: u32) -> bool {
+    let pid = parent_pid as i32;
+    let result = unsafe { libc::kill(pid, 0) };
+    if result == 0 {
+        return true;
+    }
+    match std::io::Error::last_os_error().raw_os_error() {
+        Some(libc::EPERM) => true,
+        _ => false,
+    }
+}
+
+#[cfg(windows)]
+fn is_parent_alive(parent_pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, parent_pid);
+        if handle == 0 {
+            return false;
+        }
+        let mut exit_code: u32 = 0;
+        let ok = GetExitCodeProcess(handle, &mut exit_code);
+        CloseHandle(handle);
+        ok != 0 && exit_code == STILL_ACTIVE
+    }
 }
 
 async fn health() -> &'static str {

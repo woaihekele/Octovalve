@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "octovalve-console"
+path = "src/main.rs"
+
 [dependencies]
 anyhow.workspace = true
 axum = { version = "0.7", features = ["json", "ws"] }
@@ -26,3 +30,6 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Threading"] }

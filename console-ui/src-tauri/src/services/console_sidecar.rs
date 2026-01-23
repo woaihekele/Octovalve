@@ -47,6 +47,10 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
 
     let mut envs = HashMap::new();
     envs.insert("PATH".to_string(), build_console_path());
+    envs.insert(
+        "OCTOVALVE_PARENT_PID".to_string(),
+        std::process::id().to_string(),
+    );
     let language = resolve_app_language(app);
     if let Some(locale) = resolve_default_locale(&language) {
         envs.insert("OCTOVALVE_TERMINAL_LOCALE".to_string(), locale);
@@ -65,7 +69,7 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
 
     let (mut rx, child) = app
         .shell()
-        .sidecar("console")
+        .sidecar("octovalve-console")
         .map_err(|err| err.to_string())?
         .args(console_args)
         .envs(envs)
