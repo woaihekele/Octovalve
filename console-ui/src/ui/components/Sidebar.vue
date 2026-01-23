@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { NSelect, type SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import type { ProfileSummary, TargetInfo } from '../../shared/types';
+import { isMacPlatform } from '../../shared/platform';
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 
@@ -27,16 +28,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const isMacPlatform = computed(() => {
-  if (typeof navigator === 'undefined') {
-    return false;
-  }
-  const platform =
-    (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
-    navigator.platform ||
-    navigator.userAgent;
-  return /mac|iphone|ipad|ipod/i.test(platform);
-});
+const isMacPlatformRef = computed(() => isMacPlatform());
 const profileOptions = computed<SelectOption[]>(() =>
   props.profiles.map((profile) => ({ label: profile.name, value: profile.name }))
 );
@@ -92,7 +84,7 @@ function resolveTargetHost(target: TargetInfo) {
   <aside class="w-72 shrink-0 bg-panel border-r border-border flex flex-col h-full" :style="sidebarStyle">
     <div
       class="p-4 border-b border-border flex items-center gap-2"
-      :data-tauri-drag-region="isMacPlatform ? true : undefined"
+      :data-tauri-drag-region="isMacPlatformRef ? true : undefined"
     >
       <div class="w-2.5 h-2.5 rounded-full bg-accent"></div>
       <h1 class="font-semibold text-lg tracking-tight">Octovalve</h1>
