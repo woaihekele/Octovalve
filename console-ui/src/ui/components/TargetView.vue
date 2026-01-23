@@ -48,6 +48,17 @@ const emit = defineEmits<{
 
 const { t, locale } = useI18n();
 
+const isMacPlatform = computed(() => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  const platform =
+    (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+    navigator.platform ||
+    navigator.userAgent;
+  return /mac|iphone|ipad|ipod/i.test(platform);
+});
+
 const localSelectedId = ref<string | null>(null);
 const selectedId = computed<string | null>({
   get: () => (props.selectedId !== undefined ? props.selectedId : localSelectedId.value),
@@ -665,7 +676,7 @@ onBeforeUnmount(() => {
     <div
       v-if="!isFullScreen"
       class="h-16 border-b border-border flex items-center justify-between px-6 bg-panel/50"
-      data-tauri-drag-region
+      :data-tauri-drag-region="isMacPlatform ? true : undefined"
     >
       <div class="flex items-center gap-4 min-w-0">
         <div class="min-w-0">
