@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import { NSelect, type SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import type { ProfileSummary, TargetInfo } from '../../shared/types';
-import { isMacPlatform } from '../../shared/platform';
+import { IS_MAC_PLATFORM_KEY } from '../../shared/platform';
 
 type ConnectionState = 'connected' | 'connecting' | 'disconnected';
 
@@ -28,7 +28,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const isMacPlatformRef = computed(() => isMacPlatform());
+const isMacPlatform = inject<boolean>(IS_MAC_PLATFORM_KEY, false);
 const profileOptions = computed<SelectOption[]>(() =>
   props.profiles.map((profile) => ({ label: profile.name, value: profile.name }))
 );
@@ -84,7 +84,7 @@ function resolveTargetHost(target: TargetInfo) {
   <aside class="w-72 shrink-0 bg-panel border-r border-border flex flex-col h-full" :style="sidebarStyle">
     <div
       class="p-4 border-b border-border flex items-center gap-2"
-      :data-tauri-drag-region="isMacPlatformRef ? true : undefined"
+      :data-tauri-drag-region="isMacPlatform ? true : undefined"
     >
       <div class="w-2.5 h-2.5 rounded-full bg-accent"></div>
       <h1 class="font-semibold text-lg tracking-tight">Octovalve</h1>

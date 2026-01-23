@@ -8,3 +8,5 @@ export function isMacPlatform(): boolean {
     navigator.userAgent;
   return /mac|iphone|ipad|ipod/i.test(platform);
 }
+
+export const IS_MAC_PLATFORM_KEY = Symbol('isMacPlatform');

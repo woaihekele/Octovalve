@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NButton, NPopover, NTag } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { formatShortcut, matchesShortcut } from '../../shared/shortcuts';
-import { isMacPlatform } from '../../shared/platform';
+import { IS_MAC_PLATFORM_KEY } from '../../shared/platform';
 import {
   TARGET_COLUMN_RESIZER_WIDTH,
   TARGET_MIN_LEFT_PANE_WIDTH,
@@ -49,7 +49,7 @@ const emit = defineEmits<{
 
 const { t, locale } = useI18n();
 
-const isMacPlatformRef = computed(() => isMacPlatform());
+const isMacPlatform = inject<boolean>(IS_MAC_PLATFORM_KEY, false);
 
 const localSelectedId = ref<string | null>(null);
 const selectedId = computed<string | null>({
@@ -668,7 +668,7 @@ onBeforeUnmount(() => {
     <div
       v-if="!isFullScreen"
       class="h-16 border-b border-border flex items-center justify-between px-6 bg-panel/50"
-      :data-tauri-drag-region="isMacPlatformRef ? true : undefined"
+      :data-tauri-drag-region="isMacPlatform ? true : undefined"
     >
       <div class="flex items-center gap-4 min-w-0">
         <div class="min-w-0">

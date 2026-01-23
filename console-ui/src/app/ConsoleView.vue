@@ -37,7 +37,7 @@ import NotificationBridge from '../ui/components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from '../services/settings';
 import { applyUiScale } from '../services/uiScale';
 import { getWindowLogicalSize, setWindowMinSize, setWindowSize } from '../services/tauriWindow';
-import { isMacPlatform } from '../shared/platform';
+import { IS_MAC_PLATFORM_KEY } from '../shared/platform';
 import type { AppLanguage, AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
 import { useAiRiskQueue } from '../composables/useAiRiskQueue';
 import { useTerminalState } from '../composables/useTerminalState';
@@ -114,9 +114,9 @@ const effectiveTerminalScale = computed(
   () => previewTerminalScale.value ?? settings.value.terminalScale
 );
 const DRAG_REGION_BASE_PX = 28;
-const isMacPlatformRef = computed(() => isMacPlatform());
+const isMacPlatform = inject<boolean>(IS_MAC_PLATFORM_KEY, false);
 const dragRegionHeight = computed(() => {
-  if (!isMacPlatformRef.value) {
+  if (!isMacPlatform) {
     return '0px';
   }
   const scale = Number.isFinite(effectiveUiScale.value) && effectiveUiScale.value > 0
@@ -1789,7 +1789,7 @@ watch(
     :style="{ paddingTop: dragRegionHeight }"
   >
     <div
-      v-if="isMacPlatformRef"
+      v-if="isMacPlatform"
       class="fixed top-0 left-0 right-0 z-[4000] pointer-events-auto"
       :style="{ height: dragRegionHeight }"
       data-tauri-drag-region
