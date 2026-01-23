@@ -1,10 +1,10 @@
 [package]
-name = "octovalve-console"
+name = "octovalve-backend"
 version = "0.1.1"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
-default-run = "octovalve-console"
+default-run = "octovalve-backend"
 license = "MIT OR Apache-2.0"
 build = "build.rs"
 

@@ -12,11 +12,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::timeout;
 
-use octovalve_console::clients::acp_types::{
+use octovalve_backend::clients::acp_types::{
     AcpMessage, AuthenticateParams, ContentBlock, InitializeParams, InitializeResult,
     JsonRpcRequest, NewSessionParams, NewSessionResult, PromptParams, SessionUpdate,
 };
-use octovalve_console::services::mcp_config::parse_mcp_config_json;
+use octovalve_backend::services::mcp_config::parse_mcp_config_json;
 
 #[derive(Debug, Deserialize)]
 struct AcpEventPayload {
@@ -110,7 +110,7 @@ fn main() -> Result<(), String> {
     let init_params = InitializeParams {
         protocol_version: "1".to_string(),
         client_capabilities: Default::default(),
-        client_info: octovalve_console::clients::acp_types::ClientInfo {
+        client_info: octovalve_backend::clients::acp_types::ClientInfo {
             name: "octovalve".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
         },

@@ -2625,7 +2625,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "octovalve-console"
+name = "octovalve-backend"
 version = "0.1.1"
 dependencies = [
  "acp-codex",

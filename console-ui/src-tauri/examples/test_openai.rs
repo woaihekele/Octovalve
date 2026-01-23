@@ -1,13 +1,13 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-use octovalve_console::clients::mcp_client::{McpClient, McpServerSpec};
-use octovalve_console::paths::resolve_octovalve_proxy_bin;
+use octovalve_backend::clients::mcp_client::{McpClient, McpServerSpec};
+use octovalve_backend::paths::resolve_octovalve_proxy_bin;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use octovalve_console::services::http_utils::join_base_path;
-use octovalve_console::services::mcp_config::parse_mcp_config_json;
+use octovalve_backend::services::http_utils::join_base_path;
+use octovalve_backend::services::mcp_config::parse_mcp_config_json;
 
 const DEFAULT_COMMAND_ADDR: &str = "127.0.0.1:19310";
 
