@@ -206,7 +206,7 @@ describe('chatProviders', () => {
 
     await providerApi.initializeAcp('/tmp');
 
-    expect(acpService.start).toHaveBeenCalledWith('/tmp', undefined);
+    expect(acpService.start).toHaveBeenCalledWith('/tmp', undefined, undefined);
     expect(acpInitialized.value).toBe(true);
     expect(provider.value).toBe('acp');
     expect(providerInitialized.value).toBe(true);

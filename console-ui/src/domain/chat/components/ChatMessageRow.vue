@@ -475,6 +475,7 @@ const assistantMarkdown = computed(() => {
     word-break: break-word;
     overflow-wrap: anywhere;
     min-width: 0;
+    --chat-markdown-list-indent: 0.8em;
 
     // Markdown elements
     :deep(p) {
@@ -487,11 +488,22 @@ const assistantMarkdown = computed(() => {
 
     :deep(ul), :deep(ol) {
       margin: 0.5em 0;
-      padding-left: 1.5em;
+      padding-left: var(--chat-markdown-list-indent);
+    }
+
+    /* Tailwind preflight 会把 ul/ol 的 list-style 重置为 none，需要在消息内容里显式恢复 */
+    :deep(ul) {
+      list-style-type: disc;
+    }
+
+    :deep(ol) {
+      list-style-type: decimal;
     }
 
     :deep(li) {
       margin: 0.25em 0;
+      /* 气泡容器使用 overflow:hidden 时，默认 list marker（outside）可能被裁剪，导致 1/2/3 或圆点看不到 */
+      list-style-position: inside;
     }
 
     :deep(h1), :deep(h2), :deep(h3), :deep(h4) {
