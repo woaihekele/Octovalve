@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use crate::clients::mcp_client::McpServerSpec;
 
+// Codex（app-server）对 MCP tool call 默认 60s 超时；我们给内置 octovalve MCP server
+// 一个更宽松的默认值，避免长命令（构建/测试/部署）在 60s 被 Codex 终止。
+const DEFAULT_CODEX_TOOL_TIMEOUT_SEC: u64 = 60 * 60;
+
 pub struct ParsedMcpConfig {
     pub servers: Vec<Value>,
     pub stdio_servers: Vec<McpServerSpec>,
@@ -37,6 +41,16 @@ pub fn parse_mcp_config_json(raw: &str) -> Result<ParsedMcpConfig, String> {
         };
         let mut entry = config.clone();
         entry.insert("name".to_string(), Value::String(name.clone()));
+        // 如果用户没有显式设置 tool_timeout_sec，则给 octovalve 默认加大超时，避免 Codex 60s 限制。
+        if name == "octovalve"
+            && !entry.contains_key("tool_timeout_sec")
+            && !entry.contains_key("toolTimeoutSec")
+        {
+            entry.insert(
+                "tool_timeout_sec".to_string(),
+                Value::from(DEFAULT_CODEX_TOOL_TIMEOUT_SEC),
+            );
+        }
         servers.push(Value::Object(entry.clone()));
 
         let enabled = entry
@@ -99,6 +113,10 @@ pub fn build_octovalve_server(
         map.insert(
             "args".to_string(),
             Value::Array(args.into_iter().map(Value::String).collect()),
+        );
+        map.insert(
+            "tool_timeout_sec".to_string(),
+            Value::from(DEFAULT_CODEX_TOOL_TIMEOUT_SEC),
         );
         map
     });
@@ -222,5 +240,55 @@ fn apply_env_vars_value(env: &mut HashMap<String, String>, value: Option<&Value>
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mcp_config_adds_default_tool_timeout_for_octovalve() {
+        let raw = r#"{
+          "mcpServers": {
+            "octovalve": {
+              "command": "/bin/echo",
+              "args": ["hello"]
+            }
+          }
+        }"#;
+        let parsed = parse_mcp_config_json(raw).expect("parse");
+        assert!(parsed.has_octovalve);
+        let octo = parsed
+            .servers
+            .iter()
+            .filter_map(|v| v.as_object())
+            .find(|m| m.get("name").and_then(|v| v.as_str()) == Some("octovalve"))
+            .expect("octovalve server");
+        assert_eq!(
+            octo.get("tool_timeout_sec").and_then(|v| v.as_u64()),
+            Some(DEFAULT_CODEX_TOOL_TIMEOUT_SEC)
+        );
+    }
+
+    #[test]
+    fn parse_mcp_config_does_not_override_explicit_tool_timeout() {
+        let raw = r#"{
+          "mcpServers": {
+            "octovalve": {
+              "command": "/bin/echo",
+              "args": ["hello"],
+              "tool_timeout_sec": 12
+            }
+          }
+        }"#;
+        let parsed = parse_mcp_config_json(raw).expect("parse");
+        let octo = parsed
+            .servers
+            .iter()
+            .filter_map(|v| v.as_object())
+            .find(|m| m.get("name").and_then(|v| v.as_str()) == Some("octovalve"))
+            .expect("octovalve server");
+        assert_eq!(octo.get("tool_timeout_sec").and_then(|v| v.as_u64()), Some(12));
     }
 }

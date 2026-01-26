@@ -96,9 +96,12 @@ fn build_mcp_cli_override(proxy_bin: &Path, proxy_config: &Path) -> Result<Strin
         format_config_literal(DEFAULT_COMMAND_ADDR)?,
     ];
     let args_literal = format!("[{}]", args.join(", "));
+    // Codex（app-server）对 MCP tool call 默认 60s 超时；给 octovalve MCP server 提高上限。
+    // 注意：这是 Codex 的配置值（秒），不是我们的 MCP proxy 超时。
+    let tool_timeout_sec = 60 * 60;
     Ok(format!(
-        "mcp_servers.octovalve={{command={},args={}}}",
-        command, args_literal
+        "mcp_servers.octovalve={{command={},args={},tool_timeout_sec={}}}",
+        command, args_literal, tool_timeout_sec
     ))
 }
 
