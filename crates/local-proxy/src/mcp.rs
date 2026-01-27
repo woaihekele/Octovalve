@@ -82,7 +82,7 @@ impl ProxyHandler {
             "cwd".to_string(),
             json!({
                 "type": "string",
-                "description": "Working directory for the command."
+                "description": "Working directory on the target machine. If set, command runs as `cd <cwd> && ...`. Must already exist. Prefer absolute paths. `~` is not expanded. If omitted, uses /tmp ."
             }),
         );
         properties.insert(
