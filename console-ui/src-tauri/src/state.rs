@@ -14,6 +14,7 @@ pub struct ConsoleSidecar {
 }
 
 pub struct ConsoleSidecarState(pub Mutex<Option<ConsoleSidecar>>);
+pub struct ConsoleRestartLock(pub Mutex<()>);
 pub struct ConsoleStreamState(pub Mutex<bool>);
 pub struct ProxyConfigState(pub Mutex<ProxyConfigStatus>);
 pub struct ProfilesState(pub Mutex<ProfilesFile>);

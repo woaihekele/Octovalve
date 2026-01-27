@@ -6,6 +6,7 @@ pub fn run() {
         .manage(crate::state::ConsoleSidecarState(std::sync::Mutex::new(
             None,
         )))
+        .manage(crate::state::ConsoleRestartLock(std::sync::Mutex::new(())))
         .manage(crate::state::ConsoleStreamState(std::sync::Mutex::new(
             false,
         )))

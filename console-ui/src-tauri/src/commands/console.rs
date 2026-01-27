@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
 
 use crate::services::console_http::{console_get, console_post, console_post_json};
-use crate::services::console_sidecar::{start_console, stop_console};
+use crate::services::console_sidecar::restart_console_sidecar;
 use crate::services::console_ws::start_console_stream as start_console_stream_service;
 use crate::services::logging::append_log_line;
 use crate::services::startup_check;
@@ -97,11 +97,10 @@ pub async fn restart_console(
     tauri::async_runtime::spawn_blocking(move || {
         let console_log = console_log_path(&app_handle)?;
         let _ = append_log_line(&console_log, "console restart requested");
-        stop_console(&app_handle);
         if !status.present {
             return Err("proxy config missing".to_string());
         }
-        match start_console(&app_handle, Path::new(&status.path), &app_log) {
+        match restart_console_sidecar(&app_handle, Path::new(&status.path), &app_log) {
             Ok(_) => {
                 let _ = append_log_line(&console_log, "console restart started");
                 Ok(())

@@ -88,5 +88,9 @@ pub fn init(app: &mut tauri::App) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     disable_scroll_elasticity(&app_handle);
+
+    // Dev-only: pair with `scripts/dev_watch_sidecars.sh` to auto-restart the console sidecar
+    // after rebuilding, avoiding manual kill + full `tauri dev` restart loops.
+    crate::services::dev_sidecars::start_dev_sidecar_autorestart(app_handle.clone());
     Ok(())
 }

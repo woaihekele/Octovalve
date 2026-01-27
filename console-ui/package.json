@@ -9,6 +9,8 @@
     "test": "vitest run -c vitest.config.ts",
     "test:watch": "vitest -c vitest.config.ts",
     "preview": "vite preview",
+    "dev:tauri": "bash ../scripts/dev_tauri_full.sh",
+    "dev:sidecars": "bash ../scripts/dev_watch_sidecars.sh",
     "tauri": "tauri",
     "tauri:build:dmg": "tauri build --bundles dmg --config '{\"bundle\":{\"active\":true}}'",
     "tauri:build:universal:dmg": "OCTOVALVE_SIDECAR_TARGET=universal-apple-darwin tauri build --target universal-apple-darwin --bundles dmg --config '{\"bundle\":{\"active\":true}}'"

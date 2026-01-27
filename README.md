@@ -158,6 +158,14 @@ npm install
 # 启动 Tauri 开发模式（会先跑 Vite）
 npm run tauri dev
 
+# 推荐：单命令启动（Tauri + sidecar 自动 rebuild/同步/自动重启）
+npm run dev:tauri
+
+#（可选）开发时自动编译/同步 sidecar（octovalve-console / octovalve-proxy）
+# 另开一个终端运行；当 sidecar 代码变更时会自动 rebuild 并同步到 Tauri dev 产物目录，
+# UI 内部会检测到二进制替换并自动重启 console sidecar。
+npm run dev:sidecars
+
 # 产出桌面应用
 npm run tauri:build:dmg
 

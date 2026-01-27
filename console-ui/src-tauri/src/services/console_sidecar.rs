@@ -12,7 +12,9 @@ use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use crate::services::config::{ensure_file, DEFAULT_BROKER_CONFIG};
 use crate::services::logging::append_log_line;
 use crate::services::profiles::resolve_broker_config_path;
-use crate::state::{AppLanguageState, ConsoleSidecar, ConsoleSidecarState, ProfilesState};
+use crate::state::{
+    AppLanguageState, ConsoleRestartLock, ConsoleSidecar, ConsoleSidecarState, ProfilesState,
+};
 
 pub(crate) const DEFAULT_COMMAND_ADDR: &str = "127.0.0.1:19310";
 const DEFAULT_APP_LANGUAGE: &str = "en-US";
@@ -21,6 +23,110 @@ fn format_command_output(line: &[u8]) -> String {
     String::from_utf8_lossy(line)
         .trim_end_matches(&['\r', '\n'][..])
         .to_string()
+}
+
+fn wait_for_tcp_port_free(addr: &str, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match std::net::TcpListener::bind(addr) {
+            Ok(listener) => {
+                drop(listener);
+                return Ok(());
+            }
+            Err(err) => {
+                if Instant::now() >= deadline {
+                    return Err(format!("port still in use {addr}: {err}"));
+                }
+                std::thread::sleep(Duration::from_millis(150));
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn dev_kill_port_holder(port: u16, app_log: &Path) -> bool {
+    if !cfg!(debug_assertions) {
+        return false;
+    }
+    if std::env::var("OCTOVALVE_DEV_KILL_STRAY_CONSOLE")
+        .ok()
+        .as_deref()
+        != Some("1")
+    {
+        return false;
+    }
+
+    let lsof = std::process::Command::new("lsof")
+        .args([
+            "-nP",
+            &format!("-iTCP:{port}"),
+            "-sTCP:LISTEN",
+            "-t",
+        ])
+        .output();
+    let Ok(out) = lsof else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let pids: Vec<u32> = stdout
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect();
+    if pids.is_empty() {
+        return false;
+    }
+
+    let mut killed_any = false;
+    for pid in pids {
+        let ps = std::process::Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "comm="])
+            .output();
+        let Ok(ps) = ps else {
+            continue;
+        };
+        if !ps.status.success() {
+            continue;
+        }
+        let comm = String::from_utf8_lossy(&ps.stdout);
+        // Only kill our own sidecar process.
+        if !comm.contains("octovalve-console") {
+            let _ = append_log_line(
+                app_log,
+                &format!("[dev] port {port} in use by pid={pid} comm={comm:?}; skip"),
+            );
+            continue;
+        }
+
+        let _ = append_log_line(
+            app_log,
+            &format!("[dev] port {port} in use; sending SIGINT to pid={pid} comm={comm:?}"),
+        );
+        unsafe {
+            libc::kill(pid as i32, libc::SIGINT);
+        }
+        std::thread::sleep(Duration::from_millis(800));
+        // If it's still there, force kill.
+        let still_alive = unsafe { libc::kill(pid as i32, 0) } == 0;
+        if still_alive {
+            let _ = append_log_line(
+                app_log,
+                &format!("[dev] pid={pid} still alive; sending SIGKILL"),
+            );
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+        }
+        killed_any = true;
+    }
+    killed_any
+}
+
+#[cfg(not(unix))]
+fn dev_kill_port_holder(_port: u16, _app_log: &Path) -> bool {
+    false
 }
 
 pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Result<(), String> {
@@ -66,6 +172,21 @@ pub fn start_console(app: &AppHandle, proxy_config: &Path, app_log: &Path) -> Re
         broker_config.to_string_lossy().to_string(),
         "--log-to-stderr".to_string(),
     ];
+
+    // In dev, the previous console instance might still be winding down (e.g. after a hot-reload),
+    // so we wait a bit for ports to become available before spawning a new sidecar.
+    if let Err(err) = wait_for_tcp_port_free(DEFAULT_COMMAND_ADDR, Duration::from_secs(3)) {
+        let port = DEFAULT_COMMAND_ADDR
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(0);
+        if port != 0 && dev_kill_port_holder(port, app_log) {
+            wait_for_tcp_port_free(DEFAULT_COMMAND_ADDR, Duration::from_secs(3))?;
+        } else {
+            return Err(err);
+        }
+    }
 
     let (mut rx, child) = app
         .shell()
@@ -150,6 +271,24 @@ pub fn stop_console(app: &AppHandle) {
     }
     let _ = append_log_line(&log_path, "console stop timed out; sending kill");
     let _ = sidecar.child.kill();
+}
+
+pub fn restart_console_sidecar(
+    app: &AppHandle,
+    proxy_config: &Path,
+    app_log: &Path,
+) -> Result<(), String> {
+    let lock_state = app.state::<ConsoleRestartLock>();
+    let _guard = lock_state
+        .0
+        .lock()
+        .map_err(|_| "console restart lock poisoned".to_string())?;
+
+    stop_console(app);
+    // Ensure the command listener port is actually free before re-spawning.
+    // If we just SIGKILLed the process, it may take a short moment before the port is released.
+    let _ = wait_for_tcp_port_free(DEFAULT_COMMAND_ADDR, Duration::from_secs(3));
+    start_console(app, proxy_config, app_log)
 }
 
 pub fn build_console_path() -> String {
