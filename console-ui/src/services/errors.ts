@@ -15,6 +15,7 @@ export type NormalizedError = {
 
 const ERROR_I18N_KEY: Record<string, string> = {
   CODEX_NOT_FOUND: 'errors.codexNotFound',
+  CODEX_CONFIG_UNTRUSTED: 'errors.codexConfigUntrusted',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

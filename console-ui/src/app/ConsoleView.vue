@@ -303,11 +303,14 @@ const switchLogStatusMessage = ref('');
 const switchLogHasOutput = ref(false);
 const switchLogOffset = ref(0);
 const switchLogTerminalRef = ref<HTMLDivElement | null>(null);
+const switchLogBufferedText = ref('');
 const SWITCH_LOG_BASE_FONT_SIZE = 12;
 let switchLogPollTimer: number | null = null;
 let switchLogTerminal: Terminal | null = null;
 let switchLogFitAddon: FitAddon | null = null;
 let switchLogResizeObserver: ResizeObserver | null = null;
+let switchLogOpenTimer: number | null = null;
+let switchLogDeferredToken = 0;
 const switchLogContext = ref<'console' | 'acp'>('console');
 const switchLogTitle = computed(() =>
   switchLogContext.value === 'acp'
@@ -434,6 +437,7 @@ function resetSwitchLogState() {
   switchLogHasOutput.value = false;
   switchLogOffset.value = 0;
   switchLogStatusMessage.value = '';
+  switchLogBufferedText.value = '';
   switchLogTerminal?.reset();
 }
 
@@ -530,7 +534,14 @@ async function pollSwitchLog() {
         ? await readAppLog(switchLogOffset.value, 4096)
         : await readConsoleLog(switchLogOffset.value, 4096);
     if (chunk.content) {
-      switchLogTerminal?.write(chunk.content);
+      if (switchLogTerminal && switchLogOpen.value) {
+        switchLogTerminal.write(chunk.content);
+      } else {
+        // Delay opening the modal: keep output so the user can see the full log once opened.
+        // Bound the buffer to avoid unbounded memory growth.
+        switchLogBufferedText.value =
+          (switchLogBufferedText.value + chunk.content).slice(-256 * 1024);
+      }
       switchLogHasOutput.value = true;
     }
     switchLogOffset.value = chunk.nextOffset;
@@ -539,7 +550,31 @@ async function pollSwitchLog() {
   }
 }
 
+function clearSwitchLogDeferredOpen() {
+  switchLogDeferredToken += 1;
+  if (switchLogOpenTimer !== null) {
+    window.clearTimeout(switchLogOpenTimer);
+    switchLogOpenTimer = null;
+  }
+}
+
+async function openSwitchLogModalNow() {
+  if (switchLogOpen.value) {
+    return;
+  }
+  switchLogOpen.value = true;
+  await nextTick();
+  ensureSwitchLogTerminal();
+  applySwitchLogTheme();
+  switchLogFitAddon?.fit();
+  if (switchLogBufferedText.value) {
+    switchLogTerminal?.write(switchLogBufferedText.value);
+    switchLogBufferedText.value = '';
+  }
+}
+
 async function startSwitchLogPolling(context: 'console' | 'acp') {
+  clearSwitchLogDeferredOpen();
   switchLogContext.value = context;
   resetSwitchLogState();
   switchLogInProgress.value = true;
@@ -566,7 +601,41 @@ async function startSwitchLogPolling(context: 'console' | 'acp') {
   }, 800);
 }
 
+async function startSwitchLogPollingDeferred(context: 'console' | 'acp', deferOpenMs: number) {
+  clearSwitchLogDeferredOpen();
+  switchLogContext.value = context;
+  switchLogHasOutput.value = false;
+  switchLogBufferedText.value = '';
+  switchLogOpen.value = false;
+  switchLogInProgress.value = true;
+
+  // Snapshot the current log tail so the modal (if shown) starts from "this operation".
+  try {
+    const chunk = context === 'acp' ? await readAppLog(0, 0) : await readConsoleLog(0, 0);
+    switchLogOffset.value = chunk.nextOffset;
+  } catch {
+    switchLogOffset.value = 0;
+  }
+
+  await pollSwitchLog();
+  if (switchLogPollTimer === null) {
+    switchLogPollTimer = window.setInterval(() => {
+      void pollSwitchLog();
+    }, 800);
+  }
+
+  const token = switchLogDeferredToken;
+  switchLogOpenTimer = window.setTimeout(() => {
+    void (async () => {
+      if (token !== switchLogDeferredToken) return;
+      if (!switchLogInProgress.value) return;
+      await openSwitchLogModalNow();
+    })();
+  }, deferOpenMs);
+}
+
 function stopSwitchLogPolling() {
+  clearSwitchLogDeferredOpen();
   if (switchLogPollTimer !== null) {
     window.clearInterval(switchLogPollTimer);
     switchLogPollTimer = null;
@@ -932,7 +1001,9 @@ async function confirmProviderSwitch() {
   let success = false;
   try {
     if (shouldShowAcpLog) {
-      await startSwitchLogPolling('acp');
+      // If we can switch quickly, don't interrupt the user with a modal.
+      // If it takes longer than ~5s, show the log modal with buffered output.
+      await startSwitchLogPollingDeferred('acp', 5000);
       switchLogStatusMessage.value = t('settings.log.status.acp.pending');
     }
     if (chatIsStreaming.value) {
@@ -950,6 +1021,8 @@ async function confirmProviderSwitch() {
   } catch (e) {
     console.error('[Chat] Provider switch failed:', e);
     if (shouldShowAcpLog) {
+      // On failure, show the modal immediately so users can see the log.
+      await openSwitchLogModalNow();
       const message = t('settings.log.status.acp.failed', { error: formatErrorForUser(e, t) });
       switchLogStatusMessage.value = message;
       showNotification(message, undefined, undefined, 'error');

@@ -36,6 +36,8 @@ export const messages = {
     errors: {
       codexNotFound:
         '未找到 Codex CLI 命令 `codex`（PATH 中不存在）。请先安装 Codex CLI（例如：`npm i -g @openai/codex`），并确保终端里可直接运行 `codex`。',
+      codexConfigUntrusted:
+        'Codex 配置目录被 Codex 的安全策略禁用（未信任）。请打开 `~/.codex/config.toml`，按 Codex 提示把你的目录（例如 `/Users/<name>`）加入 trusted projects，然后重试。',
     },
     console: {
       banner: {
@@ -596,6 +598,8 @@ export const messages = {
     errors: {
       codexNotFound:
         'Codex CLI command `codex` not found in PATH. Please install Codex CLI (e.g. `npm i -g @openai/codex`) and ensure `codex` works in your terminal.',
+      codexConfigUntrusted:
+        'Codex config folder is disabled by Codex trust policy. Open `~/.codex/config.toml`, add your directory (e.g. `/Users/<name>`) as a trusted project per the Codex hint, then retry.',
     },
     console: {
       banner: {

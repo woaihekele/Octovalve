@@ -26,6 +26,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
     sync::{mpsc, oneshot, Mutex},
+    time::{timeout, Duration},
 };
 
 use crate::cli::CliConfig;
@@ -73,9 +74,7 @@ impl AppServerClient {
 
         let mut child = cmd.spawn().map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
-                anyhow!(
-                    "CODEX_NOT_FOUND"
-                )
+                anyhow!("CODEX_NOT_FOUND")
             } else {
                 anyhow!("启动 codex app-server 失败: {err}")
             }
@@ -94,6 +93,56 @@ impl AppServerClient {
             let mut reader = BufReader::new(stderr);
             let mut buffer = String::new();
             let stderr_tx = events_tx.clone();
+
+            // Codex CLI has a trust model and may refuse to read configs until the user
+            // marks a directory as trusted (e.g. "$HOME" in ~/.codex/config.toml). When this
+            // happens, the app-server often prints a fatal error to stderr and exits quickly.
+            //
+            // We try to detect this early and surface a stable error code, rather than hanging
+            // until RPC calls fail or time out.
+            let mut initial_lines: Vec<String> = Vec::new();
+            let mut saw_untrusted_config = false;
+            for _ in 0..16 {
+                buffer.clear();
+                let read =
+                    match timeout(Duration::from_millis(60), reader.read_line(&mut buffer)).await {
+                        Ok(value) => value,
+                        Err(_) => break,
+                    };
+                match read {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let line = buffer.trim_end_matches(['\n', '\r']).to_string();
+                        if line.is_empty() {
+                            continue;
+                        }
+                        let lower = line.to_lowercase();
+                        if lower.contains("config folders are disabled")
+                            || (lower.contains("trusted project")
+                                && lower.contains(".codex/config.toml"))
+                        {
+                            saw_untrusted_config = true;
+                        }
+                        initial_lines.push(line);
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            if saw_untrusted_config {
+                // Best-effort: print what we saw to help local debugging.
+                for line in initial_lines {
+                    eprintln!("{}", line);
+                }
+                return Err(anyhow!("CODEX_CONFIG_UNTRUSTED"));
+            }
+
+            // Forward the initial stderr lines we already read.
+            for line in initial_lines {
+                eprintln!("{}", line);
+                let _ = stderr_tx.send(AppServerEvent::StderrLine(line));
+            }
+
             tokio::spawn(async move {
                 loop {
                     buffer.clear();
