@@ -1157,7 +1157,7 @@ async function applyStartupProfile(): Promise<boolean> {
     return false;
   }
   if (!startupSelectedProfile.value) {
-  startupError.value = t('console.startup.selectProfile');
+    startupError.value = t('console.startup.selectProfile');
     return false;
   }
   startupBusy.value = true;
@@ -1166,6 +1166,8 @@ async function applyStartupProfile(): Promise<boolean> {
   hasConnected.value = false;
   connectionState.value = 'connecting';
   startupStatusMessage.value = t('console.startup.applyingProfile', { name: startupSelectedProfile.value });
+  let switchLogStarted = false;
+  let success = false;
   try {
     await selectProfile(startupSelectedProfile.value);
     const status = await getProxyConfigStatus();
@@ -1195,23 +1197,43 @@ async function applyStartupProfile(): Promise<boolean> {
       return false;
     }
     startupStatusMessage.value = t('console.startup.starting');
+    // Startup "start" is essentially a console restart; keep behavior consistent with profile switching.
+    // Delay showing the log modal to avoid flashing UI for fast startups.
+    await startSwitchLogPollingDeferred('console', 5000);
+    switchLogStarted = true;
+    switchLogStatusMessage.value = t('settings.log.status.console.pending');
     await restartConsole();
     startupProfileOpen.value = false;
     startupStatusMessage.value = '';
     await startConsoleSession();
+    await Promise.all([waitForWsConnected(15_000), fetchTargetsUntilReady(15_000, 500)]);
+    if (switchLogStarted) {
+      switchLogStatusMessage.value = t('settings.log.status.console.done');
+    }
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.setItem(STARTUP_SESSION_KEY, '1');
     }
+    success = true;
     return true;
   } catch (err) {
     const message = t('console.startup.startFailed', { error: formatErrorForUser(err, t) });
     startupError.value = message;
     showNotification(message, undefined, undefined, 'error');
     reportUiError('startup profile failed', err);
+    if (switchLogStarted) {
+      await openSwitchLogModalNow();
+      switchLogStatusMessage.value = t('settings.log.status.console.failed', { error: formatErrorForUser(err, t) });
+    }
     connectionState.value = 'disconnected';
     booting.value = false;
     return false;
   } finally {
+    if (switchLogStarted) {
+      stopSwitchLogPolling();
+      if (success) {
+        switchLogOpen.value = false;
+      }
+    }
     startupBusy.value = false;
   }
 }
