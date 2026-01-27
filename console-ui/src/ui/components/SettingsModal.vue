@@ -289,7 +289,7 @@ function updateShortcut(key: string, value: string) {
 function showConfigMessage(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') {
   notification.create({
     title: message,
-    duration: 4000,
+    duration: type === 'error' ? 0 : 4000,
     type,
   });
 }

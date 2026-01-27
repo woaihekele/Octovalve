@@ -40,11 +40,13 @@ watch(
             contentText
           )
       : contentText;
+    const resolvedType = props.payload.type ?? (props.payload.count ? 'warning' : 'success');
     notification.create({
       title: props.payload.message,
       content,
-      duration: 4000,
-      type: props.payload.type ?? (props.payload.count ? 'warning' : 'success'),
+      type: resolvedType,
+      // Error notifications should stay until explicitly dismissed by the user.
+      duration: resolvedType === 'error' ? 0 : 4000,
     });
   }
 );
