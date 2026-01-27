@@ -101,6 +101,7 @@ const lastNonTerminalFocus = ref<HTMLElement | null>(null);
 
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
+const resetTargetsToken = ref(0);
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
@@ -134,8 +135,9 @@ const startupProfileOptions = computed(() =>
   startupProfiles.value.map((profile) => ({ label: profile.name, value: profile.name }))
 );
 const consoleBanner = computed<{ kind: 'error' | 'info'; message: string } | null>(() => {
-  if (booting.value) {
-    return { kind: 'info', message: t('console.banner.booting') };
+  // 切换环境/重启期间已有日志模态框展示进度，这里不再额外展示“正在启动...”提示，避免遮挡与信息重复。
+  if (booting.value || switchLogOpen.value) {
+    return null;
   }
   if (!hasConnected.value && connectionState.value === 'connecting') {
     return { kind: 'info', message: t('console.banner.connecting') };
@@ -621,16 +623,20 @@ async function handleQuickProfileSwitch(profileName: string) {
   booting.value = true;
   hasConnected.value = false;
   connectionState.value = 'connecting';
+  resetConsoleTargetsView();
   let success = false;
   try {
     await startSwitchLogPolling('console');
     switchLogStatusMessage.value = t('settings.log.status.console.pending');
     await selectProfile(profileName);
     await restartConsole();
+    quickProfileCurrent.value = profileName;
+    // 等待“真正就绪”再提示成功：至少 targets 可拉取、WS 已连上。
+    // 否则会出现“已切换”提示很快弹出，但右侧 target 仍是旧数据/空数据的错位体验。
+    await startConsoleSession();
+    await Promise.all([waitForWsConnected(15_000), fetchTargetsUntilReady(15_000, 500)]);
     switchLogStatusMessage.value = t('settings.log.status.console.done');
     showNotification(t('settings.apply.switchProfile', { name: profileName }));
-    quickProfileCurrent.value = profileName;
-    await startConsoleSession();
     success = true;
   } catch (err) {
     const message = t('settings.log.status.console.failed', { error: String(err) });
@@ -926,6 +932,55 @@ function showNotification(message: string, count?: number, target?: string, type
   notificationToken.value += 1;
 }
 
+function resetConsoleTargetsView() {
+  targets.value = [];
+  snapshots.value = {};
+  snapshotLoading.value = {};
+  snapshotRefreshPending.value = {};
+  selectedTargetName.value = null;
+  lastPendingCounts.value = {};
+  // 用于触发子组件在需要时重置自身的局部状态（例如终端/滚动位置）。
+  resetTargetsToken.value += 1;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitForWsConnected(timeoutMs: number) {
+  if (connectionState.value === 'connected') {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const stop = watch(connectionState, (value) => {
+      if (value === 'connected') {
+        stop();
+        resolve();
+      }
+    });
+    window.setTimeout(() => {
+      stop();
+      reject(new Error(`ws connect timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+}
+
+async function fetchTargetsUntilReady(timeoutMs: number, intervalMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown = null;
+  while (Date.now() < deadline) {
+    try {
+      const list = await fetchTargets();
+      updateTargets(list);
+      return;
+    } catch (err) {
+      lastErr = err;
+      await sleep(intervalMs);
+    }
+  }
+  throw lastErr ?? new Error(`fetch targets timeout after ${timeoutMs}ms`);
+}
+
 function reportUiError(context: string, err?: unknown) {
   const detail = err ? `: ${String(err)}` : '';
   void logUiEvent(`${context}${detail}`);
@@ -1171,8 +1226,13 @@ function shouldRefreshSnapshotFromTargetUpdate(target: TargetInfo, previousPendi
 
 function updateTargets(list: TargetInfo[]) {
   targets.value = list;
-  if (!selectedTargetName.value && list.length > 0) {
-    selectedTargetName.value = list[0].name;
+  if (list.length === 0) {
+    selectedTargetName.value = null;
+    return;
+  }
+  const available = new Set(list.map((t) => t.name));
+  if (!selectedTargetName.value || !available.has(selectedTargetName.value)) {
+    selectedTargetName.value = list.find((t) => t.is_default)?.name ?? list[0].name;
   }
   list.forEach((target) => {
     const previous = lastPendingCounts.value[target.name] ?? 0;
@@ -1796,6 +1856,7 @@ watch(
     ></div>
     <ConsoleLeftPane
       ref="leftPaneRef"
+      :key="resetTargetsToken"
       :targets="targets"
       :sidebar-width="layoutSizing.sidebarWidth"
       :selected-target-name="selectedTargetName"

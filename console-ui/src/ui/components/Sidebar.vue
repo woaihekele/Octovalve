@@ -41,11 +41,13 @@ const sidebarStyle = computed(() => ({
 }));
 
 function resolveStatus(target: TargetInfo) {
+  // 切换环境/重启期间，列表里的 `target.status` 可能还是旧值或瞬间变为 ready；
+  // 这里优先以全局连接态作为“就绪”的门槛，避免出现“目标一闪变更就直接就绪”的观感。
+  if (props.connectionState !== 'connected') {
+    return 'connecting';
+  }
   if (target.status === 'ready') {
     return 'ready';
-  }
-  if (props.connectionState === 'connecting') {
-    return 'connecting';
   }
   if (!target.last_seen && !target.last_error) {
     return 'connecting';

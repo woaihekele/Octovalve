@@ -16,8 +16,9 @@
   />
 
   <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden" :style="{ minWidth: `${TARGET_MIN_MAIN_WIDTH}px` }">
-    <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
-      <div class="absolute top-4 right-4 z-20 flex items-center gap-3">
+    <div class="flex-1 flex flex-col min-w-0 min-h-0">
+      <!-- 用正常布局占位，避免 “正在启动...” 浮层遮挡 TargetView 顶部按钮 -->
+      <div class="shrink-0 pt-4 px-4 flex items-center justify-end gap-3">
         <span
           v-if="consoleBanner"
           class="text-xs px-2 py-1 rounded border"
