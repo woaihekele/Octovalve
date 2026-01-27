@@ -680,6 +680,18 @@ type ChatProviderInitOptions = {
   config?: AppSettings['chat'];
 };
 
+let chatProviderInitChain: Promise<void> = Promise.resolve();
+
+function enqueueChatProviderInit<T>(task: () => Promise<T>): Promise<T> {
+  const next = chatProviderInitChain.then(task, task);
+  // Keep the chain alive even if `task` rejects.
+  chatProviderInitChain = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
 // Initialize chat provider based on settings
 function buildAcpArgs(config: AppSettings['chat']['acp']) {
   const args: string[] = [];
@@ -696,48 +708,47 @@ function buildAcpArgs(config: AppSettings['chat']['acp']) {
   return args.join(' ').trim();
 }
 
-async function initChatProvider(options: ChatProviderInitOptions = {}) {
+async function initChatProviderInternal(options: ChatProviderInitOptions = {}) {
   const chatConfig = options.config ?? settings.value.chat;
   const provider = options.provider ?? chatConfig.provider;
-  console.log('[initChatProvider] config:', provider);
-  
   try {
     if (provider === 'openai') {
       await chatStore.initializeOpenai(chatConfig.openai, chatConfig.mcpConfigJson);
     } else {
       // ACP provider
-      console.log('[initChatProvider] calling initializeAcp...');
       const acpArgs = buildAcpArgs(chatConfig.acp);
       await chatStore.initializeAcp('.', acpArgs, chatConfig.mcpConfigJson);
-      console.log('[initChatProvider] initializeAcp done, providerInitialized:', providerInitialized.value);
-      
+
       // Authentication is optional - don't fail if it's not available
       if ((chatStore.authMethods as AuthMethod[]).some((m) => m.id === 'openai-api-key')) {
         try {
           await chatStore.authenticateAcp('openai-api-key');
-          console.log('[initChatProvider] authenticateAcp done');
         } catch (authErr) {
           console.warn('[initChatProvider] authenticateAcp failed (optional):', authErr);
           showNotification(formatAcpAuthError(authErr), undefined, undefined, 'error');
         }
       }
     }
-    console.log('[initChatProvider] final providerInitialized:', providerInitialized.value);
   } catch (e) {
     console.warn('Chat provider initialization failed:', e);
-    if (provider === 'acp') {
-      showNotification(formatErrorForUser(e, t), undefined, undefined, 'error');
-    } else {
-      showNotification(t('chat.error', { error: formatErrorForUser(e, t) }), undefined, undefined, 'error');
-    }
+    throw e;
   }
 }
 
-// Call init after a short delay to let Tauri initialize
-setTimeout(initChatProvider, 500);
+function initChatProvider(options: ChatProviderInitOptions = {}) {
+  // Prevent overlapping provider init/restart flows (e.g. startup timer + settings refresh).
+  return enqueueChatProviderInit(() => initChatProviderInternal(options));
+}
+
+// Call init after a short delay to let Tauri initialize.
+// This is fire-and-forget; we surface errors via notification here.
+setTimeout(() => {
+  void initChatProvider().catch((err) => {
+    showNotification(formatErrorForUser(err, t), undefined, undefined, 'error');
+  });
+}, 500);
 
 async function handleChatSend(options: SendMessageOptions) {
-  console.log('[handleChatSend] providerInitialized:', providerInitialized.value, 'provider:', chatStore.provider);
   if (providerInitialized.value) {
     try {
       await chatStore.sendMessage(options);
@@ -914,7 +925,16 @@ async function confirmProviderSwitch() {
   }
   const targetProvider = pendingProvider.value;
   providerSwitching.value = true;
+  // Close the confirmation modal immediately; progress (if any) will be shown via log modal/toast.
+  providerSwitchConfirmOpen.value = false;
+  pendingProvider.value = null;
+  const shouldShowAcpLog = targetProvider === 'acp';
+  let success = false;
   try {
+    if (shouldShowAcpLog) {
+      await startSwitchLogPolling('acp');
+      switchLogStatusMessage.value = t('settings.log.status.acp.pending');
+    }
     if (chatIsStreaming.value) {
       await cancelActiveChat();
     }
@@ -923,13 +943,27 @@ async function confirmProviderSwitch() {
     saveSettings(settings.value);
     await initChatProvider();
     chatStore.createSession();
+    if (shouldShowAcpLog) {
+      switchLogStatusMessage.value = t('settings.log.status.acp.done');
+      success = true;
+    }
   } catch (e) {
     console.error('[Chat] Provider switch failed:', e);
-    showNotification(t('chat.providerSwitch.failed', { error: formatErrorForUser(e, t) }), undefined, undefined, 'error');
+    if (shouldShowAcpLog) {
+      const message = t('settings.log.status.acp.failed', { error: formatErrorForUser(e, t) });
+      switchLogStatusMessage.value = message;
+      showNotification(message, undefined, undefined, 'error');
+    } else {
+      showNotification(t('chat.providerSwitch.failed', { error: formatErrorForUser(e, t) }), undefined, undefined, 'error');
+    }
   } finally {
+    if (shouldShowAcpLog) {
+      stopSwitchLogPolling();
+      if (success) {
+        switchLogOpen.value = false;
+      }
+    }
     providerSwitching.value = false;
-    providerSwitchConfirmOpen.value = false;
-    pendingProvider.value = null;
   }
 }
 
