@@ -42,6 +42,15 @@ let lastResizeFitAt = 0;
 let lastRemoteCols = 0;
 let lastRemoteRows = 0;
 
+function canMeasureTerminal() {
+  if (!props.visible || !containerRef.value) {
+    return false;
+  }
+  // When the panel is hidden via `v-show`, the element is `display:none` and returns 0 sizes.
+  const rect = containerRef.value.getBoundingClientRect();
+  return rect.width >= 50 && rect.height >= 50;
+}
+
 function focusTerminal() {
   const focusable = containerRef.value?.querySelector('textarea');
   focusable?.focus();
@@ -99,7 +108,7 @@ function applyTerminalScale() {
 }
 
 function runResizeFit(sendRemoteResize: boolean) {
-  if (!terminal || !fitAddon) {
+  if (!terminal || !fitAddon || !canMeasureTerminal()) {
     return;
   }
   const beforeCols = terminal.cols;
@@ -127,6 +136,9 @@ function runResizeFit(sendRemoteResize: boolean) {
 }
 
 function scheduleResizeFit() {
+  if (!canMeasureTerminal()) {
+    return;
+  }
   if (resizeIdleTimer !== null) {
     window.clearTimeout(resizeIdleTimer);
   }
@@ -230,6 +242,11 @@ async function openSession() {
   });
 
   resizeObserver = new ResizeObserver(() => {
+    // Ignore size changes while the panel is hidden; fitting in a collapsed box
+    // will make xterm compute tiny geometry and may cause TUI corruption.
+    if (!canMeasureTerminal()) {
+      return;
+    }
     scheduleResizeFit();
   });
   resizeObserver.observe(containerRef.value);
@@ -356,6 +373,10 @@ watch(
   () => props.visible,
   async (visible) => {
     if (!visible) {
+      if (resizeIdleTimer !== null) {
+        window.clearTimeout(resizeIdleTimer);
+        resizeIdleTimer = null;
+      }
       if (terminal) {
         terminal.clearSelection();
         terminal.blur();
