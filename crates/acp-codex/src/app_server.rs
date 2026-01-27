@@ -74,7 +74,7 @@ impl AppServerClient {
         let mut child = cmd.spawn().map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
                 anyhow!(
-                    "未找到 codex 命令（PATH 中不存在）。请先安装 Codex CLI（例如：npm i -g @openai/codex），并确保 `codex` 可在终端中直接运行。"
+                    "CODEX_NOT_FOUND"
                 )
             } else {
                 anyhow!("启动 codex app-server 失败: {err}")
@@ -83,11 +83,11 @@ impl AppServerClient {
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| anyhow!("无法获取 app-server stdin"))?;
+            .ok_or_else(|| anyhow!("failed to get app-server stdin"))?;
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| anyhow!("无法获取 app-server stdout"))?;
+            .ok_or_else(|| anyhow!("failed to get app-server stdout"))?;
         let stderr = child.stderr.take();
 
         if let Some(stderr) = stderr {
@@ -324,10 +324,10 @@ impl JsonRpcPeer {
         }
         let response = rx
             .await
-            .map_err(|_| anyhow!("app-server 请求失败: {}", method))?;
+            .map_err(|_| anyhow!("app-server request failed: {}", method))?;
         match response {
             PendingResponse::Ok(value) => Ok(serde_json::from_value(value)?),
-            PendingResponse::Err(err) => Err(anyhow!("app-server 错误: {}", err)),
+            PendingResponse::Err(err) => Err(anyhow!("app-server error: {}", err)),
         }
     }
 

@@ -37,6 +37,7 @@ import NotificationBridge from '../ui/components/NotificationBridge.vue';
 import { loadSettings, saveSettings } from '../services/settings';
 import { applyUiScale } from '../services/uiScale';
 import { getWindowLogicalSize, setWindowMinSize, setWindowSize } from '../services/tauriWindow';
+import { formatErrorForUser, normalizeError } from '../services/errors';
 import { IS_MAC_PLATFORM_KEY } from '../shared/platform';
 import type { AppLanguage, AppSettings, ConsoleEvent, ProfileSummary, ServiceSnapshot, TargetInfo } from '../shared/types';
 import { useAiRiskQueue } from '../composables/useAiRiskQueue';
@@ -327,7 +328,7 @@ const quickProfileConfirmOpen = ref(false);
 const pendingQuickProfile = ref<string | null>(null);
 
 function isAcpAuthTimeout(err: unknown) {
-  const message = String(err).toLowerCase();
+  const message = normalizeError(err).message.toLowerCase();
   return message.includes('timeout') || message.includes('timed out') || message.includes('超时');
 }
 
@@ -335,7 +336,7 @@ function formatAcpAuthError(err: unknown) {
   if (isAcpAuthTimeout(err)) {
     return t('chat.authTimeout');
   }
-  return t('chat.authFailed', { error: String(err) });
+  return t('chat.authFailed', { error: formatErrorForUser(err, t) });
 }
 
 function isFileDragEvent(event: DragEvent) {
@@ -600,7 +601,7 @@ async function refreshQuickProfiles() {
     quickProfiles.value = data.profiles;
     quickProfileCurrent.value = data.current;
   } catch (err) {
-    const message = t('settings.profile.loadFailed', { error: String(err) });
+    const message = t('settings.profile.loadFailed', { error: formatErrorForUser(err, t) });
     showNotification(message, undefined, undefined, 'error');
     reportUiError('load profiles failed', err);
   } finally {
@@ -639,7 +640,7 @@ async function handleQuickProfileSwitch(profileName: string) {
     showNotification(t('settings.apply.switchProfile', { name: profileName }));
     success = true;
   } catch (err) {
-    const message = t('settings.log.status.console.failed', { error: String(err) });
+    const message = t('settings.log.status.console.failed', { error: formatErrorForUser(err, t) });
     switchLogStatusMessage.value = message;
     showNotification(message, undefined, undefined, 'error');
     quickProfileCurrent.value = current;
@@ -724,6 +725,11 @@ async function initChatProvider(options: ChatProviderInitOptions = {}) {
     console.log('[initChatProvider] final providerInitialized:', providerInitialized.value);
   } catch (e) {
     console.warn('Chat provider initialization failed:', e);
+    if (provider === 'acp') {
+      showNotification(formatErrorForUser(e, t), undefined, undefined, 'error');
+    } else {
+      showNotification(t('chat.error', { error: formatErrorForUser(e, t) }), undefined, undefined, 'error');
+    }
   }
 }
 
@@ -736,7 +742,7 @@ async function handleChatSend(options: SendMessageOptions) {
     try {
       await chatStore.sendMessage(options);
     } catch (e) {
-      showNotification(t('chat.error', { error: String(e) }), undefined, undefined, 'error');
+      showNotification(t('chat.error', { error: formatErrorForUser(e, t) }), undefined, undefined, 'error');
     }
   } else {
     // Fallback to simulated response
@@ -862,7 +868,7 @@ async function handleHistoryDelete(sessionId: string) {
     try {
       await chatStore.deleteAcpHistorySession(remoteId);
     } catch (err) {
-      showNotification(t('chat.error', { error: String(err) }));
+      showNotification(t('chat.error', { error: formatErrorForUser(err, t) }));
     }
     return;
   }
@@ -874,7 +880,7 @@ async function handleHistoryClear() {
     try {
       await chatStore.clearAcpHistorySessions();
     } catch (err) {
-      showNotification(t('chat.error', { error: String(err) }));
+      showNotification(t('chat.error', { error: formatErrorForUser(err, t) }));
     }
     return;
   }
@@ -919,7 +925,7 @@ async function confirmProviderSwitch() {
     chatStore.createSession();
   } catch (e) {
     console.error('[Chat] Provider switch failed:', e);
-    showNotification(t('chat.providerSwitch.failed', { error: String(e) }), undefined, undefined, 'error');
+    showNotification(t('chat.providerSwitch.failed', { error: formatErrorForUser(e, t) }), undefined, undefined, 'error');
   } finally {
     providerSwitching.value = false;
     providerSwitchConfirmOpen.value = false;
@@ -1029,7 +1035,7 @@ async function loadStartupProfiles() {
     connectionState.value = 'disconnected';
     startupStatusMessage.value = '';
   } catch (err) {
-    const message = t('console.startup.loadFailed', { error: String(err) });
+    const message = t('console.startup.loadFailed', { error: formatErrorForUser(err, t) });
     startupError.value = message;
     showNotification(message, undefined, undefined, 'error');
     reportUiError('load profiles failed', err);
@@ -1091,7 +1097,7 @@ async function applyStartupProfile(): Promise<boolean> {
     }
     return true;
   } catch (err) {
-    const message = t('console.startup.startFailed', { error: String(err) });
+    const message = t('console.startup.startFailed', { error: formatErrorForUser(err, t) });
     startupError.value = message;
     showNotification(message, undefined, undefined, 'error');
     reportUiError('startup profile failed', err);
@@ -1472,7 +1478,7 @@ async function restartAcpSessionWithLog(createSession: boolean, config?: AppSett
     switchLogStatusMessage.value = t('settings.log.status.acp.done');
     success = true;
   } catch (err) {
-    const message = t('settings.log.status.acp.failed', { error: String(err) });
+    const message = t('settings.log.status.acp.failed', { error: formatErrorForUser(err, t) });
     switchLogStatusMessage.value = message;
     showNotification(message, undefined, undefined, 'error');
   } finally {
@@ -1540,7 +1546,7 @@ async function refreshChatProviderFromSettings(
     }
   } catch (err) {
     console.error('[Chat] settings refresh failed:', err);
-    showNotification(t('chat.settingsRefreshFailed', { error: String(err) }), undefined, undefined, 'error');
+    showNotification(t('chat.settingsRefreshFailed', { error: formatErrorForUser(err, t) }), undefined, undefined, 'error');
   }
 }
 

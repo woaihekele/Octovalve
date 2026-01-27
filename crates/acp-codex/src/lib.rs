@@ -9,4 +9,4 @@ mod utils;
 mod writer;
 
 pub use cli::CliConfig;
-pub use server::{run_stdio, run_with_io};
+pub use server::{run_stdio, run_with_io, run_with_io_with_startup};

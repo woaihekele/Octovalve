@@ -33,6 +33,10 @@ export const messages = {
       connecting: '连接中',
       down: '离线',
     },
+    errors: {
+      codexNotFound:
+        '未找到 Codex CLI 命令 `codex`（PATH 中不存在）。请先安装 Codex CLI（例如：`npm i -g @openai/codex`），并确保终端里可直接运行 `codex`。',
+    },
     console: {
       banner: {
         booting: '正在启动...',
@@ -588,6 +592,10 @@ export const messages = {
       ready: 'Ready',
       connecting: 'Connecting',
       down: 'Down',
+    },
+    errors: {
+      codexNotFound:
+        'Codex CLI command `codex` not found in PATH. Please install Codex CLI (e.g. `npm i -g @openai/codex`) and ensure `codex` works in your terminal.',
     },
     console: {
       banner: {

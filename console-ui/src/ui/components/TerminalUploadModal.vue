@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetchUploadStatus, listTargetDirectories, startUpload } from '../../services/api';
+import { formatErrorForUser } from '../../services/errors';
 import type { DirectoryListing, TargetInfo, UploadStatus } from '../../shared/types';
 
 const props = defineProps<{
@@ -166,7 +167,7 @@ async function initializeModal() {
     selectedKeys.value = [rootPath.value];
     await restoreSelection(props.target.name);
   } catch (err) {
-    uploadError.value = String(err);
+    uploadError.value = formatErrorForUser(err, t);
     const fallbackRoot = buildRootNode(rootPath.value);
     treeData.value = [fallbackRoot];
     expandedKeys.value = [rootPath.value];
@@ -321,7 +322,7 @@ async function handleUpload() {
     };
     startPolling();
   } catch (err) {
-    uploadError.value = String(err);
+    uploadError.value = formatErrorForUser(err, t);
   }
 }
 
@@ -339,7 +340,7 @@ function startPolling() {
         stopPolling();
       }
     } catch (err) {
-      uploadError.value = String(err);
+      uploadError.value = formatErrorForUser(err, t);
       stopPolling();
     }
   };

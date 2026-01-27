@@ -6,6 +6,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { useI18n } from 'vue-i18n';
 import { terminalClose, terminalInput, terminalOpen, terminalResize } from '../../services/api';
+import { formatErrorForUser } from '../../services/errors';
 import { resolveTerminalTheme } from '../../shared/terminalTheme';
 import type { TargetInfo } from '../../shared/types';
 import type { ResolvedTheme } from '../../shared/theme';
@@ -165,7 +166,7 @@ async function openSession() {
   try {
     sessionId = await terminalOpen(props.target.name, cols, rows, termName);
   } catch (err) {
-    statusMessage.value = t('terminal.connectFailed', { error: String(err) });
+    statusMessage.value = t('terminal.connectFailed', { error: formatErrorForUser(err, t) });
     cleanupTerminal(false);
     return;
   }

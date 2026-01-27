@@ -20,6 +20,7 @@ import { useI18n } from 'vue-i18n';
 import { AddOutline, TrashOutline } from '@vicons/ionicons5';
 import MonacoEditor from '../MonacoEditor.vue';
 import { parseBrokerConfigToml, parseProxyConfigToml } from '../../../services/api';
+import { formatErrorForUser } from '../../../services/errors';
 import { serializeBrokerConfigToml, serializeProxyConfigToml } from '../../../domain/config/toml';
 import type { BrokerConfigEditor, ConfigFilePayload, ProxyConfigEditor, ProxyTargetConfig } from '../../../shared/types';
 import type { ResolvedTheme } from '../../../shared/theme';
@@ -323,7 +324,7 @@ async function loadInteractiveForms() {
     );
     await nextTick();
   } catch (err) {
-    formError.value = String(err);
+    formError.value = formatErrorForUser(err, t);
     editorMode.value = 'toml';
   } finally {
     suppressProxySync = false;

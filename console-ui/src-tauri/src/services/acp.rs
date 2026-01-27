@@ -10,6 +10,7 @@ use crate::clients::acp_types::{
     LoadSessionResult,
 };
 use crate::paths::resolve_octovalve_proxy_bin;
+use crate::services::app_error::app_error;
 use crate::services::console_sidecar::{build_console_path, DEFAULT_COMMAND_ADDR};
 use crate::services::logging::append_log_line;
 use crate::services::mcp_config::{build_octovalve_server, parse_mcp_config_json};
@@ -155,8 +156,13 @@ pub async fn acp_start(
         AcpClient::start(app.clone(), log_path.clone(), cli_config, mcp_servers)
             .await
             .map_err(|e| {
-                let _ = append_log_line(&log_path, &format!("[acp_start] ACP error: {}", e));
-                e.to_string()
+                let raw = e.to_string();
+                let _ = append_log_line(&log_path, &format!("[acp_start] ACP error: {}", raw));
+                // Return stable error codes for the frontend to localize.
+                if raw.trim() == "CODEX_NOT_FOUND" {
+                    return app_error("CODEX_NOT_FOUND", raw);
+                }
+                raw
             })?,
     );
     let init_result = client.initialize().await.map_err(|e| {
@@ -333,7 +339,10 @@ mod tests {
         let proxy_bin = PathBuf::from("/tmp/octovalve-proxy");
         let proxy_config = PathBuf::from("/tmp/local-proxy-config.toml");
         let servers = build_mcp_servers(&proxy_bin, &proxy_config);
-        let args = servers[0].get("args").and_then(|value| value.as_array()).unwrap();
+        let args = servers[0]
+            .get("args")
+            .and_then(|value| value.as_array())
+            .unwrap();
         let args_text = args
             .iter()
             .filter_map(|value| value.as_str())

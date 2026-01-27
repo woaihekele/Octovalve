@@ -1,5 +1,6 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue';
 import { aiRiskAssess } from '../services/api';
+import { formatErrorForUser } from '../services/errors';
 import { i18n } from '../i18n';
 import type { AiRiskApiResponse, AiRiskEntry, AppSettings, RequestSnapshot, ServiceSnapshot } from '../shared/types';
 
@@ -208,7 +209,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
       void runAiTask(task)
         .catch((err) => {
           reportError('ai task failed', err);
-          setAiRisk(key, { status: 'error', error: t('aiRisk.error.failed', { error: String(err) }), updatedAt: Date.now() });
+          setAiRisk(key, { status: 'error', error: t('aiRisk.error.failed', { error: formatErrorForUser(err, t) }), updatedAt: Date.now() });
         })
         .finally(() => {
           aiRunning.value -= 1;
@@ -238,7 +239,7 @@ export function useAiRiskQueue({ settings, onError }: AiRiskQueueOptions) {
       });
       applyAiResult(key, response);
     } catch (err) {
-      setAiRisk(key, { status: 'error', error: t('aiRisk.error.failed', { error: String(err) }), updatedAt: now });
+      setAiRisk(key, { status: 'error', error: t('aiRisk.error.failed', { error: formatErrorForUser(err, t) }), updatedAt: now });
       reportError('ai risk assess failed', err);
     }
   }

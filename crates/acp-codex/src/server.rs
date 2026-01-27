@@ -22,9 +22,39 @@ where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Send + Unpin + 'static,
 {
+    run_with_io_with_startup(config, reader, writer, None).await
+}
+
+/// 与 [`run_with_io`] 相同，但允许调用方在关键启动点拿到一次性的“启动结果”回执。
+///
+/// 目前用于让上层（Tauri）在 `codex` 命令缺失等可预判错误时，立即把错误回传到前端，
+/// 而不是等到客户端请求超时。
+pub async fn run_with_io_with_startup<R, W>(
+    config: CliConfig,
+    reader: R,
+    writer: W,
+    startup_tx: Option<tokio::sync::oneshot::Sender<std::result::Result<(), String>>>,
+) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+{
     let writer = Arc::new(AcpWriter::new(Box::new(writer)));
     let state = Arc::new(Mutex::new(AcpState::default()));
-    let (app_server, mut app_events) = AppServerClient::spawn(&config).await?;
+    let (app_server, mut app_events) = match AppServerClient::spawn(&config).await {
+        Ok(value) => {
+            if let Some(tx) = startup_tx {
+                let _ = tx.send(Ok(()));
+            }
+            value
+        }
+        Err(err) => {
+            if let Some(tx) = startup_tx {
+                let _ = tx.send(Err(err.to_string()));
+            }
+            return Err(err);
+        }
+    };
     let app_server = Arc::new(app_server);
 
     let writer_clone = writer.clone();

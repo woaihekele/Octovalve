@@ -83,7 +83,7 @@ pub(crate) fn build_new_conversation_params(
         Some("read-only") => Some(CodexSandboxMode::ReadOnly),
         Some("workspace-write") => Some(CodexSandboxMode::WorkspaceWrite),
         Some("danger-full-access") => Some(CodexSandboxMode::DangerFullAccess),
-        Some(other) => return Err(anyhow!("未知 sandbox_mode: {other}")),
+        Some(other) => return Err(anyhow!("unknown sandbox_mode: {other}")),
     };
 
     let mut approval_policy = match config
@@ -97,7 +97,7 @@ pub(crate) fn build_new_conversation_params(
         Some("on-failure") => Some(CodexAskForApproval::OnFailure),
         Some("on-request") => Some(CodexAskForApproval::OnRequest),
         Some("never") => Some(CodexAskForApproval::Never),
-        Some(other) => return Err(anyhow!("未知 approval_policy: {other}")),
+        Some(other) => return Err(anyhow!("unknown approval_policy: {other}")),
     };
 
     if approval_policy.is_none() {

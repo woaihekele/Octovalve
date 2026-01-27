@@ -657,7 +657,7 @@ async fn handle_acp_request_inner(
                 .as_ref()
                 .map(|value| serde_json::from_value(value.clone()))
                 .transpose()?
-                .ok_or_else(|| anyhow!("session/new 缺少参数"))?;
+                .ok_or_else(|| anyhow!("session/new missing params"))?;
             let cwd = normalize_cwd(&params.cwd);
             reset_session_state(state, app_server).await?;
             let mut conversation_params = build_new_conversation_params(config, &cwd)?;
@@ -729,7 +729,7 @@ async fn handle_acp_request_inner(
                 .as_ref()
                 .map(|value| serde_json::from_value(value.clone()))
                 .transpose()?
-                .ok_or_else(|| anyhow!("session/load 缺少参数"))?;
+                .ok_or_else(|| anyhow!("session/load missing params"))?;
 
             reset_session_state(state, app_server).await?;
 
@@ -796,7 +796,7 @@ async fn handle_acp_request_inner(
                 .as_ref()
                 .map(|value| serde_json::from_value(value.clone()))
                 .transpose()?
-                .ok_or_else(|| anyhow!("session/delete 缺少参数"))?;
+                .ok_or_else(|| anyhow!("session/delete missing params"))?;
             delete_workspace_session(&params.session_id)?;
             let response = JsonRpcResponseOut {
                 jsonrpc: "2.0",
@@ -811,7 +811,7 @@ async fn handle_acp_request_inner(
                 .as_ref()
                 .map(|value| serde_json::from_value(value.clone()))
                 .transpose()?
-                .ok_or_else(|| anyhow!("session/prompt 缺少参数"))?;
+                .ok_or_else(|| anyhow!("session/prompt missing params"))?;
 
             let (conversation_id, session_id) = {
                 let guard = state.lock().await;
@@ -916,7 +916,7 @@ async fn handle_acp_request_inner(
                 id: request.id,
                 error: JsonRpcErrorOutPayload {
                     code: -32601,
-                    message: format!("未知方法: {}", request.method),
+                    message: format!("unknown method: {}", request.method),
                     data: None,
                 },
             };

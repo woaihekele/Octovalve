@@ -30,6 +30,7 @@ import {
   writeProfileBrokerConfig,
   writeProfileProxyConfig,
 } from '../../services/api';
+import { formatErrorForUser } from '../../services/errors';
 import { loadSettings } from '../../services/settings';
 import type { AppSettings, ConfigFilePayload, ProfileSummary, ThemeMode } from '../../shared/types';
 import { type ResolvedTheme } from '../../shared/theme';
@@ -457,7 +458,7 @@ async function restartConsoleWithLog(message?: string): Promise<boolean> {
     }
     return true;
   } catch (err) {
-    const msg = t('settings.log.status.console.failed', { error: String(err) });
+    const msg = t('settings.log.status.console.failed', { error: formatErrorForUser(err, t) });
     logStatusMessage.value = msg;
     showConfigMessage(msg, 'error');
     return false;
@@ -514,7 +515,7 @@ async function loadConfigCenter() {
     }
     configLoaded.value = true;
   } catch (err) {
-    showConfigMessage(t('settings.config.loadFailed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.config.loadFailed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configLoading.value = false;
   }
@@ -543,7 +544,7 @@ async function applyProfileSelection(value: string) {
     await loadConfigFiles(value);
   } catch (err) {
     selectedProfile.value = previous;
-    showConfigMessage(t('settings.profile.loadFailed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.profile.loadFailed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configBusy.value = false;
   }
@@ -585,7 +586,7 @@ async function confirmCreateProfile() {
     await loadConfigFiles(name);
     showConfigMessage(t('settings.profile.created', { name }), 'info');
   } catch (err) {
-    showConfigMessage(t('settings.profile.createFailed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.profile.createFailed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configBusy.value = false;
     createProfileOpen.value = false;
@@ -614,7 +615,7 @@ async function confirmDeleteProfile() {
     }
     showConfigMessage(t('settings.profile.deleted', { name: deleteProfileName.value }));
   } catch (err) {
-    showConfigMessage(t('settings.profile.deleteFailed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.profile.deleteFailed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configBusy.value = false;
     deleteProfileOpen.value = false;
@@ -644,7 +645,7 @@ async function refreshConfigNow() {
     }
     showConfigMessage(t('settings.config.refreshed'));
   } catch (err) {
-    showConfigMessage(t('settings.config.refreshFailed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.config.refreshFailed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configBusy.value = false;
     refreshConfirmOpen.value = false;
@@ -689,7 +690,7 @@ async function saveConfigFiles() {
     brokerOriginal.value = brokerConfigText.value;
     showConfigMessage(t('settings.config.saved'));
   } catch (err) {
-    showConfigMessage(t('settings.config.saveFailed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.config.saveFailed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configBusy.value = false;
   }
@@ -758,7 +759,7 @@ async function applyConfig() {
       success = true;
     }
   } catch (err) {
-    showConfigMessage(t('settings.apply.failed', { error: String(err) }), 'error');
+    showConfigMessage(t('settings.apply.failed', { error: formatErrorForUser(err, t) }), 'error');
   } finally {
     configBusy.value = false;
     if (success) {

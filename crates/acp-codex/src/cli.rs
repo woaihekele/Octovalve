@@ -26,17 +26,17 @@ impl CliConfig {
                 "--approval-policy" | "--approval_policy" => {
                     let value = args
                         .next()
-                        .ok_or_else(|| anyhow!("--approval-policy 缺少值"))?;
+                        .ok_or_else(|| anyhow!("--approval-policy missing value"))?;
                     approval_policy = Some(value.replace('_', "-"));
                 }
                 "--sandbox-mode" | "--sandbox_mode" => {
                     let value = args
                         .next()
-                        .ok_or_else(|| anyhow!("--sandbox-mode 缺少值"))?;
+                        .ok_or_else(|| anyhow!("--sandbox-mode missing value"))?;
                     sandbox_mode = Some(value.replace('_', "-"));
                 }
                 "-c" | "--config" => {
-                    let value = args.next().ok_or_else(|| anyhow!("-c 缺少配置值"))?;
+                    let value = args.next().ok_or_else(|| anyhow!("-c missing config value"))?;
                     Self::apply_config_override(&value, &mut approval_policy, &mut sandbox_mode);
                     app_server_args.push(arg);
                     app_server_args.push(value);

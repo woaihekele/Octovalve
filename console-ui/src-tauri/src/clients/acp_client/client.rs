@@ -50,9 +50,15 @@ impl AcpClient {
         let writer = Arc::new(Mutex::new(client_write));
         let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
 
+        // 让 acp-codex 在关键启动点回报一次结果（例如 codex 命令缺失）。
+        // 这样前端可以立刻看到明确错误，而不是等到请求超时。
+        let (startup_tx, startup_rx) = oneshot::channel::<Result<(), String>>();
         let log_path_clone = log_path.clone();
         let server_task = tokio::spawn(async move {
-            if let Err(err) = acp_codex::run_with_io(config, server_read, server_write).await {
+            if let Err(err) =
+                acp_codex::run_with_io_with_startup(config, server_read, server_write, Some(startup_tx))
+                    .await
+            {
                 log_line(
                     &log_path_clone,
                     &format!("[acp-codex] server exited: {err}"),
@@ -60,6 +66,17 @@ impl AcpClient {
             }
         });
         let server_abort = server_task.abort_handle();
+
+        // 如果启动结果快速返回（例如缺少 codex 命令），立即把错误抛出。
+        // 如果超时则继续流程，后续 initialize 仍有 30s 超时保护。
+        match timeout(Duration::from_secs(2), startup_rx).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(message))) => return Err(AcpError(message)),
+            Ok(Err(_)) => return Err(AcpError("ACP server failed to start".into())),
+            Err(_) => {
+                log_line(&log_path, "[ACP] startup ack timeout (continuing)");
+            }
+        }
 
         let pending_clone = pending_requests.clone();
         let app_handle_clone = app_handle.clone();
