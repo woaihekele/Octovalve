@@ -30,7 +30,9 @@ use tokio::{
 
 use crate::cli::CliConfig;
 
-const CODEX_BASE_COMMAND: &[&str] = &["npx", "-y", "@openai/codex@0.77.0", "app-server"];
+// 直接使用用户机器上的 `codex` 命令启动 app-server，避免 `npx -y ...` 触发的下载/网络/缓存问题。
+// 如果用户未安装/未在 PATH 中，则应给出明确报错指引。
+const CODEX_BASE_COMMAND: &[&str] = &["codex", "app-server"];
 
 #[derive(Debug)]
 pub(crate) enum AppServerEvent {
@@ -69,7 +71,15 @@ impl AppServerClient {
             .env("NO_COLOR", "1")
             .env("RUST_LOG", "error");
 
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                anyhow!(
+                    "未找到 codex 命令（PATH 中不存在）。请先安装 Codex CLI（例如：npm i -g @openai/codex），并确保 `codex` 可在终端中直接运行。"
+                )
+            } else {
+                anyhow!("启动 codex app-server 失败: {err}")
+            }
+        })?;
         let stdin = child
             .stdin
             .take()
