@@ -34,9 +34,13 @@ let unlistenError: UnlistenFn | null = null;
 let inputBuffer = '';
 let inputFlushTimer: number | null = null;
 let resizeIdleTimer: number | null = null;
-const RESIZE_THROTTLE_MS = 8;
-const RESIZE_TRAIL_MS = 12;
+// Resizing too aggressively can corrupt full-screen TUI apps (e.g. `top`) due to frequent
+// local reflow + remote PTY resize while the app is emitting cursor-control sequences.
+const RESIZE_THROTTLE_MS = 120;
+const RESIZE_TRAIL_MS = 200;
 let lastResizeFitAt = 0;
+let lastRemoteCols = 0;
+let lastRemoteRows = 0;
 
 function focusTerminal() {
   const focusable = containerRef.value?.querySelector('textarea');
@@ -88,19 +92,37 @@ function applyTerminalScale() {
     terminal.refresh(0, terminal.rows - 1);
   }
   if (sessionId) {
+    lastRemoteCols = terminal.cols;
+    lastRemoteRows = terminal.rows;
     void terminalResize(sessionId, terminal.cols, terminal.rows);
   }
 }
 
-function runResizeFit() {
-  if (!terminal || !fitAddon || !sessionId) {
+function runResizeFit(sendRemoteResize: boolean) {
+  if (!terminal || !fitAddon) {
     return;
   }
+  const beforeCols = terminal.cols;
+  const beforeRows = terminal.rows;
   fitAddon.fit();
-  if (terminal.rows > 0) {
-    terminal.refresh(0, terminal.rows - 1);
+  const cols = terminal.cols;
+  const rows = terminal.rows;
+  if (!sendRemoteResize || !sessionId) {
+    lastResizeFitAt = Date.now();
+    return;
   }
-  void terminalResize(sessionId, terminal.cols, terminal.rows);
+  // Only resize the remote PTY when size actually changed, and preferably after the user stops resizing.
+  if (cols === lastRemoteCols && rows === lastRemoteRows) {
+    lastResizeFitAt = Date.now();
+    return;
+  }
+  if (cols === beforeCols && rows === beforeRows) {
+    lastResizeFitAt = Date.now();
+    return;
+  }
+  lastRemoteCols = cols;
+  lastRemoteRows = rows;
+  void terminalResize(sessionId, cols, rows);
   lastResizeFitAt = Date.now();
 }
 
@@ -110,10 +132,11 @@ function scheduleResizeFit() {
   }
   resizeIdleTimer = window.setTimeout(() => {
     resizeIdleTimer = null;
-    runResizeFit();
+    runResizeFit(true);
   }, RESIZE_TRAIL_MS);
   if (Date.now() - lastResizeFitAt >= RESIZE_THROTTLE_MS) {
-    runResizeFit();
+    // Immediate local fit for responsiveness; defer remote PTY resize to the trailing edge.
+    runResizeFit(false);
   }
 }
 
@@ -185,7 +208,7 @@ async function openSession() {
       return;
     }
     const bytes = decodeBase64(payload.data);
-    terminal.write(textDecoder.decode(bytes));
+    terminal.write(textDecoder.decode(bytes, { stream: true }));
   });
 
   unlistenExit = await listen('terminal_exit', (event) => {
@@ -212,6 +235,8 @@ async function openSession() {
   resizeObserver.observe(containerRef.value);
 
   statusMessage.value = null;
+  lastRemoteCols = cols;
+  lastRemoteRows = rows;
 }
 
 function scheduleInputFlush() {
@@ -251,10 +276,18 @@ async function syncTerminalLayout() {
   if (terminal.rows > 0) {
     terminal.refresh(0, terminal.rows - 1);
   }
+  lastRemoteCols = terminal.cols;
+  lastRemoteRows = terminal.rows;
   void terminalResize(sessionId, terminal.cols, terminal.rows);
 }
 
 function cleanupTerminal(sendClose: boolean) {
+  // Flush any pending UTF-8 decoder state between sessions.
+  try {
+    textDecoder.decode(new Uint8Array(), { stream: false });
+  } catch {
+    // ignore
+  }
   if (inputFlushTimer !== null) {
     window.clearTimeout(inputFlushTimer);
     inputFlushTimer = null;
