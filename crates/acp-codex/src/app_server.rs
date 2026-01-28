@@ -31,9 +31,8 @@ use tokio::{
 
 use crate::cli::CliConfig;
 
-// 直接使用用户机器上的 `codex` 命令启动 app-server，避免 `npx -y ...` 触发的下载/网络/缓存问题。
-// 如果用户未安装/未在 PATH 中，则应给出明确报错指引。
-const CODEX_BASE_COMMAND: &[&str] = &["codex", "app-server"];
+// Prefer the user's local Codex CLI (`codex app-server`). We support overriding the executable
+// path via `CliConfig.codex_path` to avoid PATH issues when launching from a bundled app (DMG).
 
 #[derive(Debug)]
 pub(crate) enum AppServerEvent {
@@ -58,8 +57,14 @@ impl AppServerClient {
     ) -> Result<(Self, mpsc::UnboundedReceiver<AppServerEvent>)> {
         let (events_tx, events_rx) = mpsc::unbounded_channel();
 
-        let mut cmd = Command::new(CODEX_BASE_COMMAND[0]);
-        cmd.args(&CODEX_BASE_COMMAND[1..]);
+        let program = config
+            .codex_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .unwrap_or("codex");
+        let mut cmd = Command::new(program);
+        cmd.arg("app-server");
         cmd.args(&config.app_server_args);
         if let Some(home) = dirs::home_dir() {
             cmd.current_dir(&home).env("PWD", &home);
@@ -72,12 +77,10 @@ impl AppServerClient {
             .env("NO_COLOR", "1")
             .env("RUST_LOG", "error");
 
-        let mut child = cmd.spawn().map_err(|err| {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                anyhow!("CODEX_NOT_FOUND")
-            } else {
-                anyhow!("启动 codex app-server 失败: {err}")
-            }
+        let mut child = cmd.spawn().map_err(|err| match err.kind() {
+            std::io::ErrorKind::NotFound => anyhow!("CODEX_NOT_FOUND"),
+            std::io::ErrorKind::PermissionDenied => anyhow!("CODEX_NOT_EXECUTABLE"),
+            _ => anyhow!("启动 codex app-server 失败: {err}"),
         })?;
         let stdin = child
             .stdin

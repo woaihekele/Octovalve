@@ -162,6 +162,9 @@ pub async fn acp_start(
                 if raw.trim() == "CODEX_NOT_FOUND" {
                     return app_error("CODEX_NOT_FOUND", raw);
                 }
+                if raw.trim() == "CODEX_NOT_EXECUTABLE" {
+                    return app_error("CODEX_NOT_EXECUTABLE", raw);
+                }
                 if raw.trim() == "CODEX_CONFIG_UNTRUSTED" {
                     return app_error("CODEX_CONFIG_UNTRUSTED", raw);
                 }

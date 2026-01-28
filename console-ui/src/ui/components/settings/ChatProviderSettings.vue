@@ -62,7 +62,7 @@ function updateOpenaiField(field: keyof ChatProviderConfig['openai'], value: str
 function updateAcpArgs(value: string) {
   emit('update', {
     ...props.config,
-    acp: { ...props.config.acp, args: value },
+    acp: { ...props.config.acp, codexPath: value },
   });
 }
 
@@ -173,9 +173,9 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
           <div class="text-sm">{{ $t('settings.chat.acp.arguments') }}</div>
           <div class="text-xs text-foreground-muted">{{ $t('settings.chat.acp.argumentsHelp') }}</div>
           <NInput
-            :value="props.config.acp.args"
+            :value="props.config.acp.codexPath"
             size="small"
-            placeholder="--approval-policy on-request"
+            placeholder="/opt/homebrew/bin/codex"
             @update:value="updateAcpArgs"
           />
         </div>

@@ -100,7 +100,7 @@ const DEFAULT_CHAT_SETTINGS: ChatProviderConfig = {
     chatPath: '/chat/completions',
   },
   acp: {
-    args: '',
+    codexPath: '',
     approvalPolicy: 'on-request',
     sandboxMode: 'workspace-write',
   },
@@ -222,7 +222,11 @@ export function loadSettings(): AppSettings {
         ? value
         : fallback;
     const parsedOpenai = (parsedChat.openai ?? {}) as Partial<ChatProviderConfig['openai']>;
-    const parsedAcp = (parsedChat.acp ?? {}) as Partial<ChatProviderConfig['acp']>;
+    const parsedAcp = (parsedChat.acp ?? {}) as Partial<ChatProviderConfig['acp']> & {
+      // Back-compat: older builds stored this as `args`.
+      args?: unknown;
+      codexPath?: unknown;
+    };
     const normalizedChat: ChatProviderConfig = {
       provider: normalizeChatProvider(parsedChat.provider),
       sendOnEnter: normalizeBool(parsedChat.sendOnEnter, DEFAULT_CHAT_SETTINGS.sendOnEnter),
@@ -234,7 +238,10 @@ export function loadSettings(): AppSettings {
         chatPath: normalizeText(parsedOpenai.chatPath, DEFAULT_CHAT_SETTINGS.openai.chatPath),
       },
       acp: {
-        args: normalizeText(parsedAcp.args, DEFAULT_CHAT_SETTINGS.acp.args),
+        codexPath: normalizeText(
+          (parsedAcp.codexPath ?? parsedAcp.args) as unknown,
+          DEFAULT_CHAT_SETTINGS.acp.codexPath
+        ),
         approvalPolicy: normalizeAcpApprovalPolicy(
           parsedAcp.approvalPolicy,
           DEFAULT_CHAT_SETTINGS.acp.approvalPolicy

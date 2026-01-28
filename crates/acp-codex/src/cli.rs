@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone)]
 pub struct CliConfig {
+    pub codex_path: Option<String>,
     pub approval_policy: Option<String>,
     pub sandbox_mode: Option<String>,
     pub app_server_args: Vec<String>,
@@ -16,6 +17,7 @@ impl CliConfig {
     }
 
     pub fn parse_from(args: Vec<String>) -> Result<Self> {
+        let mut codex_path = None;
         let mut approval_policy = None;
         let mut sandbox_mode = None;
         let mut app_server_args = Vec::new();
@@ -23,6 +25,12 @@ impl CliConfig {
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--codex-path" | "--codex_path" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| anyhow!("--codex-path missing value"))?;
+                    codex_path = Some(value);
+                }
                 "--approval-policy" | "--approval_policy" => {
                     let value = args
                         .next()
@@ -50,6 +58,7 @@ impl CliConfig {
         }
 
         Ok(Self {
+            codex_path,
             approval_policy,
             sandbox_mode,
             app_server_args,

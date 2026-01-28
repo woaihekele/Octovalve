@@ -35,7 +35,9 @@ export const messages = {
     },
     errors: {
       codexNotFound:
-        '未找到 Codex CLI 命令 `codex`（PATH 中不存在）。请先安装 Codex CLI（例如：`npm i -g @openai/codex`），并确保终端里可直接运行 `codex`。',
+        "未找到 Codex CLI 命令 `codex`（PATH 中不存在）。请先安装 Codex CLI（例如：`npm i -g {'@'}openai/codex`），并确保终端里可直接运行 `codex`。",
+      codexNotExecutable:
+        '已找到 Codex CLI，但无法执行（权限不足或路径不是可执行文件）。请检查设置中的 Codex 路径是否正确，并确保该文件有可执行权限。',
       codexConfigUntrusted:
         'Codex 配置目录被 Codex 的安全策略禁用（未信任）。请打开 `~/.codex/config.toml`，按 Codex 提示把你的目录（例如 `/Users/<name>`）加入 trusted projects，然后重试。',
     },
@@ -388,8 +390,9 @@ export const messages = {
         },
         acp: {
           title: 'ACP 配置',
-          arguments: '启动参数',
-          argumentsHelp: '填写 acp-codex 启动参数（可选，例如：--approval-policy on-request）。',
+          arguments: 'Codex 路径',
+          argumentsHelp:
+            '填写 `codex` 可执行文件的绝对路径（可选；DMG/Finder 启动时推荐配置，例如：/opt/homebrew/bin/codex）。留空则从 PATH 查找。',
           approvalPolicy: {
             label: '审批策略',
             help: '决定何时请求授权执行',
@@ -478,7 +481,7 @@ export const messages = {
           desc: '描述',
           descPlaceholder: '用于备注',
           ssh: 'ssh',
-          sshPlaceholder: '例如 devops@host',
+          sshPlaceholder: "例如 devops{'@'}host",
           sshHost: 'Host（机器地址）',
           sshHostPlaceholder: '例如 192.168.1.10 或 host.example.com',
           sshUser: '用户名（必填）',
@@ -597,7 +600,9 @@ export const messages = {
     },
     errors: {
       codexNotFound:
-        'Codex CLI command `codex` not found in PATH. Please install Codex CLI (e.g. `npm i -g @openai/codex`) and ensure `codex` works in your terminal.',
+        "Codex CLI command `codex` not found in PATH. Please install Codex CLI (e.g. `npm i -g {'@'}openai/codex`) and ensure `codex` works in your terminal.",
+      codexNotExecutable:
+        'Codex CLI is present but not executable (permission denied or invalid file). Check the Codex Path in settings and ensure the file is executable.',
       codexConfigUntrusted:
         'Codex config folder is disabled by Codex trust policy. Open `~/.codex/config.toml`, add your directory (e.g. `/Users/<name>`) as a trusted project per the Codex hint, then retry.',
     },
@@ -950,8 +955,9 @@ export const messages = {
         },
         acp: {
           title: 'ACP Settings',
-          arguments: 'Arguments',
-          argumentsHelp: 'Extra acp-codex CLI args (optional, e.g. --approval-policy on-request).',
+          arguments: 'Codex Path',
+          argumentsHelp:
+            'Absolute path to the `codex` executable (optional; recommended when launching from DMG/Finder, e.g. /opt/homebrew/bin/codex). Leave empty to resolve via PATH.',
           approvalPolicy: {
             label: 'Approval Policy',
             help: 'When to request execution approvals',
@@ -1040,7 +1046,7 @@ export const messages = {
           desc: 'Description',
           descPlaceholder: 'Shown in the UI',
           ssh: 'ssh',
-          sshPlaceholder: 'e.g. user@host',
+          sshPlaceholder: "e.g. user{'@'}host",
           sshHost: 'Host',
           sshHostPlaceholder: 'e.g. 192.168.1.10 or host.example.com',
           sshUser: 'User (required)',

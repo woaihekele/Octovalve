@@ -764,9 +764,10 @@ function enqueueChatProviderInit<T>(task: () => Promise<T>): Promise<T> {
 // Initialize chat provider based on settings
 function buildAcpArgs(config: AppSettings['chat']['acp']) {
   const args: string[] = [];
-  const rawArgs = config.args.trim();
-  if (rawArgs) {
-    args.push(rawArgs);
+  const codexPath = config.codexPath.trim();
+  if (codexPath) {
+    // Quote to keep paths with spaces safe for shlex parsing on the backend.
+    args.push(`--codex-path ${JSON.stringify(codexPath)}`);
   }
   if (config.approvalPolicy && config.approvalPolicy !== 'auto') {
     args.push(`--approval-policy ${config.approvalPolicy}`);
@@ -1575,7 +1576,7 @@ function hasMcpConfigChanged(previous: AppSettings, next: AppSettings) {
 
 function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
   return (
-    previous.chat.acp.args !== next.chat.acp.args ||
+    previous.chat.acp.codexPath !== next.chat.acp.codexPath ||
     previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
     previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode ||
     previous.chat.mcpConfigJson !== next.chat.mcpConfigJson
@@ -1584,6 +1585,7 @@ function hasAcpConfigChanged(previous: AppSettings, next: AppSettings) {
 
 function hasAcpRestartSettingsChanged(previous: AppSettings, next: AppSettings) {
   return (
+    previous.chat.acp.codexPath !== next.chat.acp.codexPath ||
     previous.chat.acp.approvalPolicy !== next.chat.acp.approvalPolicy ||
     previous.chat.acp.sandboxMode !== next.chat.acp.sandboxMode ||
     previous.chat.mcpConfigJson !== next.chat.mcpConfigJson

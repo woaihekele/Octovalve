@@ -48,7 +48,11 @@ watch(
       // Error notifications should stay until explicitly dismissed by the user.
       duration: resolvedType === 'error' ? 0 : 4000,
     });
-  }
+  },
+  // If the first notification is emitted very early during app startup (e.g. ACP init fails fast),
+  // the bridge might mount after `token` already incremented and miss it. `immediate` ensures we
+  // display the current payload on mount as well.
+  { immediate: true }
 );
 </script>
 
