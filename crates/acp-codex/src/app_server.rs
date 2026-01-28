@@ -69,6 +69,14 @@ impl AppServerClient {
         if let Some(home) = dirs::home_dir() {
             cmd.current_dir(&home).env("PWD", &home);
         }
+        if let Some(codex_home) = config
+            .codex_home
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            cmd.env("CODEX_HOME", codex_home);
+        }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

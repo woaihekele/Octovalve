@@ -32,6 +32,11 @@ fn format_config_literal(value: &str) -> Result<String, String> {
     serde_json::to_string(value).map_err(|err| err.to_string())
 }
 
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter()
+        .any(|value| value == flag || value.starts_with(&format!("{flag}=")))
+}
+
 fn build_mcp_cli_override(proxy_bin: &Path, proxy_config: &Path) -> Result<String, String> {
     let command_value = proxy_bin.to_string_lossy();
     let config_value = proxy_config.to_string_lossy();
@@ -140,6 +145,23 @@ pub async fn acp_start(
         ),
     );
     let mut acp_args = parse_acp_args(acp_args)?;
+    if !has_flag(&acp_args, "--codex-home") && !has_flag(&acp_args, "--codex_home") {
+        if let Ok(codex_home) = octovalve_dir(&app).map(|dir| dir.join("codex")) {
+            if let Err(err) = std::fs::create_dir_all(&codex_home) {
+                let _ = append_log_line(
+                    &log_path,
+                    &format!("[acp_start] failed to create codex_home: {err}"),
+                );
+            } else {
+                let _ = append_log_line(
+                    &log_path,
+                    &format!("[acp_start] using codex_home={}", codex_home.display()),
+                );
+                acp_args.push("--codex-home".to_string());
+                acp_args.push(codex_home.to_string_lossy().to_string());
+            }
+        }
+    }
     if uses_builtin {
         let mcp_override = build_mcp_cli_override(&proxy_bin, &proxy_config_path)?;
         let _ = append_log_line(
