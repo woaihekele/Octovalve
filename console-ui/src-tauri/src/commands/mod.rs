@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod ai;
+pub mod chat;
 pub mod config;
 pub mod console;
 pub mod mcp;

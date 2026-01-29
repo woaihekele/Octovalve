@@ -26,6 +26,7 @@ import {
   type ConsoleStreamHandle,
 } from '../services/api';
 import { useChatStore } from '../domain/chat';
+import { registerChatImportCommand } from '../domain/chat/devtools';
 import { storeToRefs } from 'pinia';
 import type { AuthMethod, AcpSessionSummary } from '../domain/chat/services/acpService';
 import type { ChatSession, SendMessageOptions } from '../domain/chat/types';
@@ -257,6 +258,7 @@ const {
 
 // Chat store integration
 const chatStore = useChatStore();
+registerChatImportCommand(chatStore);
 const {
   messages: chatMessages,
   planEntries: chatPlanEntries,
