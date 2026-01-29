@@ -4,6 +4,7 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
+use crate::clients::McpClientState;
 use crate::services::logging::append_log_line;
 use crate::services::profiles::{octovalve_dir, prepare_profiles};
 use crate::state::{AppLogState, ProfilesState, ProxyConfigState};
@@ -66,6 +67,7 @@ pub fn init(app: &mut tauri::App) -> Result<(), String> {
     app.manage(AppLogState {
         app_log: app_log.clone(),
     });
+    app.state::<McpClientState>().set_log_path(app_log.clone());
     let (profiles, proxy_status) = prepare_profiles(&app_handle, &app_log)?;
     if let Err(err) = ensure_runtime_agents_file(&app_handle, &app_log) {
         let _ = append_log_line(

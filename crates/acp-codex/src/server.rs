@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 use crate::app_server::{AppServerClient, AppServerEvent};
 use crate::cli::CliConfig;
 use crate::handlers::{handle_acp_request, handle_app_server_stderr_line, handle_codex_event};
+use crate::logging::{log_fmt, LogLevel};
 use crate::protocol::AcpMessage;
 use crate::state::AcpState;
 use crate::writer::AcpWriter;
@@ -90,14 +91,17 @@ where
                     if let Err(err) =
                         handle_codex_event(conversation_id, msg, &writer_clone, &state_clone).await
                     {
-                        eprintln!("[acp-codex] 处理 codex 事件失败: {err}");
+                        log_fmt(LogLevel::Error, format_args!("处理 codex 事件失败: {err}"));
                     }
                 }
                 AppServerEvent::StderrLine(line) => {
                     if let Err(err) =
                         handle_app_server_stderr_line(line, &writer_clone, &state_clone).await
                     {
-                        eprintln!("[acp-codex] 处理 app-server stderr 失败: {err}");
+                        log_fmt(
+                            LogLevel::Error,
+                            format_args!("处理 app-server stderr 失败: {err}"),
+                        );
                     }
                 }
             }
@@ -121,7 +125,7 @@ where
         let message: AcpMessage = match serde_json::from_str(line) {
             Ok(value) => value,
             Err(err) => {
-                eprintln!("[acp-codex] 无法解析 ACP 消息: {err}");
+                log_fmt(LogLevel::Warn, format_args!("无法解析 ACP 消息: {err}"));
                 continue;
             }
         };
@@ -130,7 +134,7 @@ where
             if let Err(err) =
                 handle_acp_request(request, &writer, &state, &app_server, &config).await
             {
-                eprintln!("[acp-codex] 处理 ACP 请求失败: {err}");
+                log_fmt(LogLevel::Error, format_args!("处理 ACP 请求失败: {err}"));
             }
         }
     }

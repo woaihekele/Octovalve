@@ -17,6 +17,22 @@ pub(crate) struct SessionHandler;
 impl SessionHandler {
     pub(crate) fn sessions_root() -> Result<PathBuf> {
         let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("无法定位 HOME 目录"))?;
+        if let Ok(value) = std::env::var("CODEX_HOME") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                let mut root = if trimmed == "~" {
+                    home_dir.clone()
+                } else if let Some(rest) = trimmed.strip_prefix("~/") {
+                    home_dir.join(rest)
+                } else {
+                    PathBuf::from(trimmed)
+                };
+                if root.is_relative() {
+                    root = home_dir.join(root);
+                }
+                return Ok(root.join("sessions"));
+            }
+        }
         Ok(home_dir.join(".codex").join("sessions"))
     }
 

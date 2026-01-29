@@ -32,6 +32,19 @@ fn format_config_literal(value: &str) -> Result<String, String> {
     serde_json::to_string(value).map_err(|err| err.to_string())
 }
 
+fn resolve_codex_home(app: &AppHandle, raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("codex_home is empty".to_string());
+    }
+    let expanded = expand_tilde_path(app, trimmed).unwrap_or_else(|_| PathBuf::from(trimmed));
+    if expanded.is_absolute() {
+        return Ok(expanded);
+    }
+    let home = app.path().home_dir().map_err(|err| err.to_string())?;
+    Ok(home.join(expanded))
+}
+
 fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter()
         .any(|value| value == flag || value.starts_with(&format!("{flag}=")))
@@ -171,7 +184,19 @@ pub async fn acp_start(
         acp_args.push("-c".to_string());
         acp_args.push(mcp_override);
     }
-    let cli_config = CliConfig::parse_from(acp_args).map_err(|err| err.to_string())?;
+    let mut cli_config = CliConfig::parse_from(acp_args).map_err(|err| err.to_string())?;
+    if let Some(codex_home) = cli_config.codex_home.clone() {
+        match resolve_codex_home(&app, &codex_home) {
+            Ok(resolved) => {
+                let resolved_value = resolved.to_string_lossy().to_string();
+                cli_config.codex_home = Some(resolved_value.clone());
+                std::env::set_var("CODEX_HOME", resolved_value);
+            }
+            Err(err) => {
+                let _ = append_log_line(&log_path, &format!("[acp_start] invalid codex_home: {err}"));
+            }
+        }
+    }
 
     let _ = append_log_line(&log_path, "[acp_start] starting new client...");
     let client = Arc::new(

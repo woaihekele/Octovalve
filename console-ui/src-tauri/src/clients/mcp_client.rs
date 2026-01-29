@@ -10,9 +10,11 @@ use rmcp::{
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
+
+use crate::services::logging::append_log_line;
 
 #[derive(Clone, Debug)]
 pub struct McpServerSpec {
@@ -53,15 +55,33 @@ struct McpClientRegistry {
     clients: HashMap<String, Arc<McpClient>>,
 }
 
-pub struct McpClientState(pub Mutex<McpClientRegistry>);
+pub struct McpClientState {
+    registry: Mutex<McpClientRegistry>,
+    log_path: StdMutex<Option<PathBuf>>,
+}
 
 impl Default for McpClientState {
     fn default() -> Self {
-        Self(Mutex::new(McpClientRegistry::default()))
+        Self {
+            registry: Mutex::new(McpClientRegistry::default()),
+            log_path: StdMutex::new(None),
+        }
     }
 }
 
 impl McpClientState {
+    pub fn set_log_path(&self, path: PathBuf) {
+        let mut guard = self.log_path.lock().unwrap();
+        *guard = Some(path);
+    }
+
+    fn log_line(&self, message: &str) {
+        let log_path = self.log_path.lock().unwrap().clone();
+        if let Some(path) = log_path.as_ref() {
+            let _ = append_log_line(path, message);
+        }
+    }
+
     pub async fn set_servers(&self, servers: Vec<McpServerSpec>) -> Result<(), String> {
         let mut next = HashMap::new();
         for server in servers {
@@ -69,7 +89,7 @@ impl McpClientState {
         }
 
         let removed_clients = {
-            let mut guard = self.0.lock().await;
+            let mut guard = self.registry.lock().await;
             let mut removed = Vec::new();
             let existing_names = guard.clients.keys().cloned().collect::<Vec<_>>();
             for name in existing_names {
@@ -101,7 +121,7 @@ impl McpClientState {
 
     pub async fn list_tools(&self) -> Result<Vec<(String, Tool)>, String> {
         let server_names = {
-            let guard = self.0.lock().await;
+            let guard = self.registry.lock().await;
             guard.servers.keys().cloned().collect::<Vec<_>>()
         };
         let mut tools = Vec::new();
@@ -109,14 +129,14 @@ impl McpClientState {
             let client = match self.get_or_start_client(&server).await {
                 Ok(client) => client,
                 Err(err) => {
-                    eprintln!("[mcp] start client failed: {server} err={err}");
+                    self.log_line(&format!("[mcp] start client failed: {server} err={err}"));
                     continue;
                 }
             };
             let result = match client.list_tools().await {
                 Ok(result) => result,
                 Err(err) => {
-                    eprintln!("[mcp] list_tools failed: {server} err={err}");
+                    self.log_line(&format!("[mcp] list_tools failed: {server} err={err}"));
                     continue;
                 }
             };
@@ -140,7 +160,7 @@ impl McpClientState {
 
     async fn get_or_start_client(&self, server: &str) -> Result<Arc<McpClient>, String> {
         let spec = {
-            let guard = self.0.lock().await;
+            let guard = self.registry.lock().await;
             guard
                 .servers
                 .get(server)
@@ -149,7 +169,7 @@ impl McpClientState {
         };
 
         let existing = {
-            let mut guard = self.0.lock().await;
+            let mut guard = self.registry.lock().await;
             if let Some(client) = guard.clients.get(server) {
                 if client.is_usable_for(&spec) {
                     return Ok(client.clone());
@@ -163,7 +183,7 @@ impl McpClientState {
         }
 
         let client = Arc::new(McpClient::start_with_spec(&spec).await?);
-        let mut guard = self.0.lock().await;
+        let mut guard = self.registry.lock().await;
         guard.clients.insert(server.to_string(), Arc::clone(&client));
         Ok(client)
     }

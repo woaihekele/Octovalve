@@ -17,6 +17,7 @@ use tokio::time::{sleep, Duration};
 
 use crate::app_server::AppServerClient;
 use crate::cli::CliConfig;
+use crate::logging::{log_fmt, LogLevel};
 use crate::protocol::{
     AuthenticateParamsInput, CancelParamsInput, ContentBlock, DeleteSessionParamsInput,
     InitializeParamsInput, JsonRpcErrorOut, JsonRpcErrorOutPayload, JsonRpcIncomingRequest,
@@ -102,7 +103,10 @@ async fn reset_session_state(
             .interrupt_conversation_no_wait(previous_conversation_id)
             .await
         {
-            eprintln!("[acp-codex] interruptConversation 失败: {err}");
+            log_fmt(
+                LogLevel::Warn,
+                format_args!("interruptConversation 失败: {err}"),
+            );
         }
     }
     if let Some(previous_subscription_id) = previous_subscription_id {
@@ -110,7 +114,10 @@ async fn reset_session_state(
             .remove_conversation_listener(previous_subscription_id)
             .await
         {
-            eprintln!("[acp-codex] removeConversationListener 失败: {err}");
+            log_fmt(
+                LogLevel::Warn,
+                format_args!("removeConversationListener 失败: {err}"),
+            );
         }
     }
     Ok(())
@@ -667,7 +674,7 @@ async fn handle_acp_request_inner(
             let response = app_server.new_conversation(conversation_params).await?;
             if !params.mcp_servers.is_empty() {
                 if let Err(err) = save_mcp_servers(&response.rollout_path, &params.mcp_servers) {
-                    eprintln!("[acp-codex] 写入 MCP 会话配置失败: {err}");
+                    log_fmt(LogLevel::Warn, format_args!("写入 MCP 会话配置失败: {err}"));
                 }
             }
             let conversation_id = response.conversation_id;
@@ -739,7 +746,7 @@ async fn handle_acp_request_inner(
             let stored_mcp_servers = match load_mcp_servers(&rollout_path) {
                 Ok(servers) => servers,
                 Err(err) => {
-                    eprintln!("[acp-codex] 读取 MCP 会话配置失败: {err}");
+                    log_fmt(LogLevel::Warn, format_args!("读取 MCP 会话配置失败: {err}"));
                     None
                 }
             };
@@ -747,7 +754,7 @@ async fn handle_acp_request_inner(
                 servers
             } else if !params.mcp_servers.is_empty() {
                 if let Err(err) = save_mcp_servers(&rollout_path, &params.mcp_servers) {
-                    eprintln!("[acp-codex] 写入 MCP 会话配置失败: {err}");
+                    log_fmt(LogLevel::Warn, format_args!("写入 MCP 会话配置失败: {err}"));
                 }
                 params.mcp_servers.clone()
             } else {
@@ -846,7 +853,10 @@ async fn handle_acp_request_inner(
                                 items.push(InputItem::LocalImage { path });
                             }
                             Err(err) => {
-                                eprintln!("[acp-codex] 无法处理 image block: {err}");
+                                log_fmt(
+                                    LogLevel::Warn,
+                                    format_args!("无法处理 image block: {err}"),
+                                );
                             }
                         }
                     }
@@ -887,7 +897,10 @@ async fn handle_acp_request_inner(
                     .interrupt_conversation_no_wait(conversation_id)
                     .await
                 {
-                    eprintln!("[acp-codex] interruptConversation 失败: {err}");
+                    log_fmt(
+                        LogLevel::Warn,
+                        format_args!("interruptConversation 失败: {err}"),
+                    );
                 }
             }
             if let Some(prompt_id) = {

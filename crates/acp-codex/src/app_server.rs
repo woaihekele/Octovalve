@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    fs,
+    path::{Path, PathBuf},
     process::Stdio,
     sync::{
         atomic::{AtomicI64, Ordering},
@@ -30,6 +31,7 @@ use tokio::{
 };
 
 use crate::cli::CliConfig;
+use crate::logging::{log_fmt, LogLevel};
 
 // Prefer the user's local Codex CLI (`codex app-server`). We support overriding the executable
 // path via `CliConfig.codex_path` to avoid PATH issues when launching from a bundled app (DMG).
@@ -49,6 +51,70 @@ pub(crate) enum AppServerEvent {
 pub(crate) struct AppServerClient {
     rpc: JsonRpcPeer,
     _child: Mutex<tokio::process::Child>,
+}
+
+fn ensure_codex_home_links(codex_home: &str) {
+    let home = match dirs::home_dir() {
+        Some(home) => home,
+        None => return,
+    };
+    let source_root = home.join(".codex");
+    let mut dest_dir = PathBuf::from(codex_home);
+    if dest_dir.as_os_str().is_empty() {
+        return;
+    }
+    if dest_dir.is_relative() {
+        if let Ok(current) = std::env::current_dir() {
+            dest_dir = current.join(dest_dir);
+        }
+    }
+    if dest_dir == home.join(".codex") {
+        return;
+    }
+    if let Err(err) = fs::create_dir_all(&dest_dir) {
+        log_fmt(
+            LogLevel::Warn,
+            format_args!("无法创建 codex_home 目录: {err}"),
+        );
+        return;
+    }
+    link_if_present(
+        &source_root.join("auth.json"),
+        &dest_dir.join("auth.json"),
+        "auth.json",
+    );
+    link_if_present(
+        &source_root.join("config.toml"),
+        &dest_dir.join("config.toml"),
+        "config.toml",
+    );
+}
+
+fn link_if_present(source: &Path, dest: &Path, label: &str) {
+    if !source.is_file() {
+        return;
+    }
+    if fs::symlink_metadata(dest).is_ok() {
+        return;
+    }
+    link_file(source, dest, label);
+}
+
+#[cfg(unix)]
+fn link_file(source: &Path, dest: &Path, label: &str) {
+    if let Err(err) = std::os::unix::fs::symlink(source, dest) {
+        log_fmt(
+            LogLevel::Warn,
+            format_args!("创建 {label} 软链接失败: {err}"),
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn link_file(source: &Path, dest: &Path, label: &str) {
+    if let Err(err) = fs::copy(source, dest) {
+        log_fmt(LogLevel::Warn, format_args!("复制 {label} 失败: {err}"));
+    }
 }
 
 impl AppServerClient {
@@ -75,6 +141,7 @@ impl AppServerClient {
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
+            ensure_codex_home_links(codex_home);
             cmd.env("CODEX_HOME", codex_home);
         }
         cmd.stdin(Stdio::piped())
@@ -143,14 +210,14 @@ impl AppServerClient {
             if saw_untrusted_config {
                 // Best-effort: print what we saw to help local debugging.
                 for line in initial_lines {
-                    eprintln!("{}", line);
+                    log_fmt(LogLevel::Info, format_args!("{line}"));
                 }
                 return Err(anyhow!("CODEX_CONFIG_UNTRUSTED"));
             }
 
             // Forward the initial stderr lines we already read.
             for line in initial_lines {
-                eprintln!("{}", line);
+                log_fmt(LogLevel::Info, format_args!("{line}"));
                 let _ = stderr_tx.send(AppServerEvent::StderrLine(line));
             }
 
@@ -164,11 +231,14 @@ impl AppServerClient {
                             if line.is_empty() {
                                 continue;
                             }
-                            eprintln!("{}", line);
+                            log_fmt(LogLevel::Info, format_args!("{line}"));
                             let _ = stderr_tx.send(AppServerEvent::StderrLine(line.to_string()));
                         }
                         Err(err) => {
-                            eprintln!("[acp-codex] app-server stderr read failed: {err}");
+                            log_fmt(
+                                LogLevel::Warn,
+                                format_args!("app-server stderr read failed: {err}"),
+                            );
                             break;
                         }
                     }
@@ -346,7 +416,10 @@ impl JsonRpcPeer {
         let peer_clone = peer.clone();
         tokio::spawn(async move {
             if let Err(err) = peer_clone.read_loop(stdout, callbacks).await {
-                eprintln!("[acp-codex] app-server read loop failed: {err}");
+                log_fmt(
+                    LogLevel::Warn,
+                    format_args!("app-server read loop failed: {err}"),
+                );
             }
         });
         peer

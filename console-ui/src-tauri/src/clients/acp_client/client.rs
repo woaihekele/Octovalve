@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use acp_codex::CliConfig;
+use acp_codex::{set_log_sink, CliConfig};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -49,6 +49,13 @@ impl AcpClient {
 
         let writer = Arc::new(Mutex::new(client_write));
         let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
+
+        set_log_sink({
+            let log_path = log_path.clone();
+            Arc::new(move |_level, message| {
+                let _ = append_log_line(&log_path, message);
+            })
+        });
 
         // 让 acp-codex 在关键启动点回报一次结果（例如 codex 命令缺失）。
         // 这样前端可以立刻看到明确错误，而不是等到请求超时。

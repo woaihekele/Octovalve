@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::logging::{log_fmt, LogLevel};
 use crate::utils::SessionHandler;
 
 #[derive(Debug, Serialize)]
@@ -27,7 +28,10 @@ struct SessionMetadata {
 }
 
 pub(crate) fn list_workspace_sessions() -> Result<Vec<SessionSummary>> {
-    eprintln!("[acp-codex] list_workspace_sessions called");
+    log_fmt(
+        LogLevel::Info,
+        format_args!("list_workspace_sessions called"),
+    );
     let sessions_root = SessionHandler::sessions_root()?;
     let workspace_root = workspace_root()?;
     let mut sessions = Vec::new();
@@ -212,7 +216,10 @@ fn is_within_workspace(cwd: &str, workspace_root: &Path) -> bool {
     let workspace_root = match workspace_root.canonicalize() {
         Ok(root) => root,
         Err(err) => {
-            eprintln!("[acp-codex] workspace_root canonicalize failed: {err}");
+            log_fmt(
+                LogLevel::Warn,
+                format_args!("workspace_root canonicalize failed: {err}"),
+            );
             return cwd_path.starts_with(workspace_root);
         }
     };
@@ -226,7 +233,10 @@ fn is_within_workspace(cwd: &str, workspace_root: &Path) -> bool {
     match cwd_path.canonicalize() {
         Ok(target) => target.starts_with(&workspace_root),
         Err(err) => {
-            eprintln!("[acp-codex] cwd canonicalize failed: {cwd_display}: {err}");
+            log_fmt(
+                LogLevel::Warn,
+                format_args!("cwd canonicalize failed: {cwd_display}: {err}"),
+            );
             true
         }
     }
