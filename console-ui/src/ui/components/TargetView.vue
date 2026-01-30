@@ -913,7 +913,7 @@ onBeforeUnmount(() => {
         <div class="flex-1 flex flex-col min-w-0">
           <template v-if="selectedItem">
             <div class="border-b border-border bg-panel/30 p-6 flex justify-between gap-6">
-              <div class="flex-1">
+              <div class="flex-1 min-w-0">
                 <h3 class="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">{{ $t('target.detail.command') }}</h3>
                 <code
                   class="block text-base text-accent font-mono bg-panel px-4 py-3 rounded-lg border border-border max-h-40 overflow-y-auto scrollbar-chat whitespace-pre-wrap break-words"
