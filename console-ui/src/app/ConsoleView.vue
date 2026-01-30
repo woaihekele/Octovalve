@@ -282,6 +282,7 @@ const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
 const acpRestarting = ref(false);
 const acpInitPending = ref(false);
+let lastAcpTargetSignature = '';
 const chatInputLocked = computed(() => providerSwitching.value || acpRestarting.value);
 const showChatDropHint = computed(() => isFileDragging.value);
 const pendingProviderLabel = computed(() => {
@@ -794,6 +795,39 @@ function isAcpTargetsReady() {
   return connectionState.value === 'connected' && targets.value.length > 0;
 }
 
+function buildAcpTargetSignature(list: TargetInfo[]) {
+  if (list.length === 0) {
+    return '';
+  }
+  const names = list.map((t) => t.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  const defaultTarget = list.find((t) => t.is_default)?.name ?? '';
+  return `${names.join(',')}|${defaultTarget}`;
+}
+
+function markAcpTargetsChanged(list: TargetInfo[]) {
+  const signature = buildAcpTargetSignature(list);
+  if (signature === lastAcpTargetSignature) {
+    return;
+  }
+  lastAcpTargetSignature = signature;
+  if (!signature) {
+    return;
+  }
+  if (!tauriAvailable) {
+    return;
+  }
+  if (settings.value.chat.provider !== 'acp') {
+    return;
+  }
+  if (!chatStore.acpInitialized) {
+    return;
+  }
+  if (booting.value || quickProfileSwitching.value || startupBusy.value || providerSwitching.value) {
+    return;
+  }
+  acpInitPending.value = true;
+}
+
 async function ensureAcpTargetsReady(allowDefer: boolean) {
   if (isAcpTargetsReady()) {
     return true;
@@ -1091,6 +1125,7 @@ function resetConsoleTargetsView() {
   snapshotRefreshPending.value = {};
   selectedTargetName.value = null;
   lastPendingCounts.value = {};
+  lastAcpTargetSignature = '';
   chatStore.clearAcpTargets();
   // 用于触发子组件在需要时重置自身的局部状态（例如终端/滚动位置）。
   resetTargetsToken.value += 1;
@@ -1406,6 +1441,7 @@ function shouldRefreshSnapshotFromTargetUpdate(target: TargetInfo, previousPendi
 function updateTargets(list: TargetInfo[]) {
   targets.value = list;
   chatStore.updateAcpTargets(list);
+  markAcpTargetsChanged(list);
   if (list.length === 0) {
     selectedTargetName.value = null;
     return;
@@ -1435,6 +1471,7 @@ function applyTargetUpdate(target: TargetInfo) {
     targets.value.splice(index, 1, target);
   }
   chatStore.updateAcpTargets(targets.value);
+  markAcpTargetsChanged(targets.value);
 
   const previous = lastPendingCounts.value[target.name] ?? 0;
   if (settings.value.notificationsEnabled && target.pending_count > previous) {
@@ -1445,6 +1482,9 @@ function applyTargetUpdate(target: TargetInfo) {
   }
   lastPendingCounts.value[target.name] = target.pending_count;
   void chatStore.refreshOpenaiTools(targets.value);
+  if (acpInitPending.value) {
+    void syncAcpAfterTargetsReady();
+  }
 }
 
 function handleEvent(event: ConsoleEvent) {
