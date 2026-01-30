@@ -83,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/approve", post(approve_command))
         .route("/targets/:name/deny", post(deny_command))
         .route("/targets/:name/cancel", post(cancel_command))
+        .route("/targets/:name/force-cancel", post(force_cancel_command))
         .route("/targets/:name/dirs", get(list_target_dirs))
         .route("/targets/:name/upload", post(start_upload))
         .route("/uploads/:id", get(get_upload_status))
@@ -321,6 +322,24 @@ async fn cancel_command(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(Json(ActionResponse {
         message: "cancel queued".to_string(),
+    }))
+}
+
+async fn force_cancel_command(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<CommandPayload>,
+) -> Result<Json<ActionResponse>, StatusCode> {
+    let sender = state.state.read().await.command_sender(&name);
+    let Some(sender) = sender else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    sender
+        .send(ControlCommand::ForceCancel(payload.id))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Json(ActionResponse {
+        message: "force cancel queued".to_string(),
     }))
 }
 

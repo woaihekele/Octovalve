@@ -218,6 +218,16 @@ pub async fn proxy_cancel(
 }
 
 #[tauri::command]
+pub async fn proxy_force_cancel(
+    name: String,
+    id: String,
+    log_state: State<'_, AppLogState>,
+) -> Result<(), String> {
+    let path = format!("/targets/{name}/force-cancel");
+    console_post(&path, json!({ "id": id }), &log_state.app_log).await
+}
+
+#[tauri::command]
 pub async fn proxy_list_target_dirs(
     name: String,
     path: String,

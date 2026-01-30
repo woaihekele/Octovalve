@@ -251,6 +251,13 @@ async fn handle_command(
                 tracing::warn!(event = "request_cancel_miss", target = %target_name, id = %id);
             }
         }
+        ControlCommand::ForceCancel(id) => {
+            if state.force_cancel_running(&id) {
+                tracing::info!(event = "request_force_cancelled", target = %target_name, id = %id);
+            } else {
+                tracing::warn!(event = "request_force_cancel_miss", target = %target_name, id = %id);
+            }
+        }
     }
 }
 
@@ -302,7 +309,12 @@ fn start_execution(
     let started_at = SystemTime::now();
     let running_snapshot = running_snapshot_from_pending(&pending, started_at);
     let cancel_token = CancellationToken::new();
-    state.start_running(running_snapshot, cancel_token.clone());
+    let force_cancel_token = CancellationToken::new();
+    state.start_running(
+        running_snapshot,
+        cancel_token.clone(),
+        force_cancel_token.clone(),
+    );
     let event = ServiceEvent::RunningUpdated(state.running.clone());
     let console_state = Arc::clone(console_state);
     let event_tx = event_tx.clone();
@@ -325,6 +337,7 @@ fn start_execution(
             &limits,
             pty_manager,
             cancel_token,
+            force_cancel_token,
         )
         .await;
         let duration = started_at.elapsed();
@@ -360,9 +373,14 @@ fn remove_pending(state: &mut ServiceState, id: &str) -> Option<PendingRequest> 
 struct ServiceState {
     pending: Vec<PendingRequest>,
     running: Vec<protocol::control::RunningSnapshot>,
-    running_tokens: HashMap<String, CancellationToken>,
+    running_tokens: HashMap<String, RunningTokens>,
     history: Vec<ResultSnapshot>,
     history_limit: usize,
+}
+
+struct RunningTokens {
+    cancel: CancellationToken,
+    force_cancel: CancellationToken,
 }
 
 impl ServiceState {
@@ -380,11 +398,18 @@ impl ServiceState {
         &mut self,
         running: protocol::control::RunningSnapshot,
         token: CancellationToken,
+        force_token: CancellationToken,
     ) {
         self.running
             .retain(|item| item.common.id != running.common.id);
         self.running.insert(0, running.clone());
-        self.running_tokens.insert(running.common.id, token);
+        self.running_tokens.insert(
+            running.common.id,
+            RunningTokens {
+                cancel: token,
+                force_cancel: force_token,
+            },
+        );
     }
 
     fn finish_running(&mut self, id: &str) -> bool {
@@ -395,8 +420,17 @@ impl ServiceState {
     }
 
     fn cancel_running(&mut self, id: &str) -> bool {
-        if let Some(token) = self.running_tokens.get(id) {
-            token.cancel();
+        if let Some(tokens) = self.running_tokens.get(id) {
+            tokens.cancel.cancel();
+            return true;
+        }
+        false
+    }
+
+    fn force_cancel_running(&mut self, id: &str) -> bool {
+        if let Some(tokens) = self.running_tokens.get(id) {
+            tokens.cancel.cancel();
+            tokens.force_cancel.cancel();
             return true;
         }
         false

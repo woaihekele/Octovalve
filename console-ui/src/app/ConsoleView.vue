@@ -12,6 +12,7 @@ import {
   denyCommand,
   fetchSnapshot,
   fetchTargets,
+  forceCancelCommand,
   getProxyConfigStatus,
   listProfiles,
   logUiEvent,
@@ -104,6 +105,12 @@ const lastNonTerminalFocus = ref<HTMLElement | null>(null);
 let streamHandle: ConsoleStreamHandle | null = null;
 const lastPendingCounts = ref<Record<string, number>>({});
 const resetTargetsToken = ref(0);
+const forceCancelOpen = ref(false);
+const forceCancelTarget = ref<string | null>(null);
+const forceCancelId = ref<string | null>(null);
+const forceCancelPending = ref(false);
+let forceCancelCheckToken = 0;
+const FORCE_CANCEL_GRACE_MS = 2000;
 
 const pendingTotal = computed(() => targets.value.reduce((sum, target) => sum + target.pending_count, 0));
 const selectedTarget = computed(() => targets.value.find((target) => target.name === selectedTargetName.value) ?? null);
@@ -1492,11 +1499,63 @@ async function deny(id: string) {
 
 async function cancel(id: string) {
   if (!selectedTargetName.value) return;
+  const targetName = selectedTargetName.value;
   try {
-    await cancelCommand(selectedTargetName.value, id);
+    await cancelCommand(targetName, id);
+    scheduleForceCancelPrompt(targetName, id);
   } catch (err) {
     showNotification(t('console.notifications.cancelFailed'), undefined, undefined, 'error');
     reportUiError('cancel command failed', err);
+  }
+}
+
+function isCommandRunning(targetName: string, id: string) {
+  const snapshot = snapshots.value[targetName];
+  return snapshot?.running.some((item) => item.id === id) ?? false;
+}
+
+function scheduleForceCancelPrompt(targetName: string, id: string) {
+  const token = ++forceCancelCheckToken;
+  window.setTimeout(async () => {
+    if (token !== forceCancelCheckToken) {
+      return;
+    }
+    await refreshSnapshot(targetName);
+    if (token !== forceCancelCheckToken) {
+      return;
+    }
+    if (!isCommandRunning(targetName, id)) {
+      return;
+    }
+    forceCancelTarget.value = targetName;
+    forceCancelId.value = id;
+    forceCancelOpen.value = true;
+  }, FORCE_CANCEL_GRACE_MS);
+}
+
+function closeForceCancelPrompt() {
+  forceCancelOpen.value = false;
+  forceCancelTarget.value = null;
+  forceCancelId.value = null;
+}
+
+async function confirmForceCancel() {
+  const targetName = forceCancelTarget.value;
+  const id = forceCancelId.value;
+  if (!targetName || !id) {
+    closeForceCancelPrompt();
+    return;
+  }
+  forceCancelPending.value = true;
+  try {
+    await forceCancelCommand(targetName, id);
+    await refreshSnapshot(targetName);
+  } catch (err) {
+    showNotification(t('console.notifications.forceCancelFailed'), undefined, undefined, 'error');
+    reportUiError('force cancel command failed', err);
+  } finally {
+    forceCancelPending.value = false;
+    closeForceCancelPrompt();
   }
 }
 
@@ -1912,6 +1971,14 @@ watch(aiRiskMap, () => {
 
 watch(snapshots, () => {
   scheduleAutoApproveLowRisk();
+  if (
+    forceCancelOpen.value &&
+    forceCancelTarget.value &&
+    forceCancelId.value &&
+    !isCommandRunning(forceCancelTarget.value, forceCancelId.value)
+  ) {
+    closeForceCancelPrompt();
+  }
 });
 
 watch(
@@ -2105,6 +2172,25 @@ watch(
           <n-button @click="cancelQuickProfileSwitch">{{ $t('common.cancel') }}</n-button>
           <n-button type="primary" @click="confirmQuickProfileSwitch">
             {{ $t('settings.profile.quickSwitchConfirm') }}
+          </n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="forceCancelOpen" :mask-closable="false" :close-on-esc="true">
+    <n-card size="small" class="w-[24rem]" :bordered="true">
+      <template #header>{{ $t('target.forceCancel.title') }}</template>
+      <div class="text-sm text-foreground-muted">
+        {{ $t('target.forceCancel.hint') }}
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button :disabled="forceCancelPending" @click="closeForceCancelPrompt">
+            {{ $t('common.cancel') }}
+          </n-button>
+          <n-button type="error" :loading="forceCancelPending" @click="confirmForceCancel">
+            {{ $t('target.forceCancel.action') }}
           </n-button>
         </div>
       </template>

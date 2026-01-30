@@ -56,6 +56,7 @@ export const messages = {
         approveFailed: '批准失败',
         denyFailed: '拒绝失败',
         cancelFailed: '取消失败',
+        forceCancelFailed: '强制终止失败',
       },
       startup: {
         title: '启动环境',
@@ -198,6 +199,11 @@ export const messages = {
         approve: '批准',
         deny: '拒绝',
         cancel: '取消',
+      },
+      forceCancel: {
+        title: '强制终止命令',
+        hint: '取消未生效，是否强制终止该命令？',
+        action: '强制终止',
       },
       ai: {
         title: 'AI 风险评估',
@@ -622,6 +628,7 @@ export const messages = {
         approveFailed: 'Approve failed',
         denyFailed: 'Deny failed',
         cancelFailed: 'Cancel failed',
+        forceCancelFailed: 'Force terminate failed',
       },
       startup: {
         title: 'Startup Setup',
@@ -764,6 +771,11 @@ export const messages = {
         approve: 'Approve',
         deny: 'Deny',
         cancel: 'Cancel',
+      },
+      forceCancel: {
+        title: 'Force terminate command',
+        hint: 'Cancel did not take effect. Force terminate this command?',
+        action: 'Force terminate',
       },
       ai: {
         title: 'AI Risk',

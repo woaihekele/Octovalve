@@ -42,6 +42,7 @@ pub fn run() {
             crate::commands::console::proxy_approve,
             crate::commands::console::proxy_deny,
             crate::commands::console::proxy_cancel,
+            crate::commands::console::proxy_force_cancel,
             crate::commands::console::proxy_list_target_dirs,
             crate::commands::console::proxy_start_upload,
             crate::commands::console::proxy_upload_status,

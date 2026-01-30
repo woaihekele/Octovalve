@@ -42,8 +42,9 @@ pub(super) async fn execute_request(
     limits: &LimitsConfig,
     pty_manager: Option<Arc<PtySessionManager>>,
     cancel: CancellationToken,
+    force_cancel: CancellationToken,
 ) -> CommandResponse {
-    if cancel.is_cancelled() {
+    if cancel.is_cancelled() || force_cancel.is_cancelled() {
         return CommandResponse::cancelled(request.id.clone(), None, None, None);
     }
 
@@ -87,6 +88,7 @@ pub(super) async fn execute_request(
             request,
             max_bytes,
             cancel.clone(),
+            force_cancel.clone(),
         ))
     } else {
         Box::pin(execute_ssh_command(
@@ -94,6 +96,7 @@ pub(super) async fn execute_request(
             request,
             max_bytes,
             cancel.clone(),
+            force_cancel.clone(),
             target.tty,
         ))
     };
@@ -176,13 +179,18 @@ impl PtySessionManager {
         request: &CommandRequest,
         max_bytes: usize,
         cancel: CancellationToken,
+        force_cancel: CancellationToken,
     ) -> anyhow::Result<PtyCommandOutcome> {
         let mut state = self.state.lock().await;
         if state.session.is_none() {
             state.session = Some(PtySession::spawn(&self.target)?);
         }
         let result = match state.session.as_mut() {
-            Some(session) => session.run_command(request, max_bytes, cancel).await,
+            Some(session) => {
+                session
+                    .run_command(request, max_bytes, cancel, force_cancel)
+                    .await
+            }
             None => Err(anyhow::anyhow!("pty session not available")),
         };
         match result {
@@ -205,6 +213,7 @@ async fn execute_ssh_command(
     request: &CommandRequest,
     max_bytes: usize,
     cancel: CancellationToken,
+    force_cancel: CancellationToken,
     tty: bool,
 ) -> anyhow::Result<ExecutionOutcome> {
     let ssh = target
@@ -249,6 +258,10 @@ async fn execute_ssh_command(
             cancelled = true;
             terminate_child(&mut child).await
         }
+        _ = force_cancel.cancelled() => {
+            cancelled = true;
+            terminate_child(&mut child).await
+        }
     };
     let exit_code = status.and_then(|status| status.code());
 
@@ -277,8 +290,11 @@ async fn execute_pty_command(
     request: &CommandRequest,
     max_bytes: usize,
     cancel: CancellationToken,
+    force_cancel: CancellationToken,
 ) -> anyhow::Result<ExecutionOutcome> {
-    let outcome = manager.run_command(request, max_bytes, cancel).await?;
+    let outcome = manager
+        .run_command(request, max_bytes, cancel, force_cancel)
+        .await?;
     Ok(build_execution_outcome(
         outcome.exit_code,
         outcome.output,
@@ -520,6 +536,7 @@ impl PtySession {
         request: &CommandRequest,
         max_bytes: usize,
         cancel: CancellationToken,
+        force_cancel: CancellationToken,
     ) -> anyhow::Result<PtyCommandOutcome> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
@@ -553,15 +570,41 @@ impl PtySession {
             }
 
             if cancelled {
+                if force_cancel.is_cancelled() {
+                    if let Err(err) = self.child.kill() {
+                        tracing::warn!(error = %err, "failed to kill pty child");
+                    }
+                    return Ok(PtyCommandOutcome {
+                        exit_code: None,
+                        output,
+                        truncated,
+                        cancelled: true,
+                        needs_reset: true,
+                    });
+                }
                 let deadline = cancel_deadline.unwrap_or_else(|| {
                     std::time::Instant::now() + Duration::from_secs(PTY_CANCEL_GRACE_SECS)
                 });
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-                match tokio::time::timeout(remaining, self.reader_rx.recv()).await {
-                    Ok(Some(chunk)) => {
-                        self.buffer.extend(chunk);
+                tokio::select! {
+                    chunk = self.reader_rx.recv() => {
+                        match chunk {
+                            Some(chunk) => self.buffer.extend(chunk),
+                            None => {
+                                return Ok(PtyCommandOutcome {
+                                    exit_code: None,
+                                    output,
+                                    truncated,
+                                    cancelled: true,
+                                    needs_reset: true,
+                                });
+                            }
+                        }
                     }
-                    Ok(None) => {
+                    _ = force_cancel.cancelled() => {
+                        if let Err(err) = self.child.kill() {
+                            tracing::warn!(error = %err, "failed to kill pty child");
+                        }
                         return Ok(PtyCommandOutcome {
                             exit_code: None,
                             output,
@@ -570,7 +613,7 @@ impl PtySession {
                             needs_reset: true,
                         });
                     }
-                    Err(_) => {
+                    _ = tokio::time::sleep(remaining) => {
                         return Ok(PtyCommandOutcome {
                             exit_code: None,
                             output,
@@ -602,6 +645,19 @@ impl PtySession {
                         if let Err(err) = send_ctrl_c(&mut self.writer) {
                             tracing::warn!(error = %err, "failed to send pty interrupt");
                         }
+                    }
+                    _ = force_cancel.cancelled() => {
+                        cancelled = true;
+                        if let Err(err) = self.child.kill() {
+                            tracing::warn!(error = %err, "failed to kill pty child");
+                        }
+                        return Ok(PtyCommandOutcome {
+                            exit_code: None,
+                            output,
+                            truncated,
+                            cancelled: true,
+                            needs_reset: true,
+                        });
                     }
                 }
             }

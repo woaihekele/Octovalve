@@ -4,6 +4,7 @@ pub(crate) enum ControlCommand {
     Approve(String),
     Deny(String),
     Cancel(String),
+    ForceCancel(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
