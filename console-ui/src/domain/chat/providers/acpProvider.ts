@@ -54,6 +54,8 @@ type AcpProviderContext = {
   acpCapabilities: Ref<AgentCapabilities | null>;
   acpCwd: Ref<string | null>;
   acpLoadedSessionId: Ref<string | null>;
+  acpTargetsContext: Ref<string | null>;
+  acpTargetsSignature: Ref<string>;
   acpHistorySummaries: Ref<AcpSessionSummary[]>;
   acpHistoryLoading: Ref<boolean>;
   currentAssistantMessageId: Ref<string | null>;
@@ -84,6 +86,8 @@ type AcpProviderDeps = {
 export function createAcpProvider(context: AcpProviderContext, deps: AcpProviderDeps) {
   let acpEventUnlisten: (() => void) | null = null;
   let acpHistoryLoadToken = 0;
+  let lastInjectedTargetSignature = '';
+  let lastInjectedSessionId: string | null = null;
 
   function applyAcpHistoryToActiveSession(history: unknown) {
     const session = context.activeSession.value;
@@ -357,7 +361,24 @@ export function createAcpProvider(context: AcpProviderContext, deps: AcpProvider
     const resolvedCwd = cwd ?? context.acpCwd.value ?? '.';
     await ensureAcpSessionLoaded(resolvedCwd);
 
-    const promptBlocks = buildPromptBlocks(options);
+    const activeSessionId = context.activeSession.value?.acpSessionId ?? null;
+    if (activeSessionId && activeSessionId !== lastInjectedSessionId) {
+      lastInjectedSessionId = activeSessionId;
+      lastInjectedTargetSignature = '';
+    }
+
+    let promptBlocks = buildPromptBlocks(options);
+    const targetsContext = context.acpTargetsContext.value;
+    const targetsSignature = context.acpTargetsSignature.value;
+    if (
+      promptBlocks.length > 0 &&
+      targetsContext &&
+      targetsSignature &&
+      targetsSignature !== lastInjectedTargetSignature
+    ) {
+      promptBlocks = [{ type: 'text', text: targetsContext }, ...promptBlocks];
+      lastInjectedTargetSignature = targetsSignature;
+    }
     const acpPromptBlocks = toAcpPromptBlocks(promptBlocks);
     if (acpPromptBlocks.length === 0) {
       return;
@@ -441,6 +462,8 @@ export function createAcpProvider(context: AcpProviderContext, deps: AcpProvider
     context.acpCapabilities.value = null;
     context.acpCwd.value = null;
     context.acpLoadedSessionId.value = null;
+    lastInjectedTargetSignature = '';
+    lastInjectedSessionId = null;
     context.providerInitialized.value = false;
     context.setConnected(false);
   }

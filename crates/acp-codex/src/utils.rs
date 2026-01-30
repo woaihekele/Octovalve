@@ -223,7 +223,7 @@ pub(crate) fn load_mcp_servers(rollout_path: &Path) -> Result<Option<Vec<Value>>
     Ok(Some(normalize_mcp_servers(&servers)))
 }
 
-fn normalize_mcp_servers(servers: &[Value]) -> Vec<Value> {
+pub(crate) fn normalize_mcp_servers(servers: &[Value]) -> Vec<Value> {
     let mut normalized = Vec::new();
     for server in servers {
         let Value::Object(map) = server else {

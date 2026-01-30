@@ -281,6 +281,7 @@ const providerSwitchConfirmOpen = ref(false);
 const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
 const acpRestarting = ref(false);
+const acpInitPending = ref(false);
 const chatInputLocked = computed(() => providerSwitching.value || acpRestarting.value);
 const showChatDropHint = computed(() => isFileDragging.value);
 const pendingProviderLabel = computed(() => {
@@ -714,6 +715,7 @@ async function handleQuickProfileSwitch(profileName: string) {
     // 否则会出现“已切换”提示很快弹出，但右侧 target 仍是旧数据/空数据的错位体验。
     await startConsoleSession();
     await Promise.all([waitForWsConnected(15_000), fetchTargetsUntilReady(15_000, 500)]);
+    await syncAcpAfterTargetsReady();
     switchLogStatusMessage.value = t('settings.log.status.console.done');
     showNotification(t('settings.apply.switchProfile', { name: profileName }));
     success = true;
@@ -756,6 +758,7 @@ function confirmQuickProfileSwitch() {
 type ChatProviderInitOptions = {
   provider?: 'openai' | 'acp';
   config?: AppSettings['chat'];
+  allowDefer?: boolean;
 };
 
 let chatProviderInitChain: Promise<void> = Promise.resolve();
@@ -787,14 +790,40 @@ function buildAcpArgs(config: AppSettings['chat']['acp']) {
   return args.join(' ').trim();
 }
 
+function isAcpTargetsReady() {
+  return connectionState.value === 'connected' && targets.value.length > 0;
+}
+
+async function ensureAcpTargetsReady(allowDefer: boolean) {
+  if (isAcpTargetsReady()) {
+    return true;
+  }
+  if (allowDefer) {
+    acpInitPending.value = true;
+    return false;
+  }
+  if (booting.value || quickProfileSwitching.value || startupBusy.value || connectionState.value === 'connecting') {
+    await Promise.all([waitForWsConnected(15_000), fetchTargetsUntilReady(15_000, 500)]);
+    return true;
+  }
+  acpInitPending.value = true;
+  throw new Error(t('chat.acpNotReady'));
+}
+
 async function initChatProviderInternal(options: ChatProviderInitOptions = {}) {
   const chatConfig = options.config ?? settings.value.chat;
   const provider = options.provider ?? chatConfig.provider;
   try {
     if (provider === 'openai') {
+      acpInitPending.value = false;
       await chatStore.initializeOpenai(chatConfig.openai, chatConfig.mcpConfigJson);
     } else {
       // ACP provider
+      const ready = await ensureAcpTargetsReady(Boolean(options.allowDefer));
+      if (!ready) {
+        return;
+      }
+      acpInitPending.value = false;
       const acpArgs = buildAcpArgs(chatConfig.acp);
       await chatStore.initializeAcp('.', acpArgs, chatConfig.mcpConfigJson);
 
@@ -822,7 +851,7 @@ function initChatProvider(options: ChatProviderInitOptions = {}) {
 // Call init after a short delay to let Tauri initialize.
 // This is fire-and-forget; we surface errors via notification here.
 setTimeout(() => {
-  void initChatProvider().catch((err) => {
+  void initChatProvider({ allowDefer: true }).catch((err) => {
     showNotification(formatErrorForUser(err, t), undefined, undefined, 'error');
   });
 }, 500);
@@ -1062,6 +1091,7 @@ function resetConsoleTargetsView() {
   snapshotRefreshPending.value = {};
   selectedTargetName.value = null;
   lastPendingCounts.value = {};
+  chatStore.clearAcpTargets();
   // 用于触发子组件在需要时重置自身的局部状态（例如终端/滚动位置）。
   resetTargetsToken.value += 1;
 }
@@ -1217,6 +1247,7 @@ async function applyStartupProfile(): Promise<boolean> {
     startupStatusMessage.value = '';
     await startConsoleSession();
     await Promise.all([waitForWsConnected(15_000), fetchTargetsUntilReady(15_000, 500)]);
+    await syncAcpAfterTargetsReady();
     if (switchLogStarted) {
       switchLogStatusMessage.value = t('settings.log.status.console.done');
     }
@@ -1253,6 +1284,9 @@ async function resumeConsoleSession() {
   if (ok && connectionState.value === 'connecting') {
     connectionState.value = 'connected';
     hasConnected.value = true;
+  }
+  if (ok) {
+    await syncAcpAfterTargetsReady();
   }
   if (!ok) {
     await loadStartupProfiles();
@@ -1371,6 +1405,7 @@ function shouldRefreshSnapshotFromTargetUpdate(target: TargetInfo, previousPendi
 
 function updateTargets(list: TargetInfo[]) {
   targets.value = list;
+  chatStore.updateAcpTargets(list);
   if (list.length === 0) {
     selectedTargetName.value = null;
     return;
@@ -1387,6 +1422,9 @@ function updateTargets(list: TargetInfo[]) {
     lastPendingCounts.value[target.name] = target.pending_count;
   });
   void chatStore.refreshOpenaiTools(list);
+  if (acpInitPending.value) {
+    void syncAcpAfterTargetsReady();
+  }
 }
 
 function applyTargetUpdate(target: TargetInfo) {
@@ -1396,6 +1434,7 @@ function applyTargetUpdate(target: TargetInfo) {
   } else {
     targets.value.splice(index, 1, target);
   }
+  chatStore.updateAcpTargets(targets.value);
 
   const previous = lastPendingCounts.value[target.name] ?? 0;
   if (settings.value.notificationsEnabled && target.pending_count > previous) {
@@ -1653,15 +1692,23 @@ function hasAcpRestartSettingsChanged(previous: AppSettings, next: AppSettings) 
   );
 }
 
-async function restartAcpSessionWithLog(createSession: boolean, config?: AppSettings['chat']) {
+async function restartAcpSessionWithLog(
+  createSession: boolean,
+  config?: AppSettings['chat'],
+  deferOpenMs?: number
+): Promise<boolean> {
   if (acpRestarting.value) {
-    return;
+    return false;
   }
   acpRestarting.value = true;
   chatStore.setConnected(false);
   let success = false;
   try {
-    await startSwitchLogPolling('acp');
+    if (deferOpenMs && deferOpenMs > 0) {
+      await startSwitchLogPollingDeferred('acp', deferOpenMs);
+    } else {
+      await startSwitchLogPolling('acp');
+    }
     switchLogStatusMessage.value = t('settings.log.status.acp.pending');
     await initChatProvider({ provider: 'acp', config: config ?? settings.value.chat });
     if (createSession) {
@@ -1680,6 +1727,32 @@ async function restartAcpSessionWithLog(createSession: boolean, config?: AppSett
       switchLogOpen.value = false;
     }
   }
+  return success;
+}
+
+async function syncAcpAfterTargetsReady() {
+  if (!tauriAvailable) {
+    return;
+  }
+  if (settings.value.chat.provider !== 'acp') {
+    acpInitPending.value = false;
+    return;
+  }
+  if (!isAcpTargetsReady() || providerSwitching.value || acpRestarting.value) {
+    return;
+  }
+  if (switchLogInProgress.value) {
+    try {
+      await initChatProvider({ provider: 'acp', config: settings.value.chat });
+      acpInitPending.value = false;
+    } catch (err) {
+      acpInitPending.value = true;
+      showNotification(t('chat.error', { error: formatErrorForUser(err, t) }), undefined, undefined, 'error');
+    }
+    return;
+  }
+  const ok = await restartAcpSessionWithLog(false, settings.value.chat, 5000);
+  acpInitPending.value = !ok;
 }
 
 type ChatProviderRefreshOptions = {

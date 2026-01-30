@@ -28,8 +28,8 @@ use crate::sessions::{delete_workspace_session, list_workspace_sessions};
 use crate::state::AcpState;
 use crate::utils::{
     build_mcp_overrides, build_new_conversation_params, insert_dual, load_mcp_servers,
-    load_rollout_history, normalize_cwd, save_mcp_servers, update_with_type, write_temp_image,
-    SessionHandler,
+    load_rollout_history, normalize_cwd, normalize_mcp_servers, save_mcp_servers, update_with_type,
+    write_temp_image, SessionHandler,
 };
 use crate::writer::AcpWriter;
 
@@ -750,13 +750,19 @@ async fn handle_acp_request_inner(
                     None
                 }
             };
-            let mcp_servers = if let Some(servers) = stored_mcp_servers {
-                servers
-            } else if !params.mcp_servers.is_empty() {
-                if let Err(err) = save_mcp_servers(&rollout_path, &params.mcp_servers) {
+            let requested_mcp_servers = normalize_mcp_servers(&params.mcp_servers);
+            let use_requested = !requested_mcp_servers.is_empty()
+                && match stored_mcp_servers.as_ref() {
+                    Some(stored) => stored != &requested_mcp_servers,
+                    None => true,
+                };
+            let mcp_servers = if use_requested {
+                if let Err(err) = save_mcp_servers(&rollout_path, &requested_mcp_servers) {
                     log_fmt(LogLevel::Warn, format_args!("写入 MCP 会话配置失败: {err}"));
                 }
-                params.mcp_servers.clone()
+                requested_mcp_servers
+            } else if let Some(stored) = stored_mcp_servers {
+                stored
             } else {
                 Vec::new()
             };

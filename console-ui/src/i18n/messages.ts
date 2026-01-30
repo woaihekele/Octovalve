@@ -86,6 +86,7 @@ export const messages = {
       error: '聊天出错：{error}',
       errorMessage: '错误：{error}',
       unknownError: '未知错误',
+      acpNotReady: 'ACP 需要先启动环境并加载目标列表，请完成环境启动后重试。',
       sendFailed: '发送消息失败',
       fallbackResponse: '收到你的消息: \"{content}\"\n\n这是一个模拟的 AI 响应。实际实现将连接到 ACP 后端。',
       action: {
@@ -658,6 +659,7 @@ export const messages = {
       error: 'Chat error: {error}',
       errorMessage: 'Error: {error}',
       unknownError: 'Unknown error',
+      acpNotReady: 'ACP requires the environment to be started and targets loaded. Please finish startup and retry.',
       sendFailed: 'Failed to send message',
       fallbackResponse: 'Received your message: \"{content}\"\n\nThis is a simulated AI response. The real implementation will connect to the ACP backend.',
       action: {

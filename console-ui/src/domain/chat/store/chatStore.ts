@@ -59,6 +59,8 @@ export const useChatStore = defineStore('chat', () => {
   const acpHistoryLoading = ref(false);
   const currentAssistantMessageId = ref<string | null>(null);
   const currentAssistantStreamProvider = ref<ChatProvider | null>(null);
+  const acpTargetsSignature = ref('');
+  const acpTargetsContext = ref<string | null>(null);
 
   const acpSupportsImages = computed(() => {
     const promptCaps = acpCapabilities.value?.promptCapabilities as
@@ -77,6 +79,36 @@ export const useChatStore = defineStore('chat', () => {
     }
     return true;
   });
+
+  function buildTargetSignature(targets: TargetInfo[]) {
+    const names = targets.map((t) => t.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    const defaultTarget = targets.find((t) => t.is_default)?.name ?? '';
+    return `${names.join(',')}|${defaultTarget}`;
+  }
+
+  function buildAcpTargetsContext(targets: TargetInfo[]) {
+    const names = targets.map((t) => t.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    if (names.length === 0) {
+      return null;
+    }
+    const defaultTarget = targets.find((t) => t.is_default)?.name;
+    const defaultNote = defaultTarget ? ` Default target: ${defaultTarget}.` : '';
+    return `Available targets: ${names.join(', ')}.${defaultNote} Use these names with run_command target.`;
+  }
+
+  function updateAcpTargets(targets: TargetInfo[]) {
+    const signature = buildTargetSignature(targets);
+    if (signature === acpTargetsSignature.value && acpTargetsContext.value) {
+      return;
+    }
+    acpTargetsSignature.value = signature;
+    acpTargetsContext.value = buildAcpTargetsContext(targets);
+  }
+
+  function clearAcpTargets() {
+    acpTargetsSignature.value = '';
+    acpTargetsContext.value = null;
+  }
 
   let pendingAssistantContent = '';
   let pendingAssistantReasoning = '';
@@ -422,6 +454,8 @@ export const useChatStore = defineStore('chat', () => {
       acpCapabilities,
       acpCwd,
       acpLoadedSessionId,
+      acpTargetsContext,
+      acpTargetsSignature,
       acpHistorySummaries,
       acpHistoryLoading,
       currentAssistantMessageId,
@@ -597,6 +631,8 @@ export const useChatStore = defineStore('chat', () => {
     sendAcpMessage,
     cancelAcp,
     stopAcp,
+    updateAcpTargets,
+    clearAcpTargets,
     // OpenAI
     openaiInitialized,
     initializeOpenai,
