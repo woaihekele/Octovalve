@@ -15,7 +15,7 @@ use crate::runtime::emit_target_update;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec};
 
 use super::events::{PendingRequest, ServerEvent};
-use super::executor::{execute_request, PtySessionManager};
+use super::executor::{execute_request, force_kill_remote, PtySessionManager};
 use super::history;
 use super::output::spawn_write_result_record;
 use super::policy::{request_summary, LimitsConfig, Whitelist};
@@ -254,6 +254,13 @@ async fn handle_command(
         ControlCommand::ForceCancel(id) => {
             if state.force_cancel_running(&id) {
                 tracing::info!(event = "request_force_cancelled", target = %target_name, id = %id);
+                let target = target.clone();
+                let request_id = id.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = force_kill_remote(&target, &request_id).await {
+                        tracing::warn!(error = %err, "force cancel remote kill failed");
+                    }
+                });
             } else {
                 tracing::warn!(event = "request_force_cancel_miss", target = %target_name, id = %id);
             }

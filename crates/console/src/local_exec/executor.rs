@@ -130,6 +130,33 @@ pub(super) async fn execute_request(
     }
 }
 
+pub(super) async fn force_kill_remote(target: &TargetSpec, request_id: &str) -> anyhow::Result<()> {
+    let ssh = target
+        .ssh
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
+    let mut cmd = Command::new("ssh");
+    if let Some(password) = target.ssh_password.as_deref() {
+        apply_askpass_env(&mut cmd, password)?;
+    }
+    cmd.arg("-T");
+    apply_ssh_options(&mut cmd, target.ssh_password.is_some());
+    if let Some(control_path) = resolve_control_path(target) {
+        apply_control_master(&mut cmd, &control_path);
+    }
+    cmd.args(&target.ssh_args);
+    cmd.arg(ssh);
+    cmd.arg(build_force_kill_command(request_id));
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::null());
+    cmd.kill_on_drop(true);
+    apply_process_group(&mut cmd);
+    let mut child = cmd.spawn().context("spawn force kill ssh command")?;
+    let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    Ok(())
+}
+
 struct ExecutionResult {
     exit_code: Option<i32>,
     stdout: Option<String>,
@@ -338,6 +365,7 @@ fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String
         command.push(' ');
     }
     command.push_str(request.raw_command.trim());
+    let command = wrap_command_with_pidfile(&command, &request.id);
     format!(
         "{shell_prefix}bash --noprofile -lc {}",
         shell_escape(&command)
@@ -358,6 +386,7 @@ fn build_session_command(request: &CommandRequest) -> String {
         command.push(' ');
     }
     command.push_str(request.raw_command.trim());
+    let command = wrap_command_with_pidfile(&command, &request.id);
     if let Some(cwd) = request
         .cwd
         .as_deref()
@@ -366,6 +395,30 @@ fn build_session_command(request: &CommandRequest) -> String {
         return format!("(cd {} && {})", shell_escape(cwd), command);
     }
     command
+}
+
+fn sanitize_request_id(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn wrap_command_with_pidfile(command: &str, request_id: &str) -> String {
+    let safe_id = sanitize_request_id(request_id);
+    let pidfile = format!("$HOME/.octovalve/run/{safe_id}.pid");
+    let inner = format!("bash --noprofile -lc {}", shell_escape(command));
+    format!(
+        "mkdir -p \"$HOME/.octovalve/run\"; pidfile=\"{pidfile}\"; rm -f \"$pidfile\"; \
+setsid {inner} & pid=$!; echo $pid > \"$pidfile\"; wait $pid; status=$?; \
+rm -f \"$pidfile\"; exit $status"
+    )
 }
 
 fn build_pty_command(id: u64, request: &CommandRequest) -> String {
@@ -383,6 +436,19 @@ fn pty_begin_marker(id: u64) -> Vec<u8> {
 
 fn pty_end_prefix(id: u64) -> Vec<u8> {
     format!("{PTY_MARKER_END_PREFIX}{id}__").into_bytes()
+}
+
+fn build_force_kill_command(request_id: &str) -> String {
+    let safe_id = sanitize_request_id(request_id);
+    let pidfile = format!("$HOME/.octovalve/run/{safe_id}.pid");
+    let script = format!(
+        "pidfile=\"{pidfile}\"; if [ -f \"$pidfile\" ]; then \
+pid=$(cat \"$pidfile\" 2>/dev/null || true); \
+if [ -n \"$pid\" ]; then kill -TERM -- -\"$pid\" 2>/dev/null || true; sleep 2; \
+kill -KILL -- -\"$pid\" 2>/dev/null || true; fi; \
+rm -f \"$pidfile\" 2>/dev/null || true; fi"
+    );
+    format!("bash --noprofile -lc {}", shell_escape(&script))
 }
 
 fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
