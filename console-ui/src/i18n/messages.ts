@@ -400,7 +400,7 @@ export const messages = {
           title: 'ACP 配置',
           arguments: 'Codex 路径',
           argumentsHelp:
-            '填写 `codex` 可执行文件的绝对路径（可选；DMG/Finder 启动时推荐配置，例如：/opt/homebrew/bin/codex）。留空则从 PATH 查找。',
+            '填写 `codex` 可执行文件的绝对路径（可选）。可在终端运行 `which codex` 查看路径；留空则从 PATH 查找。',
           approvalPolicy: {
             label: '审批策略',
             help: '决定何时请求授权执行',
@@ -973,7 +973,7 @@ export const messages = {
           title: 'ACP Settings',
           arguments: 'Codex Path',
           argumentsHelp:
-            'Absolute path to the `codex` executable (optional; recommended when launching from DMG/Finder, e.g. /opt/homebrew/bin/codex). Leave empty to resolve via PATH.',
+            'Absolute path to the `codex` executable (optional). Use `which codex` in a terminal to find it; leave empty to resolve via PATH.',
           approvalPolicy: {
             label: 'Approval Policy',
             help: 'When to request execution approvals',
