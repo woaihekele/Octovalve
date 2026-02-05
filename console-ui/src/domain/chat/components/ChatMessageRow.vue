@@ -74,6 +74,7 @@
               :streaming="isStreaming"
               :content-key="`chat-${message.id}`"
               :smooth-options="smoothOptions"
+              :prepare-streaming-content="prepareAssistantStreamingContent"
             />
           </template>
           <template v-else>
@@ -235,14 +236,19 @@ function handleToggleThinkingBlock(blockId: string) {
 }
 
 const assistantMarkdown = computed(() => {
-  const response = responseContent.value;
-  const cursor = isStreaming.value ? '\n\n<span class="chat-row__cursor"></span>' : '';
-  const base = response || '';
-  if (!base && isStreaming.value) {
-    return '<span class="chat-row__cursor"></span>';
-  }
-  return `${base}${cursor}`;
+  // IMPORTANT:
+  // Do not inject a cursor marker into the streamed `text` itself.
+  // `ChatMarkdown` (useSmoothStream) relies on "next text startsWith(prev text)" to compute deltas.
+  // If we append HTML like `<span class="...">` into the text on every render, the cursor sits at
+  // the end and new tokens are inserted before it, so the prefix check fails and the smoother
+  // keeps resetting, which looks like flicker + "not smooth".
+  return responseContent.value || '';
 });
+
+function prepareAssistantStreamingContent(text: string, options: { streaming: boolean }): string {
+  // Disable the "typewriter cursor" for streaming output.
+  return text;
+}
 
 </script>
 
@@ -572,23 +578,12 @@ const assistantMarkdown = computed(() => {
       }
     }
 
-    :deep(hr) {
-      border: none;
-      border-top: 1px solid rgb(var(--color-border));
-      margin: 1em 0;
-    }
-
-    :deep(.chat-row__cursor) {
-      display: inline-block;
-      width: 3px;
-      height: 1.1em;
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-      margin-left: 2px;
-      vertical-align: text-bottom;
-      border-radius: 1px;
-      animation: cursor-blink 0.8s ease-in-out infinite;
-    }
-  }
+	    :deep(hr) {
+	      border: none;
+	      border-top: 1px solid rgb(var(--color-border));
+	      margin: 1em 0;
+	    }
+	  }
 
   &__images {
     display: flex;
@@ -625,17 +620,7 @@ const assistantMarkdown = computed(() => {
     white-space: nowrap;
   }
 
-  // Smooth text appearance for streaming
-  &--streaming {
-    .chat-row__text {
-      :deep(p:last-child),
-      :deep(li:last-child),
-      :deep(code:last-child) {
-        animation: text-appear 0.1s ease-out;
-      }
-    }
-  }
-}
+	}
 
 @keyframes spin {
   to {
@@ -650,26 +635,6 @@ const assistantMarkdown = computed(() => {
   }
   30% {
     transform: translateY(-6px);
-    opacity: 1;
-  }
-}
-
-@keyframes cursor-blink {
-  0%, 100% {
-    opacity: 1;
-    transform: scaleY(1);
-  }
-  50% {
-    opacity: 0.3;
-    transform: scaleY(0.8);
-  }
-}
-
-@keyframes text-appear {
-  from {
-    opacity: 0.7;
-  }
-  to {
     opacity: 1;
   }
 }
