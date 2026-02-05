@@ -41,14 +41,17 @@
           {{ $t('chat.history.empty') }}
         </div>
 
-        <div v-else class="max-h-[50vh] overflow-auto scrollbar-chat rounded border border-border">
+        <div
+          v-else
+          class="max-h-[50vh] overflow-y-auto overflow-x-hidden scrollbar-chat rounded border border-border"
+        >
           <div
             v-for="s in sortedSessions"
             :key="s.id"
-            class="flex items-center justify-between gap-3 px-3 py-2 border-b border-border last:border-b-0"
+            class="flex min-w-0 items-center justify-between gap-3 px-3 py-2 border-b border-border last:border-b-0"
           >
             <button
-              class="flex-1 text-left"
+              class="flex-1 min-w-0 overflow-hidden text-left"
               :class="s.id === props.activeSessionId ? 'text-foreground' : 'text-foreground-muted'"
               @click="emit('select', s.id)"
             >
