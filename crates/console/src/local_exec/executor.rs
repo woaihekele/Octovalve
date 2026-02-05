@@ -923,6 +923,11 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 mod tests {
     use super::*;
 
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
     fn sample_target() -> TargetSpec {
         TargetSpec {
             name: "dev".to_string(),
@@ -1099,6 +1104,7 @@ mod tests {
 
     #[test]
     fn resolve_exec_locale_prefers_target() {
+        let _guard = env_lock().lock().unwrap();
         let target = TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
@@ -1121,6 +1127,7 @@ mod tests {
 
     #[test]
     fn resolve_exec_locale_uses_env_fallback() {
+        let _guard = env_lock().lock().unwrap();
         let target = TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
@@ -1143,6 +1150,7 @@ mod tests {
 
     #[test]
     fn resolve_exec_locale_uses_app_language() {
+        let _guard = env_lock().lock().unwrap();
         let target = TargetSpec {
             name: "dev".to_string(),
             desc: "dev".to_string(),
