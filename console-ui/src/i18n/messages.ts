@@ -104,6 +104,9 @@ export const messages = {
         confirmTitle: '清空历史会话',
         confirmHint: '清空后无法恢复，是否继续？',
         confirmAction: '确认清空',
+        deleteConfirmTitle: '删除历史会话',
+        deleteConfirmHint: '确认删除会话「{title}」？删除后无法恢复。',
+        deleteConfirmAction: '确认删除',
         meta: '{count} 条消息 · {time}',
       },
       input: {
@@ -677,6 +680,9 @@ export const messages = {
         confirmTitle: 'Clear chat history',
         confirmHint: 'This cannot be undone. Continue?',
         confirmAction: 'Clear',
+        deleteConfirmTitle: 'Delete session',
+        deleteConfirmHint: 'Delete session \"{title}\"? This cannot be undone.',
+        deleteConfirmAction: 'Delete',
         meta: '{count} messages · {time}',
       },
       input: {

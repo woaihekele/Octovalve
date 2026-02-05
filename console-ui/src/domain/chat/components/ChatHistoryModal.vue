@@ -61,7 +61,7 @@
 
             <div class="flex items-center gap-2">
               <span v-if="s.id === props.activeSessionId" class="text-xs text-accent">{{ $t('chat.history.current') }}</span>
-              <n-button size="small" quaternary @click="emit('delete', s.id)">{{ $t('common.delete') }}</n-button>
+              <n-button size="small" quaternary @click="openDeleteConfirm(s)">{{ $t('common.delete') }}</n-button>
             </div>
           </div>
         </div>
@@ -78,6 +78,21 @@
         <div class="flex justify-end gap-2">
           <n-button @click="confirmClearAllOpen = false">{{ $t('common.cancel') }}</n-button>
           <n-button type="error" @click="confirmClearAll">{{ $t('chat.history.confirmAction') }}</n-button>
+        </div>
+      </template>
+    </n-card>
+  </n-modal>
+
+  <n-modal v-model:show="confirmDeleteOpen" :mask-closable="true" :close-on-esc="true">
+    <n-card size="small" class="w-[22rem]" :bordered="true">
+      <template #header>{{ $t('chat.history.deleteConfirmTitle') }}</template>
+      <div class="text-sm text-foreground-muted">
+        {{ $t('chat.history.deleteConfirmHint', { title: confirmDeleteTitle || '' }) }}
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <n-button @click="confirmDeleteOpen = false">{{ $t('common.cancel') }}</n-button>
+          <n-button type="error" @click="confirmDelete">{{ $t('chat.history.deleteConfirmAction') }}</n-button>
         </div>
       </template>
     </n-card>
@@ -111,6 +126,9 @@ const sortedSessions = computed(() => {
 
 const { t, locale } = useI18n();
 const confirmClearAllOpen = ref(false);
+const confirmDeleteOpen = ref(false);
+const confirmDeleteSessionId = ref<string | null>(null);
+const confirmDeleteTitle = ref<string>('');
 const historyHint = computed(() =>
   props.provider === 'acp' ? t('chat.history.hintAcp') : t('chat.history.hintOpenai')
 );
@@ -121,6 +139,23 @@ const historyStatusText = computed(() =>
 function confirmClearAll() {
   confirmClearAllOpen.value = false;
   emit('clear-all');
+}
+
+function openDeleteConfirm(session: ChatSession) {
+  confirmDeleteSessionId.value = session.id;
+  confirmDeleteTitle.value = sessionTitle(session);
+  confirmDeleteOpen.value = true;
+}
+
+function confirmDelete() {
+  const sessionId = confirmDeleteSessionId.value;
+  confirmDeleteOpen.value = false;
+  confirmDeleteSessionId.value = null;
+  confirmDeleteTitle.value = '';
+  if (!sessionId) {
+    return;
+  }
+  emit('delete', sessionId);
 }
 
 function formatMeta(session: ChatSession) {
