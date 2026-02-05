@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acp-codex"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "acp-types",
  "anyhow",
@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "acp-types"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -2626,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "octovalve-backend"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "acp-codex",
  "acp-types",
@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "protocol"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "serde",
  "serde_json",

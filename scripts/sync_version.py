@@ -33,6 +33,11 @@ def replace_pattern(path: pathlib.Path, pattern: re.Pattern[str], replacement: s
     raise RuntimeError(f"Pattern not found in {path}")
   path.write_text(updated)
 
+def maybe_replace_pattern(path: pathlib.Path, pattern: re.Pattern[str], replacement: str, count: int = 1) -> None:
+  if not path.exists():
+    return
+  replace_pattern(path, pattern, replacement, count=count)
+
 
 def main() -> int:
   version = load_workspace_version()
@@ -53,6 +58,16 @@ def main() -> int:
     rf'\g<1>{version}\g<3>',
   )
   replace_pattern(
+    ROOT / "console-ui/package-lock.json",
+    re.compile(r'("version"\s*:\s*")([^"]+)(")'),
+    rf'\g<1>{version}\g<3>',
+  )
+  replace_pattern(
+    ROOT / "console-ui/package-lock.json",
+    re.compile(r'("packages"\s*:\s*\{\s*""\s*:\s*\{[\s\S]*?"version"\s*:\s*")([^"]+)(")', re.MULTILINE),
+    rf'\g<1>{version}\g<3>',
+  )
+  maybe_replace_pattern(
     ROOT / "docs/acp-client-integration.md",
     re.compile(r'("version"\s*:\s*")(\d+\.\d+\.\d+)(")'),
     rf'\g<1>{version}\g<3>',
