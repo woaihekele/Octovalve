@@ -140,7 +140,7 @@ fn parse_rollout_summary(path: &Path, workspace_root: &Path) -> Result<Option<Se
                         title = payload
                             .get("message")
                             .and_then(|v| v.as_str())
-                            .map(|v| normalize_title(v));
+                            .map(|v| normalize_title(&strip_tool_context(v)));
                     }
                 }
                 Some("agent_message") => {
@@ -175,6 +175,48 @@ fn parse_rollout_summary(path: &Path, workspace_root: &Path) -> Result<Option<Se
         updated_at,
         message_count,
     }))
+}
+
+fn strip_tool_context(raw: &str) -> String {
+    if raw.trim().is_empty() {
+        return String::new();
+    }
+    let mut text = raw.to_string();
+    // New format: explicit marker block.
+    let start_marker = "[OCTOVALVE_TOOL_CONTEXT]";
+    let end_marker = "[/OCTOVALVE_TOOL_CONTEXT]";
+    loop {
+        let Some(start) = text.find(start_marker) else {
+            break;
+        };
+        let Some(end) = text[start + start_marker.len()..]
+            .find(end_marker)
+            .map(|idx| start + start_marker.len() + idx)
+        else {
+            break;
+        };
+        text.replace_range(start..end + end_marker.len(), "");
+    }
+    text = text.trim().to_string();
+
+    // Legacy format: "Available targets: ... Use these names with run_command target."
+    // Keep whatever comes before/after to preserve the actual user message when it was glued.
+    if let Some(start) = text.find("Available targets:") {
+        let needle = "Use these names with run_command target";
+        if let Some(end) = text[start..]
+            .find(needle)
+            .map(|idx| start + idx + needle.len())
+        {
+            let after = text[end..]
+                .trim_start()
+                .trim_start_matches('.')
+                .trim_start();
+            text = format!("{}{}", text[..start].trim_end(), after);
+            text = text.trim().to_string();
+        }
+    }
+
+    text
 }
 
 fn read_session_metadata(path: &Path) -> Result<Option<SessionMetadata>> {

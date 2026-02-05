@@ -92,8 +92,17 @@ export const useChatStore = defineStore('chat', () => {
       return null;
     }
     const defaultTarget = targets.find((t) => t.is_default)?.name;
-    const defaultNote = defaultTarget ? ` Default target: ${defaultTarget}.` : '';
-    return `Available targets: ${names.join(', ')}.${defaultNote} Use these names with run_command target.`;
+    const defaultLine = defaultTarget ? `Default target: ${defaultTarget}.` : '';
+    const lines = [
+      '[OCTOVALVE_TOOL_CONTEXT]',
+      `Available targets: ${names.join(', ')}.`,
+      defaultLine,
+      'This block is tool context only. Do not respond to it.',
+      'Use these names when calling run_command target.',
+      '[/OCTOVALVE_TOOL_CONTEXT]',
+    ].filter(Boolean);
+    // Keep it stable and easy to strip from history/title later.
+    return lines.join('\n');
   }
 
   function updateAcpTargets(targets: TargetInfo[]) {

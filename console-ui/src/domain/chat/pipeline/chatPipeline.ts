@@ -60,12 +60,44 @@ export function parseAcpHistory(
 
   const parsed: ChatMessage[] = [];
 
+  const stripOctovalveToolContext = (input: string): string => {
+    if (!input) return '';
+    let text = input;
+    // New format (preferred): explicit marker block.
+    const startMarker = '[OCTOVALVE_TOOL_CONTEXT]';
+    const endMarker = '[/OCTOVALVE_TOOL_CONTEXT]';
+    for (;;) {
+      const start = text.indexOf(startMarker);
+      if (start < 0) break;
+      const end = text.indexOf(endMarker, start + startMarker.length);
+      if (end < 0) break;
+      text = (text.slice(0, start) + text.slice(end + endMarker.length)).trim();
+    }
+
+    // Backward-compatible strip for legacy injections that started with "Available targets:".
+    // We remove from "Available targets:" up to and including the trailing "run_command target."
+    // (or "run_command target") if present.
+    const legacyStart = text.indexOf('Available targets:');
+    if (legacyStart >= 0) {
+      const legacyNeedle = 'Use these names with run_command target';
+      const legacyEnd = text.indexOf(legacyNeedle, legacyStart);
+      if (legacyEnd >= 0) {
+        const after = text.slice(legacyEnd + legacyNeedle.length);
+        // Drop an optional trailing period to avoid "target.hi" glue.
+        const afterTrimmed = after.replace(/^\.\s*/, '');
+        text = (text.slice(0, legacyStart) + afterTrimmed).trim();
+      }
+    }
+
+    return text;
+  };
+
   for (let i = 0; i < list.length; i += 1) {
     const item = list[i];
     const obj = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : null;
     const role = toRole(obj?.role ?? obj?.speaker ?? obj?.type);
 
-    const content = toPlainText(
+    let content = toPlainText(
       obj?.content ??
         obj?.text ??
         obj?.message ??
@@ -74,6 +106,10 @@ export function parseAcpHistory(
         obj?.output ??
         obj?.response
     );
+
+    if (role === 'user') {
+      content = stripOctovalveToolContext(content);
+    }
 
     if (!content.trim()) {
       continue;

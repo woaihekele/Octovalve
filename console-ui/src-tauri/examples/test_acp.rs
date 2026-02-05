@@ -425,6 +425,8 @@ async fn spawn_loopback(
     let (server_read, server_write) = tokio::io::split(server_io);
 
     let config = acp_codex::CliConfig {
+        codex_path: None,
+        codex_home: None,
         approval_policy: None,
         sandbox_mode: None,
         app_server_args: Vec::new(),

@@ -6,6 +6,7 @@ import type {
   PlanEntry,
   PlanEntryPriority,
   PlanEntryStatus,
+  PromptBlock,
   SendMessageOptions,
   ToolCall,
 } from '../types';
@@ -88,6 +89,24 @@ export function createAcpProvider(context: AcpProviderContext, deps: AcpProvider
   let acpHistoryLoadToken = 0;
   let lastInjectedTargetSignature = '';
   let lastInjectedSessionId: string | null = null;
+
+  function injectTargetsContext(blocks: PromptBlock[], targetsContext: string): PromptBlock[] {
+    if (!targetsContext.trim() || blocks.length === 0) {
+      return blocks;
+    }
+    // Keep the user's question as the prefix of the first text block to avoid cases like
+    // "…run_command target.hi" where the tool context and user input get glued together.
+    const next = blocks.slice();
+    const idx = next.findIndex((b) => b.type === 'text' && typeof (b as any).text === 'string');
+    const injection = `\n\n${targetsContext}\n\n`;
+    if (idx >= 0) {
+      const b = next[idx] as { type: 'text'; text: string };
+      next[idx] = { ...b, text: `${b.text ?? ''}${injection}` };
+      return next;
+    }
+    next.push({ type: 'text', text: targetsContext });
+    return next;
+  }
 
   function applyAcpHistoryToActiveSession(history: unknown) {
     const session = context.activeSession.value;
@@ -376,7 +395,7 @@ export function createAcpProvider(context: AcpProviderContext, deps: AcpProvider
       targetsSignature &&
       targetsSignature !== lastInjectedTargetSignature
     ) {
-      promptBlocks = [{ type: 'text', text: targetsContext }, ...promptBlocks];
+      promptBlocks = injectTargetsContext(promptBlocks, targetsContext);
       lastInjectedTargetSignature = targetsSignature;
     }
     const acpPromptBlocks = toAcpPromptBlocks(promptBlocks);
