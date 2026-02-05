@@ -1,16 +1,18 @@
-# Octovalve 本地审批命令代理
+# Octovalve 面向 AI Agent 的命令网关
 
 [English](README.md) | 中文
 
-本项目提供本地 MCP stdio 代理与本地审批执行服务。模型只连接本地 stdio，`octovalve-proxy`
-将 `run_command` 请求转发给本地 `console`，由 console 进行人工审批并通过 SSH 在目标机器执行，
-再将结果返回给 MCP client。
+Octovalve 是一个策略驱动的命令网关：通过 `octovalve-proxy` 向 MCP 客户端暴露工具（stdio），
+每次工具调用都会先进行规则校验与执行约束，再根据风险与策略决定自动放行或进入审批队列；通过后经由 SSH 在目标机器执行，
+并将结果返回给 MCP client。所有请求与输出都会落盘留痕，便于审计与追溯。
+
+内置 AI Risk 风险评估：开启后可对低风险命令自动放行；高风险操作仍需审批后才会执行。
 
 ## 组件
 - `octovalve-proxy`：MCP stdio server，提供 `run_command` 工具并转发请求。
-- `console`：本地审批/执行服务，维护目标状态并通过 SSH 执行命令。
-- `protocol`：本地组件间共享的请求/响应结构体。
-- `console-ui`：可选的本地控制台 UI（Tauri + Vue）。
+- `console`：审批/执行服务，维护目标状态并通过 SSH 执行命令。
+- `protocol`：组件间共享的请求/响应结构体。
+- `console-ui`：可选的桌面控制台 UI（Tauri + Vue）。
 
 ## 环境要求
 - Rust 1.88（见 `rust-toolchain.toml`）。
@@ -68,7 +70,7 @@ ssh = "devops@192.168.2.162"
 
 说明：`ssh` 必须包含用户名（`user@host`），不会自动填默认用户。
 
-3) 启动 console（本地审批 + SSH 执行）：
+3) 启动 console（审批 + SSH 执行）：
 
 ```bash
 cargo run -p console -- \
@@ -80,7 +82,7 @@ console 默认监听：
 - HTTP/WS：`127.0.0.1:19309`
 - 命令通道：`127.0.0.1:19310`
 
-4) 启动本地代理：
+4) 启动代理：
 
 ```bash
 cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
@@ -135,7 +137,7 @@ env = { RUST_LOG = "info" }
 - `ps -ef`、`uname -a`、`df -h`、`free -m`
 
 ## list_targets
-返回本地配置的目标列表，包含 `name/desc/last_seen/ssh/status/last_error`。
+返回当前配置的目标列表，包含 `name/desc/last_seen/ssh/status/last_error`。
 
 ## Console API（可选）
 - `GET /health`：健康检查
@@ -147,7 +149,7 @@ env = { RUST_LOG = "info" }
   - `target_updated`：单目标状态更新
 
 ## Console UI（Tauri）
-本地控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
+桌面控制台 UI 位于 `console-ui/`（Tauri + Vue3）。
 
 准备环境：
 - Node.js + npm
@@ -202,7 +204,7 @@ console：
 - `--listen-addr`（默认：`127.0.0.1:19309`）
 - `--command-listen-addr`（默认：`127.0.0.1:19310`）
 - `--broker-config`（审批规则配置，默认 `config/config.toml`）
-- `--local-audit-dir`（本地审计目录，默认 `~/.octovalve/logs/local`）
+- `--local-audit-dir`（审计目录，默认 `~/.octovalve/logs/local`）
 - `--log-to-stderr`（默认：关闭）
 
 ## 安全说明
@@ -212,7 +214,7 @@ console：
 - 建议使用非 root 用户运行并关注审计日志。
 
 ## 输出保存
-每次请求都会在本地审计目录保存完整输出与请求/结果信息（默认：`~/.octovalve/logs/local/<target>`）：
+每次请求都会在审计目录保存完整输出与请求/结果信息（默认：`~/.octovalve/logs/local/<target>`）：
 - `<id>.request.json`
 - `<id>.result.json`
 - `<id>.stdout`

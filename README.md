@@ -1,14 +1,18 @@
-# Octovalve Local Approval Command Proxy
+# Octovalve Command Gateway for AI Agents
 
 English | [中文](README.zh-CN.md)
 
-Octovalve provides a local MCP stdio proxy plus a local approval/execution service. Your model connects only to the local stdio server (`octovalve-proxy`). The proxy forwards `run_command` requests to the local `console`, where a human approves/denies each request and the console executes the approved command on the target machine via SSH, then returns the results back to the MCP client.
+Octovalve is a policy-driven command gateway for AI agents. It exposes MCP tools over stdio via `octovalve-proxy`,
+validates and constrains each tool call, and executes approved commands on remote targets over SSH with an auditable
+trail of requests and outputs.
+
+Built-in AI risk assessment can auto-approve low-risk commands when enabled; higher-risk actions stay behind approval.
 
 ## Components
 - `octovalve-proxy`: MCP stdio server that exposes the `run_command` tool and forwards requests.
-- `console`: local approval + execution service that tracks targets and runs commands via SSH.
-- `protocol`: shared request/response types between local components.
-- `console-ui`: optional local UI (Tauri + Vue).
+- `console`: approval + execution service that tracks targets and runs commands via SSH.
+- `protocol`: shared request/response types between components.
+- `console-ui`: optional desktop UI (Tauri + Vue).
 
 ## Requirements
 - Rust 1.88 (see `rust-toolchain.toml`).
@@ -66,7 +70,7 @@ ssh = "devops@192.168.2.162"
 
 Note: `ssh` must include the username (`user@host`); it will not auto-fill a default user.
 
-3) Start the console (local approval + SSH execution):
+3) Start the console (approval + SSH execution):
 
 ```bash
 cargo run -p console -- \
@@ -78,7 +82,7 @@ By default, console listens on:
 - HTTP/WS: `127.0.0.1:19309`
 - command channel: `127.0.0.1:19310`
 
-4) Start the local proxy:
+4) Start the proxy:
 
 ```bash
 cargo run -p octovalve-proxy -- --config config/local-proxy-config.toml
@@ -133,7 +137,7 @@ System/environment (read-only):
 - `ps -ef`, `uname -a`, `df -h`, `free -m`
 
 ## `list_targets`
-Returns the locally configured target list with fields like `name/desc/last_seen/ssh/status/last_error`.
+Returns the configured target list with fields like `name/desc/last_seen/ssh/status/last_error`.
 
 ## Console API (Optional)
 - `GET /health`: health check
@@ -209,7 +213,7 @@ If the server requires keyboard-interactive/2FA, `SSH_ASKPASS` cannot complete t
 - Run as a non-root user and monitor audit logs.
 
 ## Output Persistence
-Each request writes full request/result metadata and outputs under the local audit directory (default: `~/.octovalve/logs/local/<target>`):
+Each request writes full request/result metadata and outputs under the audit directory (default: `~/.octovalve/logs/local/<target>`):
 - `<id>.request.json`
 - `<id>.result.json`
 - `<id>.stdout`
