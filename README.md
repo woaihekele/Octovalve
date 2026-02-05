@@ -217,3 +217,5 @@ Each request writes full request/result metadata and outputs under the local aud
 
 `request.json` includes `intent`, `mode`, `raw_command`, `pipeline`, etc.
 
+## License
+Licensed under the Apache License, Version 2.0. See `LICENSE`.

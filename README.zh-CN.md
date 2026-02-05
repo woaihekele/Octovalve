@@ -220,3 +220,5 @@ console：
 
 `request.json` 会包含 `intent`、`mode`、`raw_command`、`pipeline` 等完整请求字段。
 
+## 许可证
+本项目采用 Apache License 2.0，详见 `LICENSE`。
