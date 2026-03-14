@@ -169,6 +169,36 @@ const hostDisplay = computed(() => {
   return host || 'unknown';
 });
 
+function itemTargetHost(item: SnapshotItem) {
+  const host = resolveSshHost((item as { target_host?: string | null }).target_host);
+  return host || hostDisplay.value;
+}
+
+function itemTargetName(item: SnapshotItem) {
+  const value = (item as { target?: string | null }).target;
+  return value?.trim() || props.target.name;
+}
+
+function itemTargetDesc(item: SnapshotItem) {
+  const value = (item as { target_desc?: string | null }).target_desc;
+  const trimmed = value?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  return props.target.desc?.trim() || '';
+}
+
+function formatItemTargetLine(item: SnapshotItem) {
+  const host = itemTargetHost(item);
+  const name = itemTargetName(item);
+  const desc = itemTargetDesc(item);
+  return desc ? `${host} · ${name} · ${desc}` : `${host} · ${name}`;
+}
+
+const selectedTargetHost = computed(() => (selectedItem.value ? itemTargetHost(selectedItem.value) : hostDisplay.value));
+const selectedTargetName = computed(() => (selectedItem.value ? itemTargetName(selectedItem.value) : props.target.name));
+const selectedTargetDesc = computed(() => (selectedItem.value ? itemTargetDesc(selectedItem.value) : props.target.desc || ''));
+
 watch(
   () => props.target.name,
   () => {
@@ -898,6 +928,12 @@ onBeforeUnmount(() => {
                 </span>
                 <span v-if="isPendingItem(item)" class="truncate">{{ (item as RequestSnapshot).intent }}</span>
               </div>
+              <div
+                class="mt-1 text-[11px] text-foreground-muted truncate"
+                :title="formatItemTargetLine(item)"
+              >
+                {{ formatItemTargetLine(item) }}
+              </div>
             </div>
           </div>
         </div>
@@ -980,8 +1016,20 @@ onBeforeUnmount(() => {
                     <div class="text-foreground">{{ selectedItem.intent }}</div>
                   </div>
                   <div>
+                    <div class="text-foreground-muted">{{ $t('target.detail.targetName') }}</div>
+                    <div class="text-foreground">{{ selectedTargetName }}</div>
+                  </div>
+                  <div>
+                    <div class="text-foreground-muted">{{ $t('target.detail.targetHost') }}</div>
+                    <div class="text-foreground">{{ selectedTargetHost }}</div>
+                  </div>
+                  <div>
                     <div class="text-foreground-muted">{{ $t('target.detail.mode') }}</div>
                     <div class="text-foreground">{{ selectedItem.mode }}</div>
+                  </div>
+                  <div v-if="selectedTargetDesc">
+                    <div class="text-foreground-muted">{{ $t('target.detail.targetDesc') }}</div>
+                    <div class="text-foreground">{{ selectedTargetDesc }}</div>
                   </div>
                   <div>
                     <div class="text-foreground-muted">{{ $t('target.detail.cwd') }}</div>

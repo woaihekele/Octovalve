@@ -19,12 +19,15 @@ const props = defineProps<{
   profileSwitching?: boolean;
   sidebarWidth?: number;
   profileSelectWidth?: number;
+  reconnecting?: boolean;
+  reconnectingTargetName?: string | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'select', name: string): void;
   (e: 'open-settings'): void;
   (e: 'switch-profile', name: string): void;
+  (e: 'reconnect', name: string): void;
 }>();
 
 const { t } = useI18n();
@@ -80,6 +83,18 @@ function resolveTargetHost(target: TargetInfo) {
   }
   return ssh;
 }
+
+function shouldShowReconnect(target: TargetInfo) {
+  return resolveStatus(target) !== 'ready';
+}
+
+function isReconnectBusy(target: TargetInfo) {
+  return Boolean(props.reconnecting && props.reconnectingTargetName === target.name);
+}
+
+function reconnectDisabled(target: TargetInfo) {
+  return props.reconnecting || props.profileSwitching || isReconnectBusy(target);
+}
 </script>
 
 <template>
@@ -93,41 +108,55 @@ function resolveTargetHost(target: TargetInfo) {
     </div>
 
     <div class="flex-1 overflow-y-auto scrollbar-chat p-2 space-y-1">
-      <button
+      <div
         v-for="target in props.targets"
         :key="target.name"
-        type="button"
-        @click="emit('select', target.name)"
-        class="w-full text-left p-3 rounded-lg transition-colors flex items-center justify-between"
+        class="w-full text-left p-3 rounded-lg transition-colors border"
         :class="props.selectedTargetName === target.name ? 'bg-panel-muted border border-border' : 'hover:bg-panel-muted/50 border border-transparent'"
       >
-        <div class="flex flex-col min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="font-medium text-sm truncate text-foreground">{{ target.name }}</span>
-            <span v-if="target.is_default" class="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">
-              {{ $t('console.default') }}
-            </span>
-          </div>
-          <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">
-            <span class="truncate">
-              {{ resolveTargetHost(target) }}
-            </span>
-          </div>
-          <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">
-            <span class="inline-flex items-center gap-1">
-              <span class="h-2 w-2 rounded-full" :class="statusClass(target)"></span>
-              <span class="capitalize">{{ statusLabel(target) }}</span>
-            </span>
-          </div>
-        </div>
-
-        <div
-          v-if="target.pending_count > 0"
-          class="bg-danger text-white text-xs font-semibold px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-sm shadow-danger/40"
+        <button
+          type="button"
+          @click="emit('select', target.name)"
+          class="w-full text-left flex items-center justify-between gap-2"
         >
-          {{ target.pending_count }}
+          <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-sm truncate text-foreground">{{ target.name }}</span>
+              <span v-if="target.is_default" class="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+                {{ $t('console.default') }}
+              </span>
+            </div>
+            <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">
+              <span class="truncate">
+                {{ resolveTargetHost(target) }}
+              </span>
+            </div>
+            <div class="flex items-center gap-2 mt-1 text-xs text-foreground-muted">
+              <span class="inline-flex items-center gap-1">
+                <span class="h-2 w-2 rounded-full" :class="statusClass(target)"></span>
+                <span class="capitalize">{{ statusLabel(target) }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="target.pending_count > 0"
+            class="bg-danger text-white text-xs font-semibold px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-sm shadow-danger/40"
+          >
+            {{ target.pending_count }}
+          </div>
+        </button>
+        <div v-if="shouldShowReconnect(target)" class="mt-2">
+          <button
+            type="button"
+            class="inline-flex items-center rounded-md border border-border px-2 py-1 text-[11px] text-foreground-muted transition-colors hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="reconnectDisabled(target)"
+            @click.stop="emit('reconnect', target.name)"
+          >
+            {{ isReconnectBusy(target) ? $t('status.connecting') : '重连' }}
+          </button>
         </div>
-      </button>
+      </div>
     </div>
 
     <div class="p-4 border-t border-border flex items-center gap-2 text-xs text-foreground-muted">

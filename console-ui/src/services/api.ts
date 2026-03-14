@@ -4,6 +4,8 @@ import { i18n } from '../i18n';
 import type {
   AiRiskApiResponse,
   BrokerConfigEditor,
+  ChatProviderCheckResult,
+  ChatProviderConfig,
   ConfigFilePayload,
   ConsoleEvent,
   AppLanguage,
@@ -40,6 +42,10 @@ export type StartupCheckResult = {
   errors: string[];
   proxy_path: string;
   broker_path: string;
+};
+
+export type AggressiveModeState = {
+  enabled: boolean;
 };
 
 export type TerminalOutputEvent = {
@@ -201,6 +207,46 @@ export async function forceCancelCommand(name: string, id: string) {
   if (!response.ok) {
     throw new Error(`force cancel failed: ${response.status}`);
   }
+}
+
+export async function getAggressiveMode(client?: string | null): Promise<AggressiveModeState> {
+  if (TAURI_AVAILABLE) {
+    return invoke<AggressiveModeState>('proxy_get_aggressive_mode', {
+      client: client ?? null,
+    });
+  }
+  const path =
+    client && client.trim()
+      ? `/policy/aggressive?client=${encodeURIComponent(client)}`
+      : '/policy/aggressive';
+  const response = await fetch(joinUrl(HTTP_BASE, path));
+  if (!response.ok) {
+    throw new Error(`failed to get aggressive mode: ${response.status}`);
+  }
+  return response.json() as Promise<AggressiveModeState>;
+}
+
+export async function setAggressiveMode(
+  enabled: boolean,
+  client?: string | null
+): Promise<AggressiveModeState> {
+  if (TAURI_AVAILABLE) {
+    return invoke<AggressiveModeState>('proxy_set_aggressive_mode', {
+      enabled,
+      client: client ?? null,
+    });
+  }
+  const payload =
+    client && client.trim() ? { enabled, client } : { enabled };
+  const response = await fetch(joinUrl(HTTP_BASE, '/policy/aggressive'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`failed to set aggressive mode: ${response.status}`);
+  }
+  return response.json() as Promise<AggressiveModeState>;
 }
 
 export async function getProxyConfigStatus(): Promise<ProxyConfigStatus> {
@@ -391,6 +437,24 @@ export async function validateStartupConfig(): Promise<StartupCheckResult> {
     return { ok: true, needs_setup: false, errors: [], proxy_path: '', broker_path: '' };
   }
   return invoke<StartupCheckResult>('validate_startup_config');
+}
+
+export async function runChatProviderChecks(config: ChatProviderConfig): Promise<ChatProviderCheckResult> {
+  if (!TAURI_AVAILABLE) {
+    return {
+      ok: true,
+      checkedAt: Date.now(),
+      items: [
+        {
+          key: 'tauri-only',
+          label: 'Tauri only',
+          status: 'skip',
+          detail: 'Config self-check is only available in the desktop app.',
+        },
+      ],
+    };
+  }
+  return invoke<ChatProviderCheckResult>('run_chat_provider_checks', { input: config });
 }
 
 export async function readConsoleLog(offset: number, maxBytes: number): Promise<ConsoleLogChunk> {

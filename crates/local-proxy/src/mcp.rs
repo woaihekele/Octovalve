@@ -50,7 +50,7 @@ impl ProxyHandler {
             "command".to_string(),
             json!({
                 "type": "string",
-                "description": "Shell-like command line. Default mode executes via /bin/bash -lc."
+                "description": "Command line string. shell uses /bin/bash -lc; powershell uses powershell -NoProfile -NonInteractive -EncodedCommand."
             }),
         );
         let mut target_schema = json!({
@@ -73,16 +73,16 @@ impl ProxyHandler {
             "mode".to_string(),
             json!({
                 "type": "string",
-                "enum": ["shell"],
+                "enum": ["shell", "powershell"],
                 "default": "shell",
-                "description": "Execution mode: shell uses /bin/bash -lc."
+                "description": "Execution mode: shell uses /bin/bash -lc; powershell uses powershell -NoProfile -NonInteractive -EncodedCommand."
             }),
         );
         properties.insert(
             "cwd".to_string(),
             json!({
                 "type": "string",
-                "description": "Working directory on the target machine. If set, command runs as `cd <cwd> && ...`. Must already exist. Prefer absolute paths. `~` is not expanded. If omitted, uses /tmp ."
+                "description": "Working directory on the target machine. Must already exist. Prefer absolute paths. `~` is not expanded."
             }),
         );
         properties.insert(
@@ -194,7 +194,8 @@ impl ServerHandler for ProxyHandler {
                 "run_command" => {
                     let args = parse_arguments(request.arguments)
                         .map_err(|err| McpError::invalid_params(err, None))?;
-                    let pipeline = parse_pipeline(&args.command)
+                    let mode = args.mode.unwrap_or(CommandMode::Shell);
+                    let pipeline = parse_pipeline(mode.clone(), &args.command)
                         .map_err(|err| McpError::invalid_params(err, None))?;
 
                     let (target, addr) = {
@@ -209,7 +210,6 @@ impl ServerHandler for ProxyHandler {
                         (target, addr)
                     };
 
-                    let mode = args.mode.unwrap_or(CommandMode::Shell);
                     let request = CommandRequest {
                         id: Uuid::new_v4().to_string(),
                         client: self.client_id.clone(),
@@ -284,7 +284,13 @@ fn parse_arguments(args: Option<JsonObject>) -> Result<RunCommandArgs, String> {
     serde_json::from_value(Value::Object(map)).map_err(|err| err.to_string())
 }
 
-fn parse_pipeline(command: &str) -> Result<Vec<CommandStage>, String> {
+fn parse_pipeline(mode: CommandMode, command: &str) -> Result<Vec<CommandStage>, String> {
+    match mode {
+        CommandMode::Shell | CommandMode::PowerShell => parse_posix_like_pipeline(command),
+    }
+}
+
+fn parse_posix_like_pipeline(command: &str) -> Result<Vec<CommandStage>, String> {
     let tokens = shell_words::split(command).map_err(|err| err.to_string())?;
     if tokens.is_empty() {
         return Err("command is empty".to_string());
@@ -401,14 +407,14 @@ mod tests {
 
     #[test]
     fn parse_simple_command() {
-        let pipeline = parse_pipeline("ls -l").expect("parse");
+        let pipeline = parse_pipeline(CommandMode::Shell, "ls -l").expect("parse");
         assert_eq!(pipeline.len(), 1);
         assert_eq!(pipeline[0].argv, vec!["ls".to_string(), "-l".to_string()]);
     }
 
     #[test]
     fn parse_pipeline_command() {
-        let pipeline = parse_pipeline("ls | grep foo").expect("parse");
+        let pipeline = parse_pipeline(CommandMode::Shell, "ls | grep foo").expect("parse");
         assert_eq!(pipeline.len(), 2);
         assert_eq!(pipeline[0].argv, vec!["ls".to_string()]);
         assert_eq!(
@@ -419,7 +425,16 @@ mod tests {
 
     #[test]
     fn parse_rejects_empty_segment() {
-        let err = parse_pipeline("ls | | grep foo").unwrap_err();
+        let err = parse_pipeline(CommandMode::Shell, "ls | | grep foo").unwrap_err();
         assert!(err.contains("empty pipeline segment"));
+    }
+
+    #[test]
+    fn parse_powershell_command() {
+        let pipeline = parse_pipeline(CommandMode::PowerShell, "Get-ChildItem | Select-String foo")
+            .expect("parse");
+        assert_eq!(pipeline.len(), 2);
+        assert_eq!(pipeline[0].argv[0], "Get-ChildItem");
+        assert_eq!(pipeline[1].argv[0], "Select-String");
     }
 }

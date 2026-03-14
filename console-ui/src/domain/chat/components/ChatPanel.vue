@@ -42,6 +42,20 @@
         </div>
         <div class="chat-panel__actions">
           <button
+            v-if="provider === 'acp'"
+            class="chat-panel__btn chat-panel__btn--aggressive"
+            :class="{ 'chat-panel__btn--aggressive-active': aggressiveMode }"
+            :disabled="aggressiveBusy"
+            :title="aggressiveMode ? $t('chat.aggressive.disable') : $t('chat.aggressive.enable')"
+            @click="$emit('toggle-aggressive')"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.3 3.3 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </button>
+          <button
             class="chat-panel__btn"
             :title="$t('chat.history.title')"
             @click="$emit('show-history')"
@@ -128,6 +142,8 @@ interface Props {
   targets?: TargetInfo[];
   supportsImages?: boolean;
   showDropHint?: boolean;
+  aggressiveMode?: boolean;
+  aggressiveBusy?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -143,6 +159,8 @@ const props = withDefaults(defineProps<Props>(), {
   supportsImages: false,
   showDropHint: false,
   disableTransition: false,
+  aggressiveMode: false,
+  aggressiveBusy: false,
 });
 
 const emit = defineEmits<{
@@ -152,6 +170,7 @@ const emit = defineEmits<{
   clear: [];
   'change-provider': [provider: 'acp' | 'openai'];
   'width-change': [width: number];
+  'toggle-aggressive': [];
 }>();
 
 const widthStorageKey = 'console-ui.chat-panel.width';
@@ -564,6 +583,21 @@ watch(
       background: rgb(var(--color-panel));
       color: rgb(var(--color-text));
     }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+
+  &__btn--aggressive {
+    color: #f59e0b;
+  }
+
+  &__btn--aggressive-active {
+    background: rgba(220, 38, 38, 0.18);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.45);
   }
 
   &__messages {

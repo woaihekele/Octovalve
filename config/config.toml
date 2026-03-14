@@ -6,7 +6,6 @@ allowed = [
   "cat",
   "head",
   "tail",
-  "sed",
   "rg",
   "grep",
   "wc",
@@ -45,7 +44,20 @@ denied = [
   "chmod",
 ]
 arg_rules = { grep = "^[A-Za-z0-9_./-]+$" }
+find_pipe_manual_review_tokens = ["delete", "rm", "dd", "cat", "tee", "del", "remove-item"]
 
 [limits]
 timeout_secs = 30
 max_output_bytes = 1048576
+
+# Optional: let a model review complex commands before auto-approval.
+# Fail-closed behavior: review failure falls back to manual approval.
+#
+# [ai_readonly_review]
+# enabled = true
+# endpoint = "https://api.openai.com/v1/chat/completions"
+# model = "gpt-4.1-mini"
+# api_key_env = "OPENAI_API_KEY"
+# timeout_ms = 2500
+# min_confidence = 0.9
+# max_command_chars = 4000

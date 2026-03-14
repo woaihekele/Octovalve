@@ -47,7 +47,23 @@ arg_rules = { grep = "^[A-Za-z0-9_./-]+$" }
 [limits]
 timeout_secs = 30
 max_output_bytes = 1048576
+
+# Optional: use an LLM to classify whether a command is strictly read-only
+# before auto-approval.
+# [ai_readonly_review]
+# enabled = true
+# endpoint = "https://api.openai.com/v1/chat/completions"
+# model = "gpt-4.1-mini"
+# api_key_env = "OPENAI_API_KEY"
+# timeout_ms = 2500
+# min_confidence = 0.9
+# max_command_chars = 4000
 ```
+
+When `auto_approve_allowed = true`, requests that pass the `whitelist.allowed` + `arg_rules`
+checks are auto-approved and executed without manual operator approval.
+If `ai_readonly_review.enabled = true`, auto-approval additionally requires the model to classify
+the command as read-only with confidence >= `min_confidence`; failures/timeouts fall back to manual approval.
 
 2) Prepare the target config (see `config/local-proxy-config.toml` for an example):
 
@@ -115,7 +131,9 @@ env = { RUST_LOG = "info" }
 - `command`: command string.
 - `intent`: required; why you want to run this command (for auditing).
 - `target`: required; target name (defined in `octovalve-proxy` config).
-- `mode`: `shell` (runs via `/bin/bash -lc`).
+- `mode`:
+  - `shell` (runs via `/bin/bash -lc`)
+  - `powershell` (runs via `powershell -NoProfile -NonInteractive -EncodedCommand`)
 - Optional: `cwd`, `timeout_ms`, `max_output_bytes`, `env`.
 
 ## Common Read-Only Commands (Recommended for Whitelist)
@@ -210,7 +228,7 @@ If the server requires keyboard-interactive/2FA, `SSH_ASKPASS` cannot complete t
 ## Security Notes
 - No built-in authentication; keep console bound to `127.0.0.1`.
 - SSH uses `BatchMode=yes` to avoid interactive prompts. If you want auto-accept on first connect, add `StrictHostKeyChecking=accept-new` to `ssh_args`.
-- Only `shell` mode is supported (`/bin/bash -lc`).
+- Supported modes are `shell` (`/bin/bash -lc`) and `powershell` (`powershell -NoProfile -NonInteractive -EncodedCommand`).
 - Run as a non-root user and monitor audit logs.
 
 ## Output Persistence

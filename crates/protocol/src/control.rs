@@ -6,6 +6,10 @@ pub struct SnapshotCommonFields {
     pub id: String,
     pub client: String,
     pub target: String,
+    #[serde(default)]
+    pub target_host: Option<String>,
+    #[serde(default)]
+    pub target_desc: Option<String>,
     pub peer: String,
     pub intent: String,
     pub mode: CommandMode,
@@ -38,6 +42,12 @@ pub struct ResultSnapshot {
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub intent: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub target_host: Option<String>,
+    #[serde(default)]
+    pub target_desc: Option<String>,
     pub mode: CommandMode,
     pub raw_command: String,
     pub pipeline: Vec<CommandStage>,

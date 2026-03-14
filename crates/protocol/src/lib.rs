@@ -20,6 +20,8 @@ impl CommandStage {
 #[serde(rename_all = "snake_case")]
 pub enum CommandMode {
     Shell,
+    #[serde(rename = "powershell")]
+    PowerShell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -155,5 +157,14 @@ mod tests {
         let json = serde_json::to_string(&response).expect("serialize");
         let decoded: CommandResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(response, decoded);
+    }
+
+    #[test]
+    fn command_mode_powershell_roundtrip() {
+        let mode = CommandMode::PowerShell;
+        let json = serde_json::to_string(&mode).expect("serialize");
+        assert_eq!(json, "\"powershell\"");
+        let decoded: CommandMode = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded, CommandMode::PowerShell);
     }
 }

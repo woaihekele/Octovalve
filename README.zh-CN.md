@@ -47,7 +47,21 @@ arg_rules = { grep = "^[A-Za-z0-9_./-]+$" }
 [limits]
 timeout_secs = 30
 max_output_bytes = 1048576
+
+# 可选：使用大模型在自动放行前判断命令是否“严格只读”
+# [ai_readonly_review]
+# enabled = true
+# endpoint = "https://api.openai.com/v1/chat/completions"
+# model = "gpt-4.1-mini"
+# api_key_env = "OPENAI_API_KEY"
+# timeout_ms = 2500
+# min_confidence = 0.9
+# max_command_chars = 4000
 ```
+
+当 `auto_approve_allowed = true` 时，满足 `whitelist.allowed` + `arg_rules` 的请求可自动放行。
+若同时开启 `ai_readonly_review.enabled = true`，还需模型判定为只读且置信度 >= `min_confidence`；
+模型失败或超时会回退到人工审批（fail-closed）。
 
 2) 准备目标配置（示例见 `config/local-proxy-config.toml`）：
 

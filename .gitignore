@@ -11,3 +11,12 @@ console-ui/src-tauri/remote-broker/
 console-ui/src-tauri/resources/
 websitie/
 websitie-gh-pages/
+~/
+test.*txt
+*.log
+*.tmp
+build*.ps1
+build*.sh
+sync*.sh
+codex.txt
+

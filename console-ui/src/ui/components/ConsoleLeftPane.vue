@@ -10,9 +10,12 @@
     :profile-loading="profileLoading"
     :profile-switching="profileSwitching"
     :sidebar-width="sidebarWidth"
+    :reconnecting="reconnecting"
+    :reconnecting-target-name="reconnectingTargetName"
     @select="emit('select-target', $event)"
     @open-settings="emit('open-settings')"
     @switch-profile="emit('switch-profile', $event)"
+    @reconnect="emit('reconnect-target', $event)"
   />
 
 	  <div class="flex-1 flex min-w-0 min-h-0 overflow-hidden" :style="{ minWidth: `${TARGET_MIN_MAIN_WIDTH}px` }">
@@ -174,6 +177,8 @@ const props = defineProps<{
   profilesEnabled: boolean;
   profileLoading: boolean;
   profileSwitching: boolean;
+  reconnecting: boolean;
+  reconnectingTargetName: string | null;
   sidebarWidth?: number;
   selectedTarget: TargetInfo | null;
   selectedSnapshot: ServiceSnapshot | null;
@@ -261,6 +266,7 @@ const emit = defineEmits<{
   (e: 'select-target', value: string): void;
   (e: 'open-settings'): void;
   (e: 'switch-profile', value: string): void;
+  (e: 'reconnect-target', value: string): void;
   (e: 'toggle-chat'): void;
   (e: 'approve', id: string): void;
   (e: 'deny', id: string): void;

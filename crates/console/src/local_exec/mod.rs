@@ -1,3 +1,4 @@
+mod ai_review;
 mod audit;
 mod events;
 mod executor;
@@ -13,9 +14,11 @@ mod stream;
 mod test_utils;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use tokio::process::Command;
@@ -28,6 +31,7 @@ use crate::shell_utils::apply_ssh_options;
 use crate::state::{ConsoleState, ControlCommand, TargetSpec, TargetStatus};
 use system_utils::ssh::apply_askpass_env;
 
+use ai_review::AiReadonlyReviewer;
 pub(crate) use policy::PolicyConfig;
 use policy::Whitelist;
 use service::TargetServiceHandle;
@@ -38,9 +42,14 @@ pub(crate) async fn spawn_local_exec(
     audit_root: PathBuf,
     state: Arc<RwLock<ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
+    aggressive_mode: Arc<AtomicBool>,
+    aggressive_clients: Arc<RwLock<HashSet<String>>>,
 ) -> anyhow::Result<()> {
+    let auto_approve_allowed = policy.auto_approve_allowed;
     let whitelist = Arc::new(Whitelist::from_config(&policy.whitelist)?);
     let limits = Arc::new(policy.limits);
+    let ai_readonly_reviewer =
+        Arc::new(AiReadonlyReviewer::from_config(&policy.ai_readonly_review)?);
     let audit_root = Arc::new(audit_root);
     std::fs::create_dir_all(&*audit_root)?;
 
@@ -98,7 +107,16 @@ pub(crate) async fn spawn_local_exec(
         });
     }
 
-    server::spawn_command_server(listen_addr, services, Arc::clone(&whitelist)).await?;
+    server::spawn_command_server(
+        listen_addr,
+        services,
+        Arc::clone(&whitelist),
+        auto_approve_allowed,
+        Arc::clone(&ai_readonly_reviewer),
+        Arc::clone(&aggressive_mode),
+        Arc::clone(&aggressive_clients),
+    )
+    .await?;
     Ok(())
 }
 

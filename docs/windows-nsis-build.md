@@ -2,6 +2,20 @@
 
 This document records the current Windows packaging flow for `console-ui`.
 
+## One-Command Packaging (PowerShell)
+
+From repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_gui.ps1
+```
+
+Optional (skip `npm install` if dependencies are already installed):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_gui.ps1 -SkipNpmInstall
+```
+
 ## Prerequisites
 
 - Rust toolchain (`rustc`, `cargo`) on Windows (`x86_64-pc-windows-msvc`)

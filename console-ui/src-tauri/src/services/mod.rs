@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod ai_risk;
 pub mod app_error;
+pub mod chat_diagnostics;
 pub mod config;
 pub mod console_http;
 pub mod console_sidecar;

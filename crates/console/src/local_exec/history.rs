@@ -10,6 +10,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Debug, Deserialize, Serialize)]
 struct RequestRecord {
     id: String,
+    #[serde(default)]
+    target: Option<String>,
+    #[serde(default)]
+    target_host: Option<String>,
+    #[serde(default)]
+    target_desc: Option<String>,
     peer: String,
     intent: String,
     mode: CommandMode,
@@ -93,6 +99,9 @@ pub(crate) fn load_history(
             exit_code: record.exit_code,
             error: record.error,
             intent: request.intent.clone(),
+            target: request.target.clone(),
+            target_host: request.target_host.clone(),
+            target_desc: request.target_desc.clone(),
             mode: request.mode.clone(),
             raw_command,
             pipeline: request.pipeline.clone(),

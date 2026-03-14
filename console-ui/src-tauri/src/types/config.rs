@@ -87,3 +87,48 @@ pub struct StartupCheckResult {
     pub proxy_path: String,
     pub broker_path: String,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatProviderCheckInput {
+    pub provider: String,
+    pub mcp_config_json: String,
+    pub openai: OpenAiCheckInput,
+    pub acp: AcpCheckInput,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenAiCheckInput {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub chat_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpCheckInput {
+    pub codex_path: String,
+    pub approval_policy: String,
+    pub sandbox_mode: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatProviderCheckItem {
+    pub key: String,
+    pub label: String,
+    pub status: String,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatProviderCheckResult {
+    pub ok: bool,
+    pub checked_at: u64,
+    pub items: Vec<ChatProviderCheckItem>,
+}

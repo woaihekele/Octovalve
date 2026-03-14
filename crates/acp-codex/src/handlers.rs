@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use codex_app_server_protocol::InputItem;
-use codex_protocol::{
-    plan_tool::{StepStatus, UpdatePlanArgs},
-    protocol::{
-        AgentMessageDeltaEvent, AgentMessageEvent, AgentReasoningDeltaEvent, AgentReasoningEvent,
-        ErrorEvent, EventMsg, McpToolCallBeginEvent, McpToolCallEndEvent, PatchApplyBeginEvent,
-        PatchApplyEndEvent, StreamErrorEvent, WebSearchBeginEvent, WebSearchEndEvent,
-    },
-    ConversationId,
+use codex_app_server_protocol::{
+    CommandExecutionStatus, McpToolCallStatus, PatchApplyStatus, ServerNotification, ThreadItem,
+    TurnPlanStepStatus, TurnStartParams, TurnStatus, UserInput,
 };
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -27,9 +21,9 @@ use crate::protocol::{
 use crate::sessions::{delete_workspace_session, list_workspace_sessions};
 use crate::state::AcpState;
 use crate::utils::{
-    build_mcp_overrides, build_new_conversation_params, insert_dual, load_mcp_servers,
-    load_rollout_history, normalize_cwd, normalize_mcp_servers, save_mcp_servers, update_with_type,
-    write_temp_image, SessionHandler,
+    build_mcp_overrides, build_thread_resume_params, build_thread_start_params, insert_dual,
+    load_mcp_servers, load_rollout_history, normalize_cwd, normalize_mcp_servers, save_mcp_servers,
+    update_with_type, write_temp_image, SessionHandler,
 };
 use crate::writer::AcpWriter;
 
@@ -85,44 +79,31 @@ async fn reset_session_state(
     state: &Arc<Mutex<AcpState>>,
     app_server: &Arc<AppServerClient>,
 ) -> Result<()> {
-    let (previous_conversation_id, previous_subscription_id) = {
+    let (previous_thread_id, previous_turn_id) = {
         let mut guard = state.lock().await;
-        let previous = (guard.conversation_id, guard.conversation_subscription_id);
+        let previous = (guard.thread_id.clone(), guard.active_turn_id.clone());
         guard.session_id = None;
         guard.pending_prompt_ids.clear();
-        guard.conversation_id = None;
-        guard.conversation_subscription_id = None;
+        guard.thread_id = None;
+        guard.active_turn_id = None;
         guard.saw_message_delta = false;
         guard.saw_reasoning_delta = false;
         guard.retry_count = 0;
         guard.retry_exhausted = false;
         previous
     };
-    if let Some(previous_conversation_id) = previous_conversation_id {
+    if let (Some(previous_thread_id), Some(previous_turn_id)) =
+        (previous_thread_id, previous_turn_id)
+    {
         if let Err(err) = app_server
-            .interrupt_conversation_no_wait(previous_conversation_id)
+            .turn_interrupt_no_wait(previous_thread_id, previous_turn_id)
             .await
         {
-            log_fmt(
-                LogLevel::Warn,
-                format_args!("interruptConversation 失败: {err}"),
-            );
-        }
-    }
-    if let Some(previous_subscription_id) = previous_subscription_id {
-        if let Err(err) = app_server
-            .remove_conversation_listener(previous_subscription_id)
-            .await
-        {
-            log_fmt(
-                LogLevel::Warn,
-                format_args!("removeConversationListener 失败: {err}"),
-            );
+            log_fmt(LogLevel::Warn, format_args!("turn/interrupt 失败: {err}"));
         }
     }
     Ok(())
 }
-
 async fn send_tool_call_update(
     writer: &AcpWriter,
     session_id: &str,
@@ -183,29 +164,14 @@ async fn handle_error_message(
 }
 
 pub(crate) async fn handle_codex_event(
-    conversation_id: ConversationId,
-    event: EventMsg,
+    notification: ServerNotification,
     writer: &AcpWriter,
     state: &Arc<Mutex<AcpState>>,
 ) -> Result<()> {
-    // `addConversationListener` is sticky unless explicitly removed; without
-    // filtering, events from an old conversation can be mislabeled as the new
-    // session and show up in the wrong chat.
-    if let EventMsg::SessionConfigured(payload) = &event {
+    if let ServerNotification::SessionConfigured(payload) = &notification {
         let mut guard = state.lock().await;
-        if let Some(active_conversation_id) = guard.conversation_id {
-            if active_conversation_id != conversation_id {
-                return Ok(());
-            }
-        } else {
-            guard.conversation_id = Some(conversation_id);
-        }
         if guard.session_id.is_none() {
-            let session_id_value = payload.session_id.to_string();
-            guard.session_id = Some(session_id_value.clone());
-            for waiter in guard.session_id_waiters.drain(..) {
-                let _ = waiter.send(session_id_value.clone());
-            }
+            guard.session_id = Some(payload.session_id.to_string());
         }
         guard.saw_message_delta = false;
         guard.saw_reasoning_delta = false;
@@ -214,20 +180,55 @@ pub(crate) async fn handle_codex_event(
         return Ok(());
     }
 
-    let (active_conversation_id, session_id) = {
+    let (active_thread_id, session_id) = {
         let guard = state.lock().await;
-        (guard.conversation_id, guard.session_id.clone())
+        (guard.thread_id.clone(), guard.session_id.clone())
     };
-    if active_conversation_id != Some(conversation_id) {
+    let Some(active_thread_id) = active_thread_id else {
         return Ok(());
-    }
-
+    };
     let Some(session_id) = session_id else {
         return Ok(());
     };
 
-    match event {
-        EventMsg::AgentMessageDelta(AgentMessageDeltaEvent { delta }) => {
+    let notification_thread_id = match &notification {
+        ServerNotification::ThreadStarted(payload) => Some(payload.thread.id.clone()),
+        ServerNotification::TurnStarted(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::TurnCompleted(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::TurnPlanUpdated(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::ItemStarted(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::ItemCompleted(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::AgentMessageDelta(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::ReasoningSummaryTextDelta(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::ReasoningTextDelta(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::CommandExecutionOutputDelta(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::FileChangeOutputDelta(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::McpToolCallProgress(payload) => Some(payload.thread_id.clone()),
+        ServerNotification::Error(payload) => Some(payload.thread_id.clone()),
+        _ => None,
+    };
+    if let Some(notification_thread_id) = notification_thread_id {
+        if notification_thread_id != active_thread_id {
+            return Ok(());
+        }
+    } else {
+        return Ok(());
+    }
+
+    match notification {
+        ServerNotification::ThreadStarted(payload) => {
+            let mut guard = state.lock().await;
+            if guard.session_id.is_none() {
+                guard.session_id = Some(payload.thread.id.clone());
+            }
+        }
+        ServerNotification::TurnStarted(payload) => {
+            let mut guard = state.lock().await;
+            guard.active_turn_id = Some(payload.turn.id);
+            guard.retry_count = 0;
+            guard.retry_exhausted = false;
+        }
+        ServerNotification::AgentMessageDelta(payload) => {
             {
                 let mut guard = state.lock().await;
                 guard.saw_message_delta = true;
@@ -235,10 +236,10 @@ pub(crate) async fn handle_codex_event(
                 guard.retry_exhausted = false;
             }
             let mut update = update_with_type("agent_message_chunk");
-            update.insert("content".to_string(), json!({ "text": delta }));
+            update.insert("content".to_string(), json!({ "text": payload.delta }));
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent { delta }) => {
+        ServerNotification::ReasoningSummaryTextDelta(payload) => {
             {
                 let mut guard = state.lock().await;
                 guard.saw_reasoning_delta = true;
@@ -246,47 +247,29 @@ pub(crate) async fn handle_codex_event(
                 guard.retry_exhausted = false;
             }
             let mut update = update_with_type("agent_thought_chunk");
-            update.insert("content".to_string(), json!({ "text": delta }));
+            update.insert("content".to_string(), json!({ "text": payload.delta }));
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::AgentMessage(AgentMessageEvent { message }) => {
-            let should_send = {
+        ServerNotification::ReasoningTextDelta(payload) => {
+            {
                 let mut guard = state.lock().await;
-                let should_send = !guard.saw_message_delta;
-                guard.saw_message_delta = true;
-                guard.retry_count = 0;
-                guard.retry_exhausted = false;
-                should_send
-            };
-            if should_send {
-                let mut update = update_with_type("agent_message_chunk");
-                update.insert("content".to_string(), json!({ "text": message }));
-                send_session_update(writer, &session_id, Value::Object(update)).await?;
-            }
-        }
-        EventMsg::AgentReasoning(AgentReasoningEvent { text }) => {
-            let should_send = {
-                let mut guard = state.lock().await;
-                let should_send = !guard.saw_reasoning_delta;
                 guard.saw_reasoning_delta = true;
                 guard.retry_count = 0;
                 guard.retry_exhausted = false;
-                should_send
-            };
-            if should_send {
-                let mut update = update_with_type("agent_thought_chunk");
-                update.insert("content".to_string(), json!({ "text": text }));
-                send_session_update(writer, &session_id, Value::Object(update)).await?;
             }
+            let mut update = update_with_type("agent_thought_chunk");
+            update.insert("content".to_string(), json!({ "text": payload.delta }));
+            send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::PlanUpdate(UpdatePlanArgs { plan, explanation }) => {
-            let entries: Vec<Value> = plan
+        ServerNotification::TurnPlanUpdated(payload) => {
+            let entries: Vec<Value> = payload
+                .plan
                 .into_iter()
                 .map(|item| {
                     let status = match item.status {
-                        StepStatus::Pending => "pending",
-                        StepStatus::InProgress => "in_progress",
-                        StepStatus::Completed => "completed",
+                        TurnPlanStepStatus::Pending => "pending",
+                        TurnPlanStepStatus::InProgress => "in_progress",
+                        TurnPlanStepStatus::Completed => "completed",
                     };
                     json!({
                         "step": item.step,
@@ -297,90 +280,162 @@ pub(crate) async fn handle_codex_event(
                 .collect();
             let mut update = update_with_type("plan");
             update.insert("entries".to_string(), Value::Array(entries));
-            if let Some(explanation) = explanation {
+            if let Some(explanation) = payload.explanation {
                 if !explanation.trim().is_empty() {
                     update.insert("explanation".to_string(), Value::String(explanation));
                 }
             }
             send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::ExecCommandBegin(event) => {
-            let command_text = event.command.join(" ");
-            if !command_text.is_empty() {
-                let mut update = update_with_type("tool_call");
-                insert_dual(
-                    &mut update,
-                    "tool_call_id",
-                    "toolCallId",
-                    Value::String(event.call_id.to_string()),
-                );
-                insert_dual(
-                    &mut update,
-                    "name",
-                    "name",
-                    Value::String("bash".to_string()),
-                );
-                insert_dual(
-                    &mut update,
-                    "title",
-                    "title",
-                    Value::String(command_text.clone()),
-                );
-                insert_dual(
-                    &mut update,
-                    "status",
-                    "status",
-                    Value::String("in_progress".to_string()),
-                );
-                let raw_input = json!({
-                    "command": command_text
-                });
-                insert_dual(&mut update, "raw_input", "rawInput", raw_input);
-                send_session_update(writer, &session_id, Value::Object(update)).await?;
-            }
+        ServerNotification::ItemStarted(payload) => {
+            handle_thread_item_started(&session_id, payload.item, writer).await?;
         }
-        EventMsg::ExecCommandEnd(event) => {
-            let output = event.formatted_output;
-            let mut update = update_with_type("tool_call_update");
-            insert_dual(
-                &mut update,
-                "tool_call_id",
-                "toolCallId",
-                Value::String(event.call_id.to_string()),
-            );
-            let status = if event.exit_code == 0 {
-                "completed"
+        ServerNotification::ItemCompleted(payload) => {
+            handle_thread_item_completed(&session_id, payload.item, writer).await?;
+        }
+        ServerNotification::CommandExecutionOutputDelta(payload) => {
+            send_tool_call_update(
+                writer,
+                &session_id,
+                payload.item_id,
+                "in_progress",
+                Some(payload.delta),
+            )
+            .await?;
+        }
+        ServerNotification::FileChangeOutputDelta(payload) => {
+            send_tool_call_update(
+                writer,
+                &session_id,
+                payload.item_id,
+                "in_progress",
+                Some(payload.delta),
+            )
+            .await?;
+        }
+        ServerNotification::McpToolCallProgress(payload) => {
+            send_tool_call_update(
+                writer,
+                &session_id,
+                payload.item_id,
+                "in_progress",
+                Some(payload.message),
+            )
+            .await?;
+        }
+        ServerNotification::Error(payload) => {
+            if payload.will_retry || is_retry_related_message(&payload.error.message) {
+                handle_retry_signal(&session_id, payload.error.message, true, writer, state)
+                    .await?;
             } else {
-                "failed"
-            };
-            insert_dual(
-                &mut update,
-                "status",
-                "status",
-                Value::String(status.to_string()),
-            );
-            if !output.is_empty() {
-                let content = vec![json!({
-                    "type": "content",
-                    "content": { "text": output }
-                })];
-                update.insert("content".to_string(), Value::Array(content));
+                handle_error_message(&session_id, payload.error.message, writer, state).await?;
             }
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
         }
-        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
-            call_id,
-            invocation,
-        }) => {
+        ServerNotification::TurnCompleted(payload) => {
+            {
+                let mut guard = state.lock().await;
+                if guard.active_turn_id.as_deref() == Some(payload.turn.id.as_str()) {
+                    guard.active_turn_id = None;
+                }
+            }
+            match payload.turn.status {
+                TurnStatus::Completed => {
+                    let retry_active = {
+                        let guard = state.lock().await;
+                        guard.retry_count > 0 && !guard.retry_exhausted
+                    };
+                    if retry_active {
+                        return Ok(());
+                    }
+
+                    let should_delay = {
+                        let guard = state.lock().await;
+                        !guard.saw_message_delta && !guard.saw_reasoning_delta
+                    };
+                    if should_delay {
+                        sleep(Duration::from_millis(200)).await;
+                        let retry_active = {
+                            let guard = state.lock().await;
+                            guard.retry_count > 0 && !guard.retry_exhausted
+                        };
+                        if retry_active {
+                            return Ok(());
+                        }
+                    }
+
+                    let mut update = update_with_type("task_complete");
+                    update.insert(
+                        "stop_reason".to_string(),
+                        Value::String("end_turn".to_string()),
+                    );
+                    send_session_update(writer, &session_id, Value::Object(update)).await?;
+                    if let Some(prompt_id) = {
+                        let mut guard = state.lock().await;
+                        guard.pending_prompt_ids.pop_front()
+                    } {
+                        send_prompt_complete(writer, prompt_id, "end_turn").await?;
+                    }
+                    {
+                        let mut guard = state.lock().await;
+                        guard.saw_message_delta = false;
+                        guard.saw_reasoning_delta = false;
+                        guard.retry_count = 0;
+                        guard.retry_exhausted = false;
+                    }
+                }
+                TurnStatus::Interrupted => {
+                    let mut update = update_with_type("task_complete");
+                    update.insert(
+                        "stop_reason".to_string(),
+                        Value::String("cancelled".to_string()),
+                    );
+                    send_session_update(writer, &session_id, Value::Object(update)).await?;
+                    {
+                        let mut guard = state.lock().await;
+                        guard.saw_message_delta = false;
+                        guard.saw_reasoning_delta = false;
+                        guard.retry_count = 0;
+                        guard.retry_exhausted = false;
+                    }
+                }
+                TurnStatus::Failed => {
+                    let message = payload
+                        .turn
+                        .error
+                        .map(|error| error.message)
+                        .unwrap_or_else(|| "Turn failed".to_string());
+                    handle_error_message(&session_id, message, writer, state).await?;
+                }
+                TurnStatus::InProgress => {}
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+async fn handle_thread_item_started(
+    session_id: &str,
+    item: ThreadItem,
+    writer: &AcpWriter,
+) -> Result<()> {
+    match item {
+        ThreadItem::CommandExecution { id, command, .. } => {
             let mut update = update_with_type("tool_call");
+            insert_dual(&mut update, "tool_call_id", "toolCallId", Value::String(id));
             insert_dual(
                 &mut update,
-                "tool_call_id",
-                "toolCallId",
-                Value::String(call_id.to_string()),
+                "name",
+                "name",
+                Value::String("bash".to_string()),
             );
-            let name = format!("mcp:{}:{}", invocation.server, invocation.tool);
-            insert_dual(&mut update, "name", "name", Value::String(name));
+            insert_dual(
+                &mut update,
+                "title",
+                "title",
+                Value::String(command.clone()),
+            );
             insert_dual(
                 &mut update,
                 "status",
@@ -391,41 +446,37 @@ pub(crate) async fn handle_codex_event(
                 &mut update,
                 "raw_input",
                 "rawInput",
-                invocation.arguments.unwrap_or(Value::Null),
+                json!({ "command": command }),
             );
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
+            send_session_update(writer, session_id, Value::Object(update)).await?;
         }
-        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-            call_id, result, ..
-        }) => {
-            let output = match result {
-                Ok(value) => format_tool_result(&value),
-                Err(err) => err,
-            };
-            let content = if output.is_empty() {
-                None
-            } else {
-                Some(output)
-            };
-            send_tool_call_update(
-                writer,
-                &session_id,
-                call_id.to_string(),
-                "completed",
-                content,
-            )
-            .await?;
-        }
-        EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
-            call_id, changes, ..
-        }) => {
+        ThreadItem::McpToolCall {
+            id,
+            server,
+            tool,
+            arguments,
+            ..
+        } => {
             let mut update = update_with_type("tool_call");
+            insert_dual(&mut update, "tool_call_id", "toolCallId", Value::String(id));
             insert_dual(
                 &mut update,
-                "tool_call_id",
-                "toolCallId",
-                Value::String(call_id.to_string()),
+                "name",
+                "name",
+                Value::String(format!("mcp:{server}:{tool}")),
             );
+            insert_dual(
+                &mut update,
+                "status",
+                "status",
+                Value::String("in_progress".to_string()),
+            );
+            insert_dual(&mut update, "raw_input", "rawInput", arguments);
+            send_session_update(writer, session_id, Value::Object(update)).await?;
+        }
+        ThreadItem::FileChange { id, changes, .. } => {
+            let mut update = update_with_type("tool_call");
+            insert_dual(&mut update, "tool_call_id", "toolCallId", Value::String(id));
             insert_dual(
                 &mut update,
                 "name",
@@ -444,108 +495,25 @@ pub(crate) async fn handle_codex_event(
                 "rawInput",
                 serde_json::to_value(changes).unwrap_or(Value::Null),
             );
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
+            send_session_update(writer, session_id, Value::Object(update)).await?;
         }
-        EventMsg::PatchApplyEnd(PatchApplyEndEvent {
-            call_id, success, ..
-        }) => {
-            let mut update = update_with_type("tool_call_update");
-            insert_dual(
-                &mut update,
-                "tool_call_id",
-                "toolCallId",
-                Value::String(call_id.to_string()),
-            );
-            let status = if success { "completed" } else { "failed" };
-            insert_dual(
-                &mut update,
-                "status",
-                "status",
-                Value::String(status.to_string()),
-            );
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
-        }
-        EventMsg::WebSearchBegin(WebSearchBeginEvent { call_id }) => {
+        ThreadItem::WebSearch { id, query } => {
             let mut update = update_with_type("tool_call");
-            insert_dual(
-                &mut update,
-                "tool_call_id",
-                "toolCallId",
-                Value::String(call_id.to_string()),
-            );
+            insert_dual(&mut update, "tool_call_id", "toolCallId", Value::String(id));
             insert_dual(
                 &mut update,
                 "name",
                 "name",
                 Value::String("web_search".to_string()),
             );
+            insert_dual(&mut update, "title", "title", Value::String(query.clone()));
             insert_dual(
                 &mut update,
                 "status",
                 "status",
                 Value::String("in_progress".to_string()),
             );
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
-        }
-        EventMsg::WebSearchEnd(WebSearchEndEvent { call_id, query }) => {
-            send_tool_call_update(
-                writer,
-                &session_id,
-                call_id.to_string(),
-                "completed",
-                Some(query),
-            )
-            .await?;
-        }
-        EventMsg::StreamError(StreamErrorEvent { message, .. }) => {
-            handle_error_message(&session_id, message, writer, state).await?;
-        }
-        EventMsg::Error(ErrorEvent { message, .. }) => {
-            handle_error_message(&session_id, message, writer, state).await?;
-        }
-        EventMsg::TaskComplete(_) => {
-            let retry_active = {
-                let guard = state.lock().await;
-                guard.retry_count > 0 && !guard.retry_exhausted
-            };
-            if retry_active {
-                return Ok(());
-            }
-
-            let should_delay = {
-                let guard = state.lock().await;
-                !guard.saw_message_delta && !guard.saw_reasoning_delta
-            };
-            if should_delay {
-                sleep(Duration::from_millis(200)).await;
-                let retry_active = {
-                    let guard = state.lock().await;
-                    guard.retry_count > 0 && !guard.retry_exhausted
-                };
-                if retry_active {
-                    return Ok(());
-                }
-            }
-
-            let mut update = update_with_type("task_complete");
-            update.insert(
-                "stop_reason".to_string(),
-                Value::String("end_turn".to_string()),
-            );
-            send_session_update(writer, &session_id, Value::Object(update)).await?;
-            if let Some(prompt_id) = {
-                let mut guard = state.lock().await;
-                guard.pending_prompt_ids.pop_front()
-            } {
-                send_prompt_complete(writer, prompt_id, "end_turn").await?;
-            }
-            {
-                let mut guard = state.lock().await;
-                guard.saw_message_delta = false;
-                guard.saw_reasoning_delta = false;
-                guard.retry_count = 0;
-                guard.retry_exhausted = false;
-            }
+            send_session_update(writer, session_id, Value::Object(update)).await?;
         }
         _ => {}
     }
@@ -553,6 +521,91 @@ pub(crate) async fn handle_codex_event(
     Ok(())
 }
 
+async fn handle_thread_item_completed(
+    session_id: &str,
+    item: ThreadItem,
+    writer: &AcpWriter,
+) -> Result<()> {
+    match item {
+        ThreadItem::CommandExecution {
+            id,
+            status,
+            aggregated_output,
+            exit_code,
+            ..
+        } => {
+            let status = match status {
+                CommandExecutionStatus::Completed => "completed",
+                CommandExecutionStatus::InProgress => "in_progress",
+                CommandExecutionStatus::Failed | CommandExecutionStatus::Declined => "failed",
+            };
+            let content = aggregated_output.or_else(|| {
+                exit_code.map(|value| {
+                    if value == 0 {
+                        String::new()
+                    } else {
+                        format!("Exit code: {value}")
+                    }
+                })
+            });
+            send_tool_call_update(
+                writer,
+                session_id,
+                id,
+                status,
+                content.filter(|value| !value.is_empty()),
+            )
+            .await?;
+        }
+        ThreadItem::McpToolCall {
+            id,
+            status,
+            result,
+            error,
+            ..
+        } => {
+            let status = match status {
+                McpToolCallStatus::Completed => "completed",
+                McpToolCallStatus::InProgress => "in_progress",
+                McpToolCallStatus::Failed => "failed",
+            };
+            let content = result
+                .map(|value| format_tool_result(&value))
+                .or_else(|| error.map(|value| value.message))
+                .filter(|value| !value.is_empty());
+            send_tool_call_update(writer, session_id, id, status, content).await?;
+        }
+        ThreadItem::FileChange {
+            id,
+            status,
+            changes,
+        } => {
+            let status = match status {
+                PatchApplyStatus::Completed => "completed",
+                PatchApplyStatus::InProgress => "in_progress",
+                PatchApplyStatus::Failed | PatchApplyStatus::Declined => "failed",
+            };
+            let content = changes
+                .iter()
+                .map(|change| change.diff.clone())
+                .filter(|diff| !diff.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let content = if content.is_empty() {
+                None
+            } else {
+                Some(content)
+            };
+            send_tool_call_update(writer, session_id, id, status, content).await?;
+        }
+        ThreadItem::WebSearch { id, query } => {
+            send_tool_call_update(writer, session_id, id, "completed", Some(query)).await?;
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
 pub(crate) async fn handle_acp_request(
     request: JsonRpcIncomingRequest,
     writer: &AcpWriter,
@@ -667,29 +720,22 @@ async fn handle_acp_request_inner(
                 .ok_or_else(|| anyhow!("session/new missing params"))?;
             let cwd = normalize_cwd(&params.cwd);
             reset_session_state(state, app_server).await?;
-            let mut conversation_params = build_new_conversation_params(config, &cwd)?;
+            let mut thread_params = build_thread_start_params(config, &cwd)?;
             if let Some(overrides) = build_mcp_overrides(&params.mcp_servers) {
-                conversation_params.config = Some(overrides);
+                thread_params.config = Some(overrides);
             }
-            let response = app_server.new_conversation(conversation_params).await?;
+            let response = app_server.thread_start(thread_params).await?;
             if !params.mcp_servers.is_empty() {
-                if let Err(err) = save_mcp_servers(&response.rollout_path, &params.mcp_servers) {
+                if let Err(err) = save_mcp_servers(&response.thread.path, &params.mcp_servers) {
                     log_fmt(LogLevel::Warn, format_args!("写入 MCP 会话配置失败: {err}"));
                 }
             }
-            let conversation_id = response.conversation_id;
-            let session_id = conversation_id.to_string();
+            let session_id = response.thread.id;
             {
                 let mut guard = state.lock().await;
-                guard.conversation_id = Some(conversation_id);
+                guard.thread_id = Some(session_id.clone());
                 guard.session_id = Some(session_id.clone());
-            }
-            let subscription = app_server
-                .add_conversation_listener(conversation_id)
-                .await?;
-            {
-                let mut guard = state.lock().await;
-                guard.conversation_subscription_id = Some(subscription.subscription_id);
+                guard.active_turn_id = None;
             }
 
             let mut result = serde_json::Map::new();
@@ -742,7 +788,12 @@ async fn handle_acp_request_inner(
 
             let rollout_path = SessionHandler::find_rollout_file_path(&params.session_id)?;
             let cwd = normalize_cwd(".");
-            let mut conversation_params = build_new_conversation_params(config, &cwd)?;
+            let mut resume_params = build_thread_resume_params(
+                config,
+                &cwd,
+                params.session_id.clone(),
+                rollout_path.clone(),
+            )?;
             let stored_mcp_servers = match load_mcp_servers(&rollout_path) {
                 Ok(servers) => servers,
                 Err(err) => {
@@ -767,24 +818,15 @@ async fn handle_acp_request_inner(
                 Vec::new()
             };
             if let Some(overrides) = build_mcp_overrides(&mcp_servers) {
-                conversation_params.config = Some(overrides);
+                resume_params.config = Some(overrides);
             }
 
-            let response = app_server
-                .resume_conversation(rollout_path.clone(), conversation_params)
-                .await?;
-            let conversation_id = response.conversation_id;
+            let response = app_server.thread_resume(resume_params).await?;
             {
                 let mut guard = state.lock().await;
                 guard.session_id = Some(params.session_id.clone());
-                guard.conversation_id = Some(conversation_id);
-            }
-            let subscription = app_server
-                .add_conversation_listener(conversation_id)
-                .await?;
-            {
-                let mut guard = state.lock().await;
-                guard.conversation_subscription_id = Some(subscription.subscription_id);
+                guard.thread_id = Some(response.thread.id);
+                guard.active_turn_id = None;
             }
 
             let history = load_rollout_history(&rollout_path)
@@ -826,11 +868,11 @@ async fn handle_acp_request_inner(
                 .transpose()?
                 .ok_or_else(|| anyhow!("session/prompt missing params"))?;
 
-            let (conversation_id, session_id) = {
+            let (thread_id, session_id) = {
                 let guard = state.lock().await;
-                (guard.conversation_id.clone(), guard.session_id.clone())
+                (guard.thread_id.clone(), guard.session_id.clone())
             };
-            let conversation_id = conversation_id.ok_or_else(|| anyhow!("尚未初始化会话"))?;
+            let thread_id = thread_id.ok_or_else(|| anyhow!("尚未初始化会话"))?;
             let session_id = session_id.ok_or_else(|| anyhow!("尚未初始化会话"))?;
 
             if params.session_id != session_id {
@@ -845,18 +887,18 @@ async fn handle_acp_request_inner(
                 guard.retry_exhausted = false;
             }
 
-            let mut items = Vec::new();
+            let mut input = Vec::new();
             for block in params.prompt {
                 match block {
                     ContentBlock::Text { text } => {
                         if !text.trim().is_empty() {
-                            items.push(InputItem::Text { text });
+                            input.push(UserInput::Text { text });
                         }
                     }
                     ContentBlock::Image { data, mime_type } => {
                         match write_temp_image(&data, &mime_type) {
                             Ok(path) => {
-                                items.push(InputItem::LocalImage { path });
+                                input.push(UserInput::LocalImage { path });
                             }
                             Err(err) => {
                                 log_fmt(
@@ -868,7 +910,7 @@ async fn handle_acp_request_inner(
                     }
                 }
             }
-            if items.is_empty() {
+            if input.is_empty() {
                 let response = JsonRpcResponseOut {
                     jsonrpc: "2.0",
                     id: request.id,
@@ -878,10 +920,22 @@ async fn handle_acp_request_inner(
                 return Ok(());
             }
 
-            app_server.send_user_message(conversation_id, items).await?;
+            let response = app_server
+                .turn_start(TurnStartParams {
+                    thread_id,
+                    input,
+                    cwd: None,
+                    approval_policy: None,
+                    sandbox_policy: None,
+                    model: None,
+                    effort: None,
+                    summary: None,
+                })
+                .await?;
 
             {
                 let mut guard = state.lock().await;
+                guard.active_turn_id = Some(response.turn.id);
                 guard.pending_prompt_ids.push_back(request.id);
             }
         }
@@ -894,23 +948,21 @@ async fn handle_acp_request_inner(
                 .unwrap_or(CancelParamsInput {
                     session_id: "".to_string(),
                 });
-            let conversation_id = {
+            let (thread_id, active_turn_id) = {
                 let guard = state.lock().await;
-                guard.conversation_id
+                (guard.thread_id.clone(), guard.active_turn_id.clone())
             };
-            if let Some(conversation_id) = conversation_id {
+            if let (Some(thread_id), Some(active_turn_id)) = (thread_id, active_turn_id) {
                 if let Err(err) = app_server
-                    .interrupt_conversation_no_wait(conversation_id)
+                    .turn_interrupt_no_wait(thread_id, active_turn_id)
                     .await
                 {
-                    log_fmt(
-                        LogLevel::Warn,
-                        format_args!("interruptConversation 失败: {err}"),
-                    );
+                    log_fmt(LogLevel::Warn, format_args!("turn/interrupt 失败: {err}"));
                 }
             }
             if let Some(prompt_id) = {
                 let mut guard = state.lock().await;
+                guard.active_turn_id = None;
                 guard.pending_prompt_ids.pop_front()
             } {
                 send_prompt_complete(writer, prompt_id, "cancelled").await?;

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { NSelect, NInput, NInputNumber, NSwitch } from 'naive-ui';
+import { computed, ref } from 'vue';
+import { NAlert, NButton, NInput, NSelect, NSpin, NSwitch, NTag } from 'naive-ui';
 import type { SelectOption } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import type { ChatProviderConfig } from '../../../shared/types';
+import { runChatProviderChecks } from '../../../services/api';
+import { formatErrorForUser } from '../../../services/errors';
+import type { ChatProviderCheckResult, ChatProviderConfig } from '../../../shared/types';
 
 const props = defineProps<{
   config: ChatProviderConfig;
@@ -14,6 +16,9 @@ const emit = defineEmits<{
 }>();
 
 const { t, tm } = useI18n();
+const checkLoading = ref(false);
+const checkError = ref('');
+const checkResult = ref<ChatProviderCheckResult | null>(null);
 
 const mcpPlaceholder = computed(() => {
   const message = (tm as (key: string) => unknown)('settings.chat.mcp.placeholder');
@@ -79,6 +84,30 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
     acp: { ...props.config.acp, sandboxMode: value },
   });
 }
+
+const statusTypeMap: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
+  pass: 'success',
+  warn: 'warning',
+  fail: 'error',
+  skip: 'default',
+};
+
+async function runChecks() {
+  checkLoading.value = true;
+  checkError.value = '';
+  try {
+    checkResult.value = await runChatProviderChecks(props.config);
+  } catch (error) {
+    checkError.value = formatErrorForUser(error, t);
+    checkResult.value = null;
+  } finally {
+    checkLoading.value = false;
+  }
+}
+
+function statusLabel(status: string) {
+  return t(`settings.chat.diagnostics.status.${status}`);
+}
 </script>
 
 <template>
@@ -103,13 +132,64 @@ function updateAcpSandboxMode(value: ChatProviderConfig['acp']['sandboxMode']) {
       <div class="space-y-2">
         <div class="text-sm font-medium">{{ $t('settings.chat.provider.label') }}</div>
         <div class="text-xs text-foreground-muted mb-2">{{ $t('settings.chat.provider.help') }}</div>
-        <NSelect
-          :value="props.config.provider"
-          :options="providerOptions"
-          size="small"
-          class="w-56"
-          @update:value="updateProvider"
-        />
+        <div class="flex flex-wrap items-center gap-3">
+          <NSelect
+            :value="props.config.provider"
+            :options="providerOptions"
+            size="small"
+            class="w-56"
+            @update:value="updateProvider"
+          />
+          <NButton size="small" secondary :loading="checkLoading" @click="runChecks">
+            {{ $t('settings.chat.diagnostics.run') }}
+          </NButton>
+        </div>
+        <div class="text-xs text-foreground-muted">{{ $t('settings.chat.diagnostics.help') }}</div>
+      </div>
+
+      <div v-if="checkError" class="space-y-2">
+        <NAlert type="error" :title="$t('settings.chat.diagnostics.failedTitle')">
+          {{ checkError }}
+        </NAlert>
+      </div>
+
+      <div v-if="checkLoading" class="rounded-lg border border-panel-border/70 p-4">
+        <div class="flex items-center gap-3 text-sm text-foreground-muted">
+          <NSpin size="small" />
+          <span>{{ $t('settings.chat.diagnostics.running') }}</span>
+        </div>
+      </div>
+
+      <div v-if="checkResult" class="space-y-3 rounded-lg border border-panel-border/70 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-medium">{{ $t('settings.chat.diagnostics.resultTitle') }}</div>
+            <div class="text-xs text-foreground-muted">
+              {{ checkResult.ok ? $t('settings.chat.diagnostics.summaryOk') : $t('settings.chat.diagnostics.summaryFail') }}
+            </div>
+          </div>
+          <NTag :type="checkResult.ok ? 'success' : 'error'" size="small">
+            {{ checkResult.ok ? $t('settings.chat.diagnostics.overall.pass') : $t('settings.chat.diagnostics.overall.fail') }}
+          </NTag>
+        </div>
+        <div class="space-y-3">
+          <div
+            v-for="item in checkResult.items"
+            :key="item.key"
+            class="rounded-md border border-panel-border/70 px-3 py-2"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-sm font-medium">{{ item.label }}</div>
+              <NTag size="small" :type="statusTypeMap[item.status] ?? 'default'">
+                {{ statusLabel(item.status) }}
+              </NTag>
+            </div>
+            <div class="mt-1 text-xs whitespace-pre-wrap text-foreground-muted">{{ item.detail }}</div>
+            <div v-if="item.suggestion" class="mt-2 text-xs text-accent">
+              {{ $t('settings.chat.diagnostics.suggestion') }}: {{ item.suggestion }}
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- OpenAI API Settings -->

@@ -8,6 +8,7 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use protocol::control::{ResultSnapshot, ServiceEvent, ServiceSnapshot};
+use protocol::CommandMode;
 use protocol::CommandResponse;
 
 use crate::events::ConsoleEvent;
@@ -30,6 +31,8 @@ pub(crate) struct TargetServiceHandle {
     pub(crate) command_tx: mpsc::Sender<ControlCommand>,
     pub(crate) snapshot: ServiceSnapshot,
     pub(crate) output_dir: Arc<PathBuf>,
+    pub(crate) target_host: Option<String>,
+    pub(crate) target_desc: Option<String>,
 }
 
 pub(super) fn spawn_service(
@@ -48,6 +51,12 @@ pub(super) fn spawn_service(
         Some(Arc::new(PtySessionManager::new(target.clone())))
     } else {
         None
+    };
+    let target_host = target.ssh.as_deref().and_then(extract_target_host);
+    let target_desc = if target.desc.trim().is_empty() {
+        None
+    } else {
+        Some(target.desc.clone())
     };
     let snapshot = ServiceSnapshot {
         queue: Vec::new(),
@@ -81,7 +90,42 @@ pub(super) fn spawn_service(
         command_tx,
         snapshot,
         output_dir,
+        target_host,
+        target_desc,
     }
+}
+
+fn extract_target_host(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let without_user = trimmed
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(trimmed)
+        .trim();
+    if without_user.is_empty() {
+        return None;
+    }
+    if without_user.starts_with('[') {
+        if let Some(end) = without_user.find(']') {
+            let host = without_user[1..end].trim();
+            if host.is_empty() {
+                return None;
+            }
+            return Some(host.to_string());
+        }
+        return Some(without_user.to_string());
+    }
+    Some(
+        without_user
+            .split_once(':')
+            .map(|(host, _)| host.trim())
+            .filter(|host| !host.is_empty())
+            .unwrap_or(without_user)
+            .to_string(),
+    )
 }
 
 async fn service_loop(
@@ -105,7 +149,13 @@ async fn service_loop(
                 handle_server_event(
                     event,
                     &target_name,
+                    &target,
                     &mut service_state,
+                    &result_tx,
+                    &whitelist,
+                    &limits,
+                    &output_dir,
+                    &pty_manager,
                     &state,
                     &event_tx,
                 )
@@ -145,7 +195,13 @@ async fn service_loop(
 async fn handle_server_event(
     event: ServerEvent,
     target_name: &str,
+    target: &TargetSpec,
     state: &mut ServiceState,
+    result_tx: &mpsc::Sender<ResultSnapshot>,
+    whitelist: &Arc<Whitelist>,
+    limits: &Arc<LimitsConfig>,
+    output_dir: &Arc<PathBuf>,
+    pty_manager: &Option<Arc<PtySessionManager>>,
     console_state: &Arc<RwLock<ConsoleState>>,
     event_tx: &broadcast::Sender<ConsoleEvent>,
 ) {
@@ -173,6 +229,21 @@ async fn handle_server_event(
                 event = "queue.updated",
                 target = %target_name,
                 queue_len = state.pending.len()
+            );
+        }
+        ServerEvent::AutoApproveRequest(pending) => {
+            start_execution(
+                target_name,
+                target,
+                pending,
+                state,
+                result_tx,
+                whitelist,
+                limits,
+                output_dir,
+                pty_manager.clone(),
+                console_state,
+                event_tx,
             );
         }
     }
@@ -252,12 +323,13 @@ async fn handle_command(
             }
         }
         ControlCommand::ForceCancel(id) => {
-            if state.force_cancel_running(&id) {
+            if let Some(mode) = state.force_cancel_running(&id) {
                 tracing::info!(event = "request_force_cancelled", target = %target_name, id = %id);
                 let target = target.clone();
                 let request_id = id.clone();
+                let mode = mode.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = force_kill_remote(&target, &request_id).await {
+                    if let Err(err) = force_kill_remote(&target, &mode, &request_id).await {
                         tracing::warn!(error = %err, "force cancel remote kill failed");
                     }
                 });
@@ -319,6 +391,7 @@ fn start_execution(
     let force_cancel_token = CancellationToken::new();
     state.start_running(
         running_snapshot,
+        pending.request.mode.clone(),
         cancel_token.clone(),
         force_cancel_token.clone(),
     );
@@ -342,6 +415,7 @@ fn start_execution(
             &pending.request,
             &whitelist,
             &limits,
+            pending.aggressive_mode,
             pty_manager,
             cancel_token,
             force_cancel_token,
@@ -386,6 +460,7 @@ struct ServiceState {
 }
 
 struct RunningTokens {
+    mode: CommandMode,
     cancel: CancellationToken,
     force_cancel: CancellationToken,
 }
@@ -404,6 +479,7 @@ impl ServiceState {
     fn start_running(
         &mut self,
         running: protocol::control::RunningSnapshot,
+        mode: CommandMode,
         token: CancellationToken,
         force_token: CancellationToken,
     ) {
@@ -413,6 +489,7 @@ impl ServiceState {
         self.running_tokens.insert(
             running.common.id,
             RunningTokens {
+                mode,
                 cancel: token,
                 force_cancel: force_token,
             },
@@ -434,13 +511,13 @@ impl ServiceState {
         false
     }
 
-    fn force_cancel_running(&mut self, id: &str) -> bool {
+    fn force_cancel_running(&mut self, id: &str) -> Option<&CommandMode> {
         if let Some(tokens) = self.running_tokens.get(id) {
             tokens.cancel.cancel();
             tokens.force_cancel.cancel();
-            return true;
+            return Some(&tokens.mode);
         }
-        false
+        None
     }
 
     fn push_result(&mut self, result: ResultSnapshot) {

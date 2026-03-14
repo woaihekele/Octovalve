@@ -1,3 +1,1 @@
-pub(crate) use protocol::control::{
-    ControlRequest, ControlResponse, ServiceEvent, ServiceSnapshot,
-};
+pub(crate) use protocol::control::{ServiceEvent, ServiceSnapshot};

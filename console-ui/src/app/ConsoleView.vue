@@ -21,6 +21,7 @@ import {
   readConsoleLog,
   restartConsole,
   setAppLanguage,
+  setAggressiveMode,
   selectProfile,
   validateStartupConfig,
   type ConsoleConnectionStatus,
@@ -94,6 +95,8 @@ const quickProfiles = ref<ProfileSummary[]>([]);
 const quickProfileCurrent = ref<string | null>(null);
 const quickProfileLoading = ref(false);
 const quickProfileSwitching = ref(false);
+const reconnectInProgress = ref(false);
+const reconnectTargetName = ref<string | null>(null);
 type ConsoleLeftPaneExpose = {
   focusActiveTerminal: () => void;
   blurActiveTerminal: () => void;
@@ -293,6 +296,7 @@ const {
   planEntries: chatPlanEntries,
   isStreaming: chatIsStreaming,
   isConnected: chatIsConnected,
+  activeSessionId: chatActiveSessionId,
   providerInitialized,
   provider: chatProvider,
   providerSupportsImages,
@@ -304,8 +308,17 @@ const pendingProvider = ref<'acp' | 'openai' | null>(null);
 const providerSwitching = ref(false);
 const acpRestarting = ref(false);
 const acpInitPending = ref(false);
+const aggressiveModeEnabled = ref(false);
+const aggressiveModeUpdating = ref(false);
+const aggressiveModeBySession = ref<Record<string, boolean>>({});
 let lastAcpTargetSignature = '';
 const chatInputLocked = computed(() => providerSwitching.value || acpRestarting.value);
+const activeAggressiveSessionKey = computed(() => {
+  if (chatProvider.value !== 'acp') {
+    return null;
+  }
+  return chatStore.activeSession?.acpSessionId || chatActiveSessionId.value || '__acp_default_session__';
+});
 const showChatDropHint = computed(() => isFileDragging.value);
 const pendingProviderLabel = computed(() => {
   if (pendingProvider.value === 'acp') {
@@ -756,6 +769,38 @@ async function handleQuickProfileSwitch(profileName: string) {
   }
 }
 
+async function handleManualReconnect(targetName: string) {
+  if (!targetName) {
+    return;
+  }
+  if (reconnectInProgress.value || booting.value || quickProfileSwitching.value || startupBusy.value) {
+    return;
+  }
+  reconnectInProgress.value = true;
+  reconnectTargetName.value = targetName;
+  booting.value = true;
+  hasConnected.value = false;
+  connectionState.value = 'connecting';
+  resetConsoleTargetsView();
+  try {
+    if (tauriAvailable) {
+      await restartConsole();
+    }
+    await startConsoleSession();
+    await Promise.all([waitForWsConnected(15_000), fetchTargetsUntilReady(15_000, 500)]);
+    await syncAcpAfterTargetsReady();
+  } catch (err) {
+    const message = t('settings.log.status.console.failed', { error: formatErrorForUser(err, t) });
+    showNotification(message, undefined, targetName, 'error');
+    reportUiError('manual reconnect failed', err);
+    connectionState.value = 'disconnected';
+    booting.value = false;
+  } finally {
+    reconnectInProgress.value = false;
+    reconnectTargetName.value = null;
+  }
+}
+
 function requestQuickProfileSwitch(profileName: string) {
   if (!profileName || profileName === quickProfileCurrent.value || quickProfileSwitching.value) {
     return;
@@ -1203,6 +1248,9 @@ function openSettingsForConfig() {
 
 async function startConsoleSession(): Promise<boolean> {
   const ok = await refreshTargets();
+  if (ok) {
+    await syncAggressiveModeState();
+  }
   void connectWebSocket();
   void logUiEvent(`origin=${window.location.origin} secure=${window.isSecureContext}`);
   return ok;
@@ -1532,6 +1580,7 @@ async function connectWebSocket() {
         hasConnected.value = true;
         booting.value = false;
         void logUiEvent('ws connected');
+        void syncAggressiveModeState();
       } else if (status === 'disconnected') {
         void logUiEvent('ws closed');
       }
@@ -1657,6 +1706,89 @@ async function confirmForceCancel() {
   } finally {
     forceCancelPending.value = false;
     closeForceCancelPrompt();
+  }
+}
+
+async function syncAggressiveModeState() {
+  const sessionKey = activeAggressiveSessionKey.value;
+  const expected = sessionKey ? Boolean(aggressiveModeBySession.value[sessionKey]) : false;
+  aggressiveModeEnabled.value = expected;
+  if (connectionState.value !== 'connected') {
+    return;
+  }
+  if (aggressiveModeUpdating.value) {
+    return;
+  }
+  aggressiveModeUpdating.value = true;
+  try {
+    const state = await setAggressiveMode(expected);
+    aggressiveModeEnabled.value = Boolean(state.enabled);
+  } catch (err) {
+    reportUiError('sync aggressive mode failed', err);
+  } finally {
+    aggressiveModeUpdating.value = false;
+  }
+}
+
+async function approveAllPendingCommands() {
+  const tasks: Promise<void>[] = [];
+  for (const [targetName, snapshot] of Object.entries(snapshots.value)) {
+    const queue = snapshot?.queue ?? [];
+    for (const request of queue) {
+      tasks.push(
+        approveCommand(targetName, request.id).catch((err) => {
+          reportUiError(`aggressive approve failed target=${targetName} id=${request.id}`, err);
+        })
+      );
+    }
+  }
+  if (tasks.length > 0) {
+    await Promise.all(tasks);
+  }
+}
+
+async function toggleAggressiveMode() {
+  if (aggressiveModeUpdating.value) {
+    return;
+  }
+  const sessionKey = activeAggressiveSessionKey.value;
+  if (!sessionKey) {
+    return;
+  }
+  const previousEnabled = Boolean(aggressiveModeBySession.value[sessionKey]);
+  const nextEnabled = !aggressiveModeEnabled.value;
+  aggressiveModeBySession.value = {
+    ...aggressiveModeBySession.value,
+    [sessionKey]: nextEnabled,
+  };
+  aggressiveModeUpdating.value = true;
+  try {
+    const state = await setAggressiveMode(nextEnabled);
+    aggressiveModeEnabled.value = Boolean(state.enabled);
+    aggressiveModeBySession.value = {
+      ...aggressiveModeBySession.value,
+      [sessionKey]: aggressiveModeEnabled.value,
+    };
+    if (aggressiveModeEnabled.value) {
+      showNotification(t('chat.aggressive.enabledToast'), undefined, undefined, 'warning');
+      await approveAllPendingCommands();
+    } else {
+      showNotification(t('chat.aggressive.disabledToast'), undefined, undefined, 'info');
+    }
+  } catch (err) {
+    showNotification(
+      t('chat.aggressive.switchFailed', { error: formatErrorForUser(err, t) }),
+      undefined,
+      undefined,
+      'error'
+    );
+    aggressiveModeBySession.value = {
+      ...aggressiveModeBySession.value,
+      [sessionKey]: previousEnabled,
+    };
+    aggressiveModeEnabled.value = previousEnabled;
+  } finally {
+    aggressiveModeUpdating.value = false;
   }
 }
 
@@ -2065,6 +2197,14 @@ watch(selectedTargetName, (value) => {
 });
 
 watch(
+  [activeAggressiveSessionKey, () => connectionState.value],
+  () => {
+    void syncAggressiveModeState();
+  },
+  { immediate: true }
+);
+
+watch(
   settings,
   (value) => {
     saveSettings(value);
@@ -2208,6 +2348,8 @@ watch(
       :profiles-enabled="tauriAvailable"
       :profile-loading="quickProfileLoading"
       :profile-switching="quickProfileSwitching"
+      :reconnecting="reconnectInProgress || booting || startupBusy || quickProfileSwitching"
+      :reconnecting-target-name="reconnectTargetName"
       :selected-target="selectedTarget"
       :selected-snapshot="selectedSnapshot"
       :settings="settings"
@@ -2225,6 +2367,7 @@ watch(
       @select-target="selectedTargetName = $event"
       @open-settings="isSettingsOpen = true"
       @switch-profile="requestQuickProfileSwitch"
+      @reconnect-target="handleManualReconnect"
       @toggle-chat="isChatOpen = !isChatOpen"
       @approve="approve"
       @deny="deny"
@@ -2251,6 +2394,8 @@ watch(
       :provider="chatProvider"
       :send-on-enter="settings.chat.sendOnEnter"
       :supports-images="providerSupportsImages"
+      :aggressive-mode="aggressiveModeEnabled"
+      :aggressive-busy="aggressiveModeUpdating"
       :targets="targets"
       :is-history-open="isChatHistoryOpen"
       :history-sessions="historySessions"
@@ -2262,6 +2407,7 @@ watch(
       @show-history="handleChatShowHistory"
       @clear="handleChatClear"
       @change-provider="handleChangeProvider"
+      @toggle-aggressive="toggleAggressiveMode"
       @close-history="isChatHistoryOpen = false"
       @select-session="handleHistorySelect"
       @delete-session="handleHistoryDelete"

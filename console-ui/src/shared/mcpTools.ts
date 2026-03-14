@@ -124,7 +124,8 @@ export function buildMcpTools(targets: string[], defaultTarget?: string): Tool[]
           properties: {
             command: {
               type: 'string',
-              description: 'Shell-like command line. Default mode executes via /bin/bash -lc.',
+              description:
+                'Command line string. shell uses /bin/bash -lc; powershell uses powershell -NoProfile -NonInteractive -EncodedCommand.',
             },
             target: targetProperty,
             intent: {
@@ -133,9 +134,10 @@ export function buildMcpTools(targets: string[], defaultTarget?: string): Tool[]
             },
             mode: {
               type: 'string',
-              enum: ['shell'],
+              enum: ['shell', 'powershell'],
               default: 'shell',
-              description: 'Execution mode: shell uses /bin/bash -lc.',
+              description:
+                'Execution mode: shell uses /bin/bash -lc; powershell uses powershell -NoProfile -NonInteractive -EncodedCommand.',
             },
             cwd: {
               type: 'string',

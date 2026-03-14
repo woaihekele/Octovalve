@@ -13,6 +13,8 @@
     :provider="provider"
     :send-on-enter="sendOnEnter"
     :supports-images="supportsImages"
+    :aggressive-mode="aggressiveMode"
+    :aggressive-busy="aggressiveBusy"
     :targets="targets"
     :title="$t('chat.title')"
     :greeting="$t('chat.greeting')"
@@ -21,6 +23,7 @@
     @show-history="emit('show-history')"
     @clear="emit('clear')"
     @change-provider="emit('change-provider', $event)"
+    @toggle-aggressive="emit('toggle-aggressive')"
     @width-change="emit('width-change', $event)"
   />
 
@@ -58,6 +61,8 @@ defineProps<{
   sendOnEnter: boolean;
   targets: TargetInfo[];
   supportsImages: boolean;
+  aggressiveMode: boolean;
+  aggressiveBusy: boolean;
   isHistoryOpen: boolean;
   historySessions: ChatSession[];
   historyLoading: boolean;
@@ -70,6 +75,7 @@ const emit = defineEmits<{
   (e: 'show-history'): void;
   (e: 'clear'): void;
   (e: 'change-provider', provider: 'acp' | 'openai'): void;
+  (e: 'toggle-aggressive'): void;
   (e: 'width-change', width: number): void;
   (e: 'close-history'): void;
   (e: 'select-session', sessionId: string): void;

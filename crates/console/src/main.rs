@@ -14,7 +14,7 @@ use crate::config::load_console_config;
 use crate::control::ServiceSnapshot;
 use crate::events::ConsoleEvent;
 use crate::local_exec::{spawn_local_exec, PolicyConfig};
-use crate::state::{build_console_state, ConsoleState, ControlCommand, TargetInfo};
+use crate::state::{build_console_state, ControlCommand, TargetInfo};
 use crate::terminal::terminal_ws_handler;
 use crate::uploads::{DirectoryEntry, UploadRegistry, UploadRequest, UploadStatus};
 use anyhow::Context;
@@ -32,6 +32,8 @@ use axum::routing::post;
 use axum::{Json, Router};
 use clap::Parser;
 use serde::Deserialize;
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use system_utils::path::expand_tilde;
 use tokio::net::TcpListener;
@@ -46,6 +48,8 @@ struct AppState {
     state: Arc<RwLock<crate::state::ConsoleState>>,
     event_tx: broadcast::Sender<ConsoleEvent>,
     uploads: UploadRegistry,
+    aggressive_mode: Arc<AtomicBool>,
+    aggressive_clients: Arc<RwLock<HashSet<String>>>,
 }
 
 #[tokio::main]
@@ -65,11 +69,15 @@ async fn main() -> anyhow::Result<()> {
     let local_audit_dir = expand_tilde(&args.local_audit_dir);
     let shutdown = CancellationToken::new();
     let shared_state = Arc::new(RwLock::new(state));
+    let aggressive_mode = Arc::new(AtomicBool::new(false));
+    let aggressive_clients = Arc::new(RwLock::new(HashSet::new()));
     let (event_tx, _) = broadcast::channel(512);
     let app_state = AppState {
         state: Arc::clone(&shared_state),
         event_tx: event_tx.clone(),
         uploads: UploadRegistry::new(),
+        aggressive_mode: Arc::clone(&aggressive_mode),
+        aggressive_clients: Arc::clone(&aggressive_clients),
     };
 
     if let Some(parent_pid) = resolve_parent_pid() {
@@ -87,6 +95,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/targets/:name/dirs", get(list_target_dirs))
         .route("/targets/:name/upload", post(start_upload))
         .route("/uploads/:id", get(get_upload_status))
+        .route(
+            "/policy/aggressive",
+            get(get_aggressive_mode).post(set_aggressive_mode),
+        )
         .route("/targets/:name/terminal", get(terminal_ws_handler))
         .route("/ws", get(ws_handler))
         .with_state(app_state)
@@ -103,6 +115,8 @@ async fn main() -> anyhow::Result<()> {
         local_audit_dir,
         Arc::clone(&shared_state),
         event_tx.clone(),
+        Arc::clone(&aggressive_mode),
+        Arc::clone(&aggressive_clients),
     )
     .await
     .context("failed to start local exec server")?;
@@ -271,6 +285,22 @@ struct ActionResponse {
     message: String,
 }
 
+#[derive(Deserialize)]
+struct AggressiveModePayload {
+    enabled: bool,
+    client: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct AggressiveModeQuery {
+    client: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AggressiveModeResponse {
+    enabled: bool,
+}
+
 async fn approve_command(
     Path(name): Path<String>,
     State(state): State<AppState>,
@@ -400,6 +430,52 @@ async fn get_upload_status(
         return Err(StatusCode::NOT_FOUND);
     };
     Ok(Json(status))
+}
+
+async fn get_aggressive_mode(
+    Query(query): Query<AggressiveModeQuery>,
+    State(state): State<AppState>,
+) -> Result<Json<AggressiveModeResponse>, StatusCode> {
+    let enabled = match query.client.as_deref().map(str::trim) {
+        Some(client) if !client.is_empty() => {
+            let guard = state.aggressive_clients.read().await;
+            guard.contains(client)
+        }
+        Some(_) => return Err(StatusCode::BAD_REQUEST),
+        None => state.aggressive_mode.load(Ordering::Relaxed),
+    };
+    Ok(Json(AggressiveModeResponse { enabled }))
+}
+
+async fn set_aggressive_mode(
+    State(state): State<AppState>,
+    Json(payload): Json<AggressiveModePayload>,
+) -> Result<Json<AggressiveModeResponse>, StatusCode> {
+    match payload.client.as_deref().map(str::trim) {
+        Some(client) if !client.is_empty() => {
+            let mut guard = state.aggressive_clients.write().await;
+            if payload.enabled {
+                guard.insert(client.to_string());
+            } else {
+                guard.remove(client);
+            }
+            tracing::warn!(
+                client = client,
+                enabled = payload.enabled,
+                "aggressive mode toggled"
+            );
+        }
+        Some(_) => return Err(StatusCode::BAD_REQUEST),
+        None => {
+            state
+                .aggressive_mode
+                .store(payload.enabled, Ordering::Relaxed);
+            tracing::warn!(enabled = payload.enabled, "aggressive mode toggled");
+        }
+    }
+    Ok(Json(AggressiveModeResponse {
+        enabled: payload.enabled,
+    }))
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

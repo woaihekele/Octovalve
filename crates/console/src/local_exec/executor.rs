@@ -7,12 +7,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use base64::Engine;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tokio::process::Command;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 
-use protocol::{CommandRequest, CommandResponse};
+use protocol::{CommandMode, CommandRequest, CommandResponse};
 use system_utils::path::expand_tilde;
 use system_utils::ssh::apply_askpass_env;
 use tracing::warn;
@@ -40,6 +41,7 @@ pub(super) async fn execute_request(
     request: &CommandRequest,
     whitelist: &Whitelist,
     limits: &LimitsConfig,
+    aggressive_mode: bool,
     pty_manager: Option<Arc<PtySessionManager>>,
     cancel: CancellationToken,
     force_cancel: CancellationToken,
@@ -57,12 +59,17 @@ pub(super) async fn execute_request(
             id = %request.id,
             "empty pipeline, skipping whitelist validation"
         );
-    } else {
+    } else if !aggressive_mode {
         for stage in &request.pipeline {
             if let Err(message) = whitelist.validate_deny(stage) {
                 return CommandResponse::denied(request.id.clone(), message);
             }
         }
+    } else {
+        tracing::warn!(
+            id = %request.id,
+            "aggressive mode enabled, skipping deny-list validation"
+        );
     }
 
     let max_timeout_ms = limits.timeout_secs.saturating_mul(1000);
@@ -82,22 +89,34 @@ pub(super) async fn execute_request(
     let mut timed_out = false;
     let mut exec_fut: std::pin::Pin<
         Box<dyn Future<Output = anyhow::Result<ExecutionOutcome>> + Send>,
-    > = if let Some(manager) = pty_manager {
-        Box::pin(execute_pty_command(
-            manager,
-            request,
-            max_bytes,
-            cancel.clone(),
-            force_cancel.clone(),
-        ))
+    > = if matches!(request.mode, CommandMode::Shell) {
+        if let Some(manager) = pty_manager {
+            Box::pin(execute_pty_command(
+                manager,
+                request,
+                max_bytes,
+                cancel.clone(),
+                force_cancel.clone(),
+            ))
+        } else {
+            Box::pin(execute_ssh_command(
+                target,
+                request,
+                max_bytes,
+                cancel.clone(),
+                force_cancel.clone(),
+                target.tty,
+            ))
+        }
     } else {
+        // PowerShell mode runs over a standard SSH channel today (no PTY session reuse).
         Box::pin(execute_ssh_command(
             target,
             request,
             max_bytes,
             cancel.clone(),
             force_cancel.clone(),
-            target.tty,
+            false,
         ))
     };
     let outcome = tokio::select! {
@@ -130,7 +149,11 @@ pub(super) async fn execute_request(
     }
 }
 
-pub(super) async fn force_kill_remote(target: &TargetSpec, request_id: &str) -> anyhow::Result<()> {
+pub(super) async fn force_kill_remote(
+    target: &TargetSpec,
+    mode: &CommandMode,
+    request_id: &str,
+) -> anyhow::Result<()> {
     let ssh = target
         .ssh
         .as_ref()
@@ -146,7 +169,7 @@ pub(super) async fn force_kill_remote(target: &TargetSpec, request_id: &str) -> 
     }
     cmd.args(&target.ssh_args);
     cmd.arg(ssh);
-    cmd.arg(build_force_kill_command(request_id));
+    cmd.arg(build_force_kill_command(mode, request_id));
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::null());
@@ -247,7 +270,11 @@ async fn execute_ssh_command(
         .ssh
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("missing ssh target"))?;
-    let locale = resolve_exec_locale(target);
+    let locale = if matches!(request.mode, CommandMode::Shell) {
+        resolve_exec_locale(target)
+    } else {
+        None
+    };
     let remote_cmd = build_remote_command(target, request);
     let mut cmd = Command::new("ssh");
     if let Some(password) = target.ssh_password.as_deref() {
@@ -334,6 +361,13 @@ async fn execute_pty_command(
 }
 
 fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String {
+    match request.mode {
+        CommandMode::Shell => build_shell_remote_command(target, request),
+        CommandMode::PowerShell => build_powershell_remote_command(request),
+    }
+}
+
+fn build_shell_remote_command(target: &TargetSpec, request: &CommandRequest) -> String {
     let mut env_pairs: BTreeMap<String, String> = BTreeMap::new();
     if let Some(env) = request.env.as_ref() {
         for (key, value) in env {
@@ -365,14 +399,21 @@ fn build_remote_command(target: &TargetSpec, request: &CommandRequest) -> String
         command.push(' ');
     }
     command.push_str(request.raw_command.trim());
-    let command = wrap_command_with_pidfile(&command, &request.id);
+    let command = wrap_command_with_pidfile(CommandMode::Shell, &command, &request.id);
     format!(
         "{shell_prefix}bash --noprofile -lc {}",
         shell_escape(&command)
     )
 }
 
+fn build_powershell_remote_command(request: &CommandRequest) -> String {
+    let command = build_powershell_command(request);
+    let wrapped = wrap_command_with_pidfile(CommandMode::PowerShell, &command, &request.id);
+    powershell_encoded_command(&wrapped)
+}
+
 fn build_session_command(request: &CommandRequest) -> String {
+    debug_assert!(matches!(request.mode, CommandMode::Shell));
     let mut env_pairs: BTreeMap<String, String> = BTreeMap::new();
     if let Some(env) = request.env.as_ref() {
         for (key, value) in env {
@@ -386,7 +427,7 @@ fn build_session_command(request: &CommandRequest) -> String {
         command.push(' ');
     }
     command.push_str(request.raw_command.trim());
-    let command = wrap_command_with_pidfile(&command, &request.id);
+    let command = wrap_command_with_pidfile(CommandMode::Shell, &command, &request.id);
     if let Some(cwd) = request
         .cwd
         .as_deref()
@@ -410,7 +451,14 @@ fn sanitize_request_id(value: &str) -> String {
         .collect()
 }
 
-fn wrap_command_with_pidfile(command: &str, request_id: &str) -> String {
+fn wrap_command_with_pidfile(mode: CommandMode, command: &str, request_id: &str) -> String {
+    match mode {
+        CommandMode::Shell => wrap_shell_command_with_pidfile(command, request_id),
+        CommandMode::PowerShell => wrap_powershell_command_with_pidfile(command, request_id),
+    }
+}
+
+fn wrap_shell_command_with_pidfile(command: &str, request_id: &str) -> String {
     let safe_id = sanitize_request_id(request_id);
     let pidfile = format!("$HOME/.octovalve/run/{safe_id}.pid");
     let inner = format!("bash --noprofile -lc {}", shell_escape(command));
@@ -422,7 +470,37 @@ rm -f \"$pidfile\"; exit $status"
     )
 }
 
+fn wrap_powershell_command_with_pidfile(command: &str, request_id: &str) -> String {
+    let safe_id = sanitize_request_id(request_id);
+    format!(
+        "$ErrorActionPreference = 'Stop'; \
+$runDir = Join-Path $HOME '.octovalve/run'; \
+New-Item -ItemType Directory -Path $runDir -Force | Out-Null; \
+$pidFile = Join-Path $runDir '{safe_id}.pid'; \
+Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue; \
+$exitCode = 1; \
+try {{ \
+Set-Content -LiteralPath $pidFile -Value $PID -NoNewline; \
+{command}; \
+if (-not $?) {{ \
+$exitCode = 1; \
+}} elseif ($LASTEXITCODE -is [int]) {{ \
+$exitCode = $LASTEXITCODE; \
+}} else {{ \
+$exitCode = 0; \
+}}; \
+}} catch {{ \
+$exitCode = 1; \
+Write-Error $_; \
+}} finally {{ \
+Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue; \
+}}; \
+exit $exitCode"
+    )
+}
+
 fn build_pty_command(id: u64, request: &CommandRequest) -> String {
+    debug_assert!(matches!(request.mode, CommandMode::Shell));
     let begin_marker = format!("{PTY_MARKER_BEGIN_PREFIX}{id}__");
     let end_prefix = format!("{PTY_MARKER_END_PREFIX}{id}__");
     let command = build_session_command(request);
@@ -439,7 +517,14 @@ fn pty_end_prefix(id: u64) -> Vec<u8> {
     format!("{PTY_MARKER_END_PREFIX}{id}__").into_bytes()
 }
 
-fn build_force_kill_command(request_id: &str) -> String {
+fn build_force_kill_command(mode: &CommandMode, request_id: &str) -> String {
+    match mode {
+        CommandMode::Shell => build_shell_force_kill_command(request_id),
+        CommandMode::PowerShell => build_powershell_force_kill_command(request_id),
+    }
+}
+
+fn build_shell_force_kill_command(request_id: &str) -> String {
     let safe_id = sanitize_request_id(request_id);
     let pidfile = format!("$HOME/.octovalve/run/{safe_id}.pid");
     let script = format!(
@@ -451,6 +536,76 @@ kill -KILL -- -\"$pid\" 2>/dev/null || kill -KILL \"$pid\" 2>/dev/null || true; 
 rm -f \"$pidfile\" 2>/dev/null || true; fi"
     );
     format!("bash --noprofile -lc {}", shell_escape(&script))
+}
+
+fn build_powershell_force_kill_command(request_id: &str) -> String {
+    let safe_id = sanitize_request_id(request_id);
+    let script = format!(
+        "$ErrorActionPreference = 'SilentlyContinue'; \
+$pidFile = Join-Path $HOME '.octovalve/run/{safe_id}.pid'; \
+if (Test-Path -LiteralPath $pidFile) {{ \
+$rawPid = Get-Content -LiteralPath $pidFile -Raw; \
+$pidNum = 0; \
+if ([int]::TryParse($rawPid, [ref]$pidNum) -and $pidNum -gt 0) {{ \
+Stop-Process -Id $pidNum -Force -ErrorAction SilentlyContinue; \
+}}; \
+Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue; \
+}}"
+    );
+    powershell_encoded_command(&script)
+}
+
+fn build_powershell_command(request: &CommandRequest) -> String {
+    let mut statements = Vec::new();
+    if let Some(cwd) = request
+        .cwd
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        statements.push(format!(
+            "Set-Location -LiteralPath {}",
+            powershell_quote(cwd)
+        ));
+    }
+
+    if let Some(env) = request.env.as_ref() {
+        for (key, value) in env {
+            let key = key.trim();
+            let value = value.trim();
+            if key.is_empty() || value.is_empty() || !is_safe_env_key(key) {
+                continue;
+            }
+            statements.push(format!("$env:{key} = {}", powershell_quote(value)));
+        }
+    }
+
+    statements.push(request.raw_command.trim().to_string());
+    statements.join("; ")
+}
+
+fn powershell_encoded_command(script: &str) -> String {
+    let mut encoded = Vec::with_capacity(script.len() * 2);
+    for unit in script.encode_utf16() {
+        encoded.extend_from_slice(&unit.to_le_bytes());
+    }
+    let payload = base64::engine::general_purpose::STANDARD.encode(encoded);
+    format!("powershell -NoProfile -NonInteractive -EncodedCommand {payload}")
+}
+
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn is_safe_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 fn resolve_exec_locale(target: &TargetSpec) -> Option<String> {
@@ -971,7 +1126,7 @@ mod tests {
             client: "client".to_string(),
             target: "dev".to_string(),
             intent: "intent".to_string(),
-            mode: protocol::CommandMode::Shell,
+            mode: CommandMode::Shell,
             raw_command: "echo hello".to_string(),
             cwd: Some("/tmp/work dir".to_string()),
             env: Some(BTreeMap::from([("FOO".to_string(), "bar baz".to_string())])),
@@ -979,6 +1134,13 @@ mod tests {
             max_output_bytes: None,
             pipeline: Vec::new(),
         }
+    }
+
+    fn sample_powershell_request() -> CommandRequest {
+        let mut request = sample_request();
+        request.mode = CommandMode::PowerShell;
+        request.raw_command = "Get-ChildItem".to_string();
+        request
     }
 
     #[test]
@@ -1109,18 +1271,44 @@ mod tests {
 
     #[test]
     fn wrap_command_uses_setsid_fallback() {
-        let cmd = wrap_command_with_pidfile("echo ok", "req");
+        let cmd = wrap_command_with_pidfile(CommandMode::Shell, "echo ok", "req");
         assert!(cmd.contains("command -v setsid"));
         assert!(cmd.contains("then setsid"));
     }
 
     #[test]
     fn force_kill_command_falls_back_to_pid() {
-        let cmd = build_force_kill_command("req");
+        let cmd = build_force_kill_command(&CommandMode::Shell, "req");
         assert!(cmd.contains("kill -TERM -- -\"$pid\""));
         assert!(cmd.contains("kill -TERM \"$pid\""));
         assert!(cmd.contains("kill -KILL -- -\"$pid\""));
         assert!(cmd.contains("kill -KILL \"$pid\""));
+    }
+
+    #[test]
+    fn build_remote_command_powershell_uses_encoded_command() {
+        let target = sample_target();
+        let request = sample_powershell_request();
+        let cmd = build_remote_command(&target, &request);
+        assert!(cmd.contains("powershell -NoProfile -NonInteractive -EncodedCommand "));
+        assert!(!cmd.contains("bash --noprofile -lc "));
+    }
+
+    #[test]
+    fn force_kill_command_powershell_uses_encoded_command() {
+        let cmd = build_force_kill_command(&CommandMode::PowerShell, "req");
+        assert!(cmd.contains("powershell -NoProfile -NonInteractive -EncodedCommand "));
+    }
+
+    #[test]
+    fn build_powershell_command_skips_unsafe_env_key() {
+        let mut request = sample_powershell_request();
+        request.env = Some(BTreeMap::from([(
+            "FOO;Write-Host hacked".to_string(),
+            "1".to_string(),
+        )]));
+        let script = build_powershell_command(&request);
+        assert!(!script.contains("Write-Host hacked"));
     }
     #[test]
     fn build_remote_command_disables_profiles() {

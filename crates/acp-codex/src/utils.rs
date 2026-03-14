@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use base64::Engine;
-use codex_protocol::{
-    config_types::SandboxMode as CodexSandboxMode, protocol::AskForApproval as CodexAskForApproval,
+use codex_app_server_protocol::{
+    AskForApproval as CodexAskForApproval, SandboxMode as CodexSandboxMode, ThreadResumeParams,
+    ThreadStartParams,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -16,7 +17,7 @@ pub(crate) struct SessionHandler;
 
 impl SessionHandler {
     pub(crate) fn sessions_root() -> Result<PathBuf> {
-        let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("无法定位 HOME 目录"))?;
+        let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("鏃犳硶瀹氫綅 HOME 鐩綍"))?;
         if let Ok(value) = std::env::var("CODEX_HOME") {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
@@ -43,7 +44,7 @@ impl SessionHandler {
 
     fn scan_directory(dir: &Path, session_id: &str) -> Result<PathBuf> {
         if !dir.exists() {
-            return Err(anyhow!("sessions 目录不存在: {}", dir.display()));
+            return Err(anyhow!("sessions 鐩綍涓嶅瓨鍦? {}", dir.display()));
         }
 
         for entry in std::fs::read_dir(dir)? {
@@ -66,7 +67,7 @@ impl SessionHandler {
             }
         }
 
-        Err(anyhow!("未找到 session: {session_id}"))
+        Err(anyhow!("鏈壘鍒?session: {session_id}"))
     }
 }
 
@@ -85,10 +86,10 @@ pub(crate) fn normalize_cwd(raw: &str) -> PathBuf {
     }
 }
 
-pub(crate) fn build_new_conversation_params(
+pub(crate) fn build_thread_start_params(
     config: &CliConfig,
     cwd: &Path,
-) -> Result<codex_app_server_protocol::NewConversationParams> {
+) -> Result<ThreadStartParams> {
     let sandbox = match config
         .sandbox_mode
         .as_deref()
@@ -120,18 +121,37 @@ pub(crate) fn build_new_conversation_params(
         approval_policy = Some(CodexAskForApproval::OnRequest);
     }
 
-    Ok(codex_app_server_protocol::NewConversationParams {
+    Ok(ThreadStartParams {
         model: None,
-        profile: None,
+        model_provider: None,
         cwd: Some(cwd.to_string_lossy().to_string()),
         approval_policy,
         sandbox,
         config: None,
         base_instructions: None,
-        include_apply_patch_tool: Some(true),
-        model_provider: None,
-        compact_prompt: None,
         developer_instructions: None,
+    })
+}
+
+pub(crate) fn build_thread_resume_params(
+    config: &CliConfig,
+    cwd: &Path,
+    thread_id: String,
+    rollout_path: PathBuf,
+) -> Result<ThreadResumeParams> {
+    let start = build_thread_start_params(config, cwd)?;
+    Ok(ThreadResumeParams {
+        thread_id,
+        history: None,
+        path: Some(rollout_path),
+        model: start.model,
+        model_provider: start.model_provider,
+        cwd: start.cwd,
+        approval_policy: start.approval_policy,
+        sandbox: start.sandbox,
+        config: start.config,
+        base_instructions: start.base_instructions,
+        developer_instructions: start.developer_instructions,
     })
 }
 

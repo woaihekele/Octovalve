@@ -267,6 +267,47 @@ pub async fn proxy_upload_status(
 }
 
 #[tauri::command]
+pub async fn proxy_get_aggressive_mode(
+    client: Option<String>,
+    log_state: State<'_, AppLogState>,
+) -> Result<Value, String> {
+    let path = if let Some(client) = client {
+        let trimmed = client.trim();
+        if trimmed.is_empty() {
+            return Err("client must not be empty".to_string());
+        }
+        let encoded = encode(trimmed);
+        format!("/policy/aggressive?client={encoded}")
+    } else {
+        "/policy/aggressive".to_string()
+    };
+    console_get(&path, &log_state.app_log).await
+}
+
+#[tauri::command]
+pub async fn proxy_set_aggressive_mode(
+    enabled: bool,
+    client: Option<String>,
+    log_state: State<'_, AppLogState>,
+) -> Result<Value, String> {
+    let body = if let Some(client) = client {
+        let trimmed = client.trim();
+        if trimmed.is_empty() {
+            return Err("client must not be empty".to_string());
+        }
+        json!({ "enabled": enabled, "client": trimmed })
+    } else {
+        json!({ "enabled": enabled })
+    };
+    console_post_json(
+        "/policy/aggressive",
+        body,
+        &log_state.app_log,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn start_console_stream(
     app: AppHandle,
     stream_state: State<'_, crate::state::ConsoleStreamState>,

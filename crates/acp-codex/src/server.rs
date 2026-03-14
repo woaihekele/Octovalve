@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use codex_protocol::ConversationId;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
@@ -26,10 +25,6 @@ where
     run_with_io_with_startup(config, reader, writer, None).await
 }
 
-/// 与 [`run_with_io`] 相同，但允许调用方在关键启动点拿到一次性的“启动结果”回执。
-///
-/// 目前用于让上层（Tauri）在 `codex` 命令缺失等可预判错误时，立即把错误回传到前端，
-/// 而不是等到客户端请求超时。
 pub async fn run_with_io_with_startup<R, W>(
     config: CliConfig,
     reader: R,
@@ -63,33 +58,9 @@ where
     tokio::spawn(async move {
         while let Some(event) = app_events.recv().await {
             match event {
-                AppServerEvent::SessionConfigured { session_id } => {
-                    let parsed_conversation_id = ConversationId::from_string(&session_id).ok();
-                    let mut guard = state_clone.lock().await;
-                    if guard.session_id.is_none() {
-                        guard.session_id = Some(session_id.clone());
-                    }
-                    if guard.conversation_id.is_none() {
-                        guard.conversation_id = parsed_conversation_id;
-                    }
-                    guard.saw_message_delta = false;
-                    guard.saw_reasoning_delta = false;
-                    guard.retry_count = 0;
-                    guard.retry_exhausted = false;
-                    let effective_session_id = guard
-                        .session_id
-                        .clone()
-                        .unwrap_or_else(|| session_id.clone());
-                    for waiter in guard.session_id_waiters.drain(..) {
-                        let _ = waiter.send(effective_session_id.clone());
-                    }
-                }
-                AppServerEvent::CodexEvent {
-                    conversation_id,
-                    msg,
-                } => {
+                AppServerEvent::Notification(notification) => {
                     if let Err(err) =
-                        handle_codex_event(conversation_id, msg, &writer_clone, &state_clone).await
+                        handle_codex_event(notification, &writer_clone, &state_clone).await
                     {
                         log_fmt(LogLevel::Error, format_args!("处理 codex 事件失败: {err}"));
                     }

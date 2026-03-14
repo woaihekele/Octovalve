@@ -12,16 +12,14 @@ use std::{
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use codex_app_server_protocol::{
-    AddConversationListenerParams, AddConversationSubscriptionResponse, ApplyPatchApprovalResponse,
-    ClientInfo, ClientNotification, ClientRequest, ExecCommandApprovalResponse, InitializeParams,
-    InitializeResponse, InputItem, InterruptConversationParams, InterruptConversationResponse,
-    JSONRPCError, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse,
-    NewConversationParams, NewConversationResponse, RemoveConversationListenerParams,
-    RemoveConversationSubscriptionResponse, RequestId, ResumeConversationParams,
-    ResumeConversationResponse, SendUserMessageParams, SendUserMessageResponse, ServerRequest,
+    ApplyPatchApprovalResponse, ApprovalDecision, ClientInfo, ClientNotification, ClientRequest,
+    CommandExecutionRequestApprovalResponse, ExecCommandApprovalResponse,
+    FileChangeRequestApprovalResponse, InitializeParams, InitializeResponse, JSONRPCError,
+    JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse, RequestId,
+    ServerNotification, ServerRequest, ThreadResumeParams, ThreadResumeResponse, ThreadStartParams,
+    ThreadStartResponse, TurnInterruptParams, TurnStartParams, TurnStartResponse,
 };
-use codex_protocol::{protocol::EventMsg, protocol::ReviewDecision, ConversationId};
-use serde::Deserialize;
+use codex_protocol::protocol::ReviewDecision;
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -40,13 +38,7 @@ use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
 #[derive(Debug)]
 pub(crate) enum AppServerEvent {
-    SessionConfigured {
-        session_id: String,
-    },
-    CodexEvent {
-        conversation_id: ConversationId,
-        msg: EventMsg,
-    },
+    Notification(ServerNotification),
     StderrLine(String),
 }
 
@@ -76,7 +68,7 @@ fn ensure_codex_home_links(codex_home: &str) {
     if let Err(err) = fs::create_dir_all(&dest_dir) {
         log_fmt(
             LogLevel::Warn,
-            format_args!("无法创建 codex_home 目录: {err}"),
+            format_args!("鏃犳硶鍒涘缓 codex_home 鐩綍: {err}"),
         );
         return;
     }
@@ -107,7 +99,7 @@ fn link_file(source: &Path, dest: &Path, label: &str) {
     if let Err(err) = std::os::unix::fs::symlink(source, dest) {
         log_fmt(
             LogLevel::Warn,
-            format_args!("创建 {label} 软链接失败: {err}"),
+            format_args!("鍒涘缓 {label} 杞摼鎺ュけ璐? {err}"),
         );
     }
 }
@@ -115,7 +107,7 @@ fn link_file(source: &Path, dest: &Path, label: &str) {
 #[cfg(not(unix))]
 fn link_file(source: &Path, dest: &Path, label: &str) {
     if let Err(err) = fs::copy(source, dest) {
-        log_fmt(LogLevel::Warn, format_args!("复制 {label} 失败: {err}"));
+        log_fmt(LogLevel::Warn, format_args!("澶嶅埗 {label} 澶辫触: {err}"));
     }
 }
 
@@ -159,7 +151,7 @@ impl AppServerClient {
         let mut child = cmd.spawn().map_err(|err| match err.kind() {
             std::io::ErrorKind::NotFound => anyhow!("CODEX_NOT_FOUND"),
             std::io::ErrorKind::PermissionDenied => anyhow!("CODEX_NOT_EXECUTABLE"),
-            _ => anyhow!("启动 codex app-server 失败: {err}"),
+            _ => anyhow!("鍚姩 codex app-server 澶辫触: {err}"),
         })?;
         let stdin = child
             .stdin
@@ -280,109 +272,52 @@ impl AppServerClient {
         Ok(())
     }
 
-    pub(crate) async fn new_conversation(
+    pub(crate) async fn thread_start(
         &self,
-        params: NewConversationParams,
-    ) -> Result<NewConversationResponse> {
-        let request = ClientRequest::NewConversation {
+        params: ThreadStartParams,
+    ) -> Result<ThreadStartResponse> {
+        let request = ClientRequest::ThreadStart {
             request_id: self.rpc.next_request_id(),
             params,
         };
         self.rpc
-            .request(request_id(&request), &request, "newConversation")
+            .request(request_id(&request), &request, "thread/start")
             .await
     }
 
-    pub(crate) async fn resume_conversation(
+    pub(crate) async fn thread_resume(
         &self,
-        rollout_path: PathBuf,
-        overrides: NewConversationParams,
-    ) -> Result<ResumeConversationResponse> {
-        let request = ClientRequest::ResumeConversation {
+        params: ThreadResumeParams,
+    ) -> Result<ThreadResumeResponse> {
+        let request = ClientRequest::ThreadResume {
             request_id: self.rpc.next_request_id(),
-            params: ResumeConversationParams {
-                path: Some(rollout_path),
-                overrides: Some(overrides),
-                conversation_id: None,
-                history: None,
-            },
+            params,
         };
         self.rpc
-            .request(request_id(&request), &request, "resumeConversation")
+            .request(request_id(&request), &request, "thread/resume")
             .await
     }
 
-    pub(crate) async fn add_conversation_listener(
-        &self,
-        conversation_id: ConversationId,
-    ) -> Result<AddConversationSubscriptionResponse> {
-        let request = ClientRequest::AddConversationListener {
+    pub(crate) async fn turn_start(&self, params: TurnStartParams) -> Result<TurnStartResponse> {
+        let request = ClientRequest::TurnStart {
             request_id: self.rpc.next_request_id(),
-            params: AddConversationListenerParams {
-                conversation_id,
-                experimental_raw_events: false,
-            },
+            params,
         };
         self.rpc
-            .request(request_id(&request), &request, "addConversationListener")
+            .request(request_id(&request), &request, "turn/start")
             .await
     }
 
-    pub(crate) async fn send_user_message(
+    pub(crate) async fn turn_interrupt_no_wait(
         &self,
-        conversation_id: ConversationId,
-        items: Vec<InputItem>,
-    ) -> Result<SendUserMessageResponse> {
-        let request = ClientRequest::SendUserMessage {
-            request_id: self.rpc.next_request_id(),
-            params: SendUserMessageParams {
-                conversation_id,
-                items,
-            },
-        };
-        self.rpc
-            .request(request_id(&request), &request, "sendUserMessage")
-            .await
-    }
-
-    pub(crate) async fn interrupt_conversation(
-        &self,
-        conversation_id: ConversationId,
-    ) -> Result<InterruptConversationResponse> {
-        let request = ClientRequest::InterruptConversation {
-            request_id: self.rpc.next_request_id(),
-            params: InterruptConversationParams { conversation_id },
-        };
-        self.rpc
-            .request(request_id(&request), &request, "interruptConversation")
-            .await
-    }
-
-    pub(crate) async fn interrupt_conversation_no_wait(
-        &self,
-        conversation_id: ConversationId,
+        thread_id: String,
+        turn_id: String,
     ) -> Result<()> {
-        // `interruptConversation` returns only after `TurnAborted`; if the conversation
-        // has no active turn, the server may never respond. For our purposes we only
-        // need best-effort delivery.
-        let request = ClientRequest::InterruptConversation {
+        let request = ClientRequest::TurnInterrupt {
             request_id: self.rpc.next_request_id(),
-            params: InterruptConversationParams { conversation_id },
+            params: TurnInterruptParams { thread_id, turn_id },
         };
         self.rpc.send(&request).await
-    }
-
-    pub(crate) async fn remove_conversation_listener(
-        &self,
-        subscription_id: uuid::Uuid,
-    ) -> Result<RemoveConversationSubscriptionResponse> {
-        let request = ClientRequest::RemoveConversationListener {
-            request_id: self.rpc.next_request_id(),
-            params: RemoveConversationListenerParams { subscription_id },
-        };
-        self.rpc
-            .request(request_id(&request), &request, "removeConversationListener")
-            .await
     }
 }
 
@@ -534,14 +469,6 @@ fn request_id(request: &ClientRequest) -> RequestId {
     serde_json::from_value(id_value).expect("invalid request id")
 }
 
-#[derive(Debug, Deserialize)]
-struct CodexNotificationParams {
-    #[serde(rename = "conversationId")]
-    conversation_id: ConversationId,
-    #[serde(rename = "msg")]
-    msg: EventMsg,
-}
-
 struct AppServerCallbacks {
     events_tx: mpsc::UnboundedSender<AppServerEvent>,
 }
@@ -550,6 +477,26 @@ struct AppServerCallbacks {
 impl JsonRpcCallbacks for AppServerCallbacks {
     async fn on_request(&self, peer: &JsonRpcPeer, request: JSONRPCRequest) -> Result<()> {
         match ServerRequest::try_from(request.clone()) {
+            Ok(ServerRequest::CommandExecutionRequestApproval { request_id, .. }) => {
+                let response = CommandExecutionRequestApprovalResponse {
+                    decision: ApprovalDecision::AcceptForSession,
+                };
+                let payload = JSONRPCResponse {
+                    id: request_id,
+                    result: serde_json::to_value(response)?,
+                };
+                peer.send(&payload).await?;
+            }
+            Ok(ServerRequest::FileChangeRequestApproval { request_id, .. }) => {
+                let response = FileChangeRequestApprovalResponse {
+                    decision: ApprovalDecision::AcceptForSession,
+                };
+                let payload = JSONRPCResponse {
+                    id: request_id,
+                    result: serde_json::to_value(response)?,
+                };
+                peer.send(&payload).await?;
+            }
             Ok(ServerRequest::ExecCommandApproval { request_id, .. }) => {
                 let response = ExecCommandApprovalResponse {
                     decision: ReviewDecision::ApprovedForSession,
@@ -567,13 +514,6 @@ impl JsonRpcCallbacks for AppServerCallbacks {
                 let payload = JSONRPCResponse {
                     id: request_id,
                     result: serde_json::to_value(response)?,
-                };
-                peer.send(&payload).await?;
-            }
-            Ok(_) => {
-                let payload = JSONRPCResponse {
-                    id: request.id,
-                    result: Value::Null,
                 };
                 peer.send(&payload).await?;
             }
@@ -601,36 +541,11 @@ impl JsonRpcCallbacks for AppServerCallbacks {
         _peer: &JsonRpcPeer,
         notification: JSONRPCNotification,
     ) -> Result<()> {
-        if notification.method == "sessionConfigured" {
-            if let Some(session_id) = notification
-                .params
-                .as_ref()
-                .and_then(|value| value.get("session_id").or_else(|| value.get("sessionId")))
-                .and_then(|value| value.as_str())
-            {
-                let _ = self.events_tx.send(AppServerEvent::SessionConfigured {
-                    session_id: session_id.to_string(),
-                });
-            }
-            return Ok(());
+        if let Ok(server_notification) = ServerNotification::try_from(notification) {
+            let _ = self
+                .events_tx
+                .send(AppServerEvent::Notification(server_notification));
         }
-
-        let method = notification.method.as_str();
-        if !method.starts_with("codex/event") {
-            return Ok(());
-        }
-
-        let Some(params) = notification
-            .params
-            .and_then(|value| serde_json::from_value::<CodexNotificationParams>(value).ok())
-        else {
-            return Ok(());
-        };
-
-        let _ = self.events_tx.send(AppServerEvent::CodexEvent {
-            conversation_id: params.conversation_id,
-            msg: params.msg,
-        });
         Ok(())
     }
 
